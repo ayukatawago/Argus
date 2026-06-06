@@ -1,0 +1,36 @@
+opt_in_rules:
+  - force_unwrapping
+  - closure_spacing
+  - sorted_imports
+  - redundant_type_annotation
+  - vertical_whitespace_between_cases
+  - explicit_init
+  - empty_count
+  - unowned_variable_capture
+
+disabled_rules:
+  - todo
+
+excluded:
+  - Vendor/
+  - .build/
+  - DerivedData/
+
+line_length:
+  warning: 120
+  error: 160
+
+type_body_length:
+  warning: 300
+  error: 400
+
+file_length:
+  warning: 400
+  error: 600
+
+function_body_length:
+  warning: 50
+  error: 80
+
+force_cast: error
+force_unwrapping: error
