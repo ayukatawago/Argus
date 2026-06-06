@@ -1,0 +1,77 @@
+name: kotty
+
+options:
+  bundleIdPrefix: com.kotty
+  deploymentTarget:
+    macOS: "14.0"
+  generateEmptyDirectories: true
+  createIntermediateGroups: true
+  defaultConfig: Debug
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ENABLE_PREVIEWS: "YES"
+    ALWAYS_SEARCH_USER_PATHS: "NO"
+
+targets:
+  kotty:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: App
+        excludes:
+          - "**/*.md"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kotty.app
+        INFOPLIST_FILE: App/Info.plist
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGNING_REQUIRED: "NO"
+        ENABLE_HARDENED_RUNTIME: "NO"
+        COMBINE_HIDPI_IMAGES: "YES"
+      debug:
+        SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+        DEBUG_INFORMATION_FORMAT: dwarf
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      release:
+        SWIFT_OPTIMIZATION_LEVEL: "-O"
+        DEBUG_INFORMATION_FORMAT: "dwarf-with-dsym"
+    preBuildScripts:
+      - name: SwiftLint
+        showEnvVars: false
+        basedOnDependencyAnalysis: false
+        script: |
+          if which swiftlint > /dev/null; then
+            swiftlint --config "${SRCROOT}/.swiftlint.yml" --quiet
+          else
+            echo "warning: SwiftLint not installed — run: brew install swiftlint"
+          fi
+
+  kottyTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources: []
+    dependencies:
+      - target: kotty
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kotty.app.tests
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGNING_REQUIRED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
