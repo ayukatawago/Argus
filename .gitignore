@@ -20,8 +20,8 @@ DerivedData/
 .build/
 .swiftpm/
 
-# Vendor build artifacts
-Vendor/ghostty/libghostty.a
+# Vendor build artifacts (not tracked — run script/build_ghosttykit.sh to regenerate)
+Vendor/GhosttyKit.xcframework/
 
 # macOS
 .DS_Store
@@ -33,6 +33,7 @@ Vendor/ghostty/libghostty.a
 
 # Generated files
 kotty.xcodeproj/
+*.profraw
 
 # Editor
 .vscode/
