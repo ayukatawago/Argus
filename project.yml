@@ -18,6 +18,10 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     ENABLE_PREVIEWS: "YES"
     ALWAYS_SEARCH_USER_PATHS: "NO"
+    # Targeted mode: catches most data races but permits @MainActor NSView
+    # subclasses conforming to unannotated ObjC protocols (e.g. NSTextInputClient).
+    # Revisit when Apple annotates all relevant AppKit protocols with @MainActor.
+    SWIFT_STRICT_CONCURRENCY: targeted
 
 targets:
   kotty:
@@ -28,6 +32,12 @@ targets:
       - path: App
         excludes:
           - "**/*.md"
+      - path: Sources/GhosttyBridge
+        excludes:
+          - "**/*.md"
+    dependencies:
+      - framework: Vendor/GhosttyKit.xcframework
+        embed: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kotty.app
@@ -40,6 +50,7 @@ targets:
         CODE_SIGNING_REQUIRED: "NO"
         ENABLE_HARDENED_RUNTIME: "NO"
         COMBINE_HIDPI_IMAGES: "YES"
+        OTHER_LDFLAGS: "-lc++ -lz -framework Metal -framework MetalKit -framework CoreText -framework CoreGraphics -framework AppKit -framework Carbon"
       debug:
         SWIFT_OPTIMIZATION_LEVEL: "-Onone"
         DEBUG_INFORMATION_FORMAT: dwarf
