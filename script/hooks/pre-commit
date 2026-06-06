@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACM | grep '\.swift$' || true)
+
+if [ -z "${STAGED_SWIFT}" ]; then
+    exit 0
+fi
+
+cd "${REPO_ROOT}"
+
+echo "Running swift-format --lint on staged Swift files..."
+while IFS= read -r file; do
+    xcrun swift-format lint --configuration "${REPO_ROOT}/.swift-format" "${file}"
+done <<< "${STAGED_SWIFT}"
+
+echo "Running SwiftLint on staged Swift files..."
+if which swiftlint > /dev/null; then
+    swiftlint --config "${REPO_ROOT}/.swiftlint.yml" --quiet
+else
+    echo "warning: SwiftLint not installed — skipping"
+fi
