@@ -1,0 +1,40 @@
+# Xcode
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/project.xcworkspace/
+*.xcworkspace/*
+!*.xcworkspace/contents.xcworkspacedata
+*.moved-aside
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+xcuserdata/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# SwiftPM
+.build/
+.swiftpm/
+
+# Vendor build artifacts
+Vendor/ghostty/libghostty.a
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Generated files
+kotty.xcodeproj/
+
+# Editor
+.vscode/
+*.swp
+*.swo
