@@ -8,7 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Register ⌘⇧G via a local event monitor so it fires reliably even when
         // the terminal surface has keyboard focus and might swallow menu key equivalents.
         keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let onlyCommandShift = event.modifierFlags
+            let onlyCommandShift =
+                event.modifierFlags
                 .intersection([.command, .shift, .option, .control]) == [.command, .shift]
             guard onlyCommandShift, event.charactersIgnoringModifiers?.lowercased() == "g" else {
                 return event
@@ -24,7 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let bundleID = Bundle.main.bundleIdentifier,
             let libraryURL = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
         else { return }
-        let savedStateURL = libraryURL
+        let savedStateURL =
+            libraryURL
             .appendingPathComponent("Saved Application State/\(bundleID).savedState")
         try? FileManager.default.removeItem(at: savedStateURL)
     }
@@ -60,7 +62,25 @@ struct KottyApp: App {
                     NotificationCenter.default.post(name: .openLazygit, object: nil)
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
+                Divider()
+                Button("Install Claude Code Hooks…") {
+                    KottyApp.installHooks()
+                }
             }
+        }
+    }
+
+    private static func installHooks() {
+        do {
+            try HookInstaller.install()
+            let alert = NSAlert()
+            alert.messageText = "Hooks installed"
+            alert.informativeText = "Claude Code hooks have been added to ~/.claude/settings.json."
+            alert.alertStyle = .informational
+            alert.runModal()
+        }
+        catch {
+            NSAlert(error: error).runModal()
         }
     }
 }

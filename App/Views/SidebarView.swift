@@ -5,6 +5,7 @@ struct SidebarView: View {
     @ObservedObject var store: WorkspaceStore
     @Binding var selectedWorktreeID: String?
     let activeTerminalIDs: Set<String>
+    @ObservedObject var agentBus: AgentStateBus
 
     var body: some View {
         List(selection: $selectedWorktreeID) {
@@ -12,7 +13,8 @@ struct SidebarView: View {
                 Text("No git repos found")
                     .foregroundStyle(.secondary)
                     .font(.caption)
-            } else {
+            }
+            else {
                 ForEach(store.repos) { repo in
                     let hidden = repo.worktrees.filter { store.hiddenWorktreeIDs.contains($0.id) }
                     let visible = repo.worktrees.filter { !store.hiddenWorktreeIDs.contains($0.id) }
@@ -32,7 +34,8 @@ struct SidebarView: View {
                         WorktreeRow(
                             worktree: worktree,
                             isActive: activeTerminalIDs.contains(worktree.id),
-                            isSelected: selectedWorktreeID == worktree.id
+                            isSelected: selectedWorktreeID == worktree.id,
+                            agentState: agentBus.state(for: worktree.id)
                         ) {
                             if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
                             store.hideWorktree(id: worktree.id)
@@ -97,31 +100,29 @@ private struct RepoHeader: View {
 
 private struct WorktreeRow: View {
     let worktree: GitWorktree
-    let sessionName: String?
     let isActive: Bool
     let isSelected: Bool
+    let agentState: AgentState
     let onHide: () -> Void
     @State private var isHovered = false
 
     init(
         worktree: GitWorktree,
-        sessionName: String? = nil,
         isActive: Bool = false,
         isSelected: Bool = false,
+        agentState: AgentState = .idle,
         onHide: @escaping () -> Void
     ) {
         self.worktree = worktree
-        self.sessionName = sessionName
         self.isActive = isActive
         self.isSelected = isSelected
+        self.agentState = agentState
         self.onHide = onHide
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(Color.secondary.opacity(0.4))
-                .frame(width: 8, height: 8)
+            AgentDot(state: agentState)
             VStack(alignment: .leading, spacing: 2) {
                 Text(URL(fileURLWithPath: worktree.path).lastPathComponent)
                     .lineLimit(1)
@@ -132,12 +133,6 @@ private struct WorktreeRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .opacity(worktree.branch == nil ? 0 : 1)
-                Text(sessionName ?? " ")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .opacity(sessionName == nil ? 0 : 1)
             }
             Spacer()
             Button(action: onHide) {
@@ -151,7 +146,85 @@ private struct WorktreeRow: View {
         .padding(.vertical, 4)
         .onHover { isHovered = $0 }
         .listRowBackground(
-            isActive && !isSelected ? Color.accentColor.opacity(0.1) : Color.clear
+            AgentStateBackground(agentState: agentState, isActive: isActive, isSelected: isSelected)
         )
     }
 }
+
+// MARK: - Agent state dot
+
+private struct AgentDot: View {
+    let state: AgentState
+    @State private var pulse = false
+
+    var body: some View {
+        Circle()
+            .fill(dotColor.opacity(pulse ? 0.5 : 1.0))
+            .frame(width: 8, height: 8)
+            .onAppear { startPulseIfNeeded() }
+            .onChange(of: state) { _, newState in
+                pulse = false
+                if newState == .running { startPulseIfNeeded() }
+            }
+    }
+
+    private var dotColor: Color {
+        switch state {
+        case .idle: Color.secondary.opacity(0.4)
+        case .running: claudePeach
+        case .done: Color.green.opacity(0.8)
+        }
+    }
+
+    private func startPulseIfNeeded() {
+        guard state == .running else { return }
+        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
+    }
+}
+
+// MARK: - Row background
+
+/// Provides the colored row background that reflects agent state.
+private struct AgentStateBackground: View {
+    let agentState: AgentState
+    let isActive: Bool
+    let isSelected: Bool
+    @State private var pulse = false
+
+    var body: some View {
+        ZStack {
+            baseLayer
+            if agentState == .done {
+                Rectangle()
+                    .strokeBorder(Color.green.opacity(0.55), lineWidth: 1.5)
+            }
+        }
+        .onAppear { startPulseIfNeeded() }
+        .onChange(of: agentState) { _, state in
+            pulse = false
+            if state == .running { startPulseIfNeeded() }
+        }
+    }
+
+    @ViewBuilder
+    private var baseLayer: some View {
+        if agentState == .running {
+            claudePeach.opacity(pulse ? 0.35 : 0.75)
+        }
+        else if isActive && !isSelected {
+            Color.accentColor.opacity(0.1)
+        }
+        else {
+            Color.clear
+        }
+    }
+
+    private func startPulseIfNeeded() {
+        guard agentState == .running else { return }
+        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulse = true }
+    }
+}
+
+// MARK: - Shared color
+
+private let claudePeach = Color(red: 222 / 255, green: 115 / 255, blue: 86 / 255)
