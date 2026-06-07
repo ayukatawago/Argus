@@ -84,16 +84,27 @@ enum WorktreeHookManager {
         done: String
     ) -> [String: Any] {
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
-        // PreToolUse fires on every tool call → signals Claude is actively working.
-        // matcher ".*" matches all tools.
-        hooks["PreToolUse"] = [
-            ["matcher": ".*", "hooks": [["type": "command", "command": running]]]
-        ]
-        // Stop fires when Claude finishes a turn. No matcher for session-level events.
-        hooks["Stop"] = [
-            ["hooks": [["type": "command", "command": done]]]
-        ]
+        hooks["PreToolUse"] = upsertKottyEntry(
+            in: hooks["PreToolUse"] as? [[String: Any]] ?? [],
+            entry: ["matcher": ".*", "hooks": [["type": "command", "command": running]]]
+        )
+        // Stop is a session-level event; "matcher": "" is required even though it's unused.
+        hooks["Stop"] = upsertKottyEntry(
+            in: hooks["Stop"] as? [[String: Any]] ?? [],
+            entry: ["matcher": "", "hooks": [["type": "command", "command": done]]]
+        )
         return hooks
+    }
+
+    private static func upsertKottyEntry(
+        in existing: [[String: Any]],
+        entry: [String: Any]
+    ) -> [[String: Any]] {
+        let filtered = existing.filter { item in
+            guard let hooksList = item["hooks"] as? [[String: Any]] else { return true }
+            return !hooksList.contains { ($0["command"] as? String)?.contains("/kotty/hooks/") == true }
+        }
+        return filtered + [entry]
     }
 
     private static func saveSettings(_ settings: [String: Any], to url: URL) throws {
