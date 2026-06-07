@@ -19,9 +19,11 @@ enum HookInstaller {
     }
 
     private static func kottyHooksDir() throws -> URL {
-        guard let support = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first else { throw Failure.noAppSupport }
+        guard
+            let support = FileManager.default.urls(
+                for: .applicationSupportDirectory, in: .userDomainMask
+            ).first
+        else { throw Failure.noAppSupport }
         let dir = support.appendingPathComponent("kotty/hooks")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
@@ -62,7 +64,7 @@ enum HookInstaller {
 
     private static func loadSettings(at url: URL) -> [String: Any] {
         guard let data = try? Data(contentsOf: url),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return [:] }
         return obj
     }
