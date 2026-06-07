@@ -7,7 +7,8 @@
 
 // Spawns `shell` with a PTY. Returns the master FD on success, -1 on error.
 // Writes the child PID into *out_pid.
-int pty_spawn(const char *shell, int *out_pid) {
+// working_dir sets the child's cwd; pass NULL to use the user's home directory.
+int pty_spawn(const char *shell, const char *working_dir, int *out_pid) {
     int master = -1, slave = -1;
     if (openpty(&master, &slave, NULL, NULL, NULL) != 0) {
         return -1;
@@ -32,14 +33,17 @@ int pty_spawn(const char *shell, int *out_pid) {
         setenv("TERM", "xterm-256color", 1);
         setenv("COLORTERM", "truecolor", 1);
 
-        // Change to the user's home directory. macOS apps launch with cwd="/".
-        // Prefer getpwuid so this works even if HOME is absent from the env.
-        const char *home = getenv("HOME");
-        if (!home) {
-            struct passwd *pw = getpwuid(getuid());
-            if (pw) home = pw->pw_dir;
+        // Use the requested working_dir, or fall back to the user's home directory.
+        // Prefer getpwuid for home so this works even when HOME is absent from env.
+        const char *dir = working_dir;
+        if (!dir || dir[0] == '\0') {
+            dir = getenv("HOME");
+            if (!dir) {
+                struct passwd *pw = getpwuid(getuid());
+                if (pw) dir = pw->pw_dir;
+            }
         }
-        if (home) chdir(home);
+        if (dir) chdir(dir);
 
         // Prefix argv[0] with '-' to signal a login shell (POSIX convention).
         const char *base = strrchr(shell, '/');
