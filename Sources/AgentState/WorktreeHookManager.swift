@@ -86,15 +86,17 @@ enum WorktreeHookManager {
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
         hooks["PreToolUse"] = upsertKottyEntry(
             in: hooks["PreToolUse"] as? [[String: Any]] ?? [],
-            entry: ["matcher": ".*", "hooks": [["type": "command", "command": running]]]
+            entry: ["matcher": ".*", "hooks": [["type": "command", "command": quoted(running)]]]
         )
         // Stop is a session-level event; "matcher": "" is required even though it's unused.
         hooks["Stop"] = upsertKottyEntry(
             in: hooks["Stop"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": done]]]
+            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(done)]]]
         )
         return hooks
     }
+
+    private static func quoted(_ path: String) -> String { "\"\(path)\"" }
 
     private static func upsertKottyEntry(
         in existing: [[String: Any]],
