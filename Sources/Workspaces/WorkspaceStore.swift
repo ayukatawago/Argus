@@ -10,7 +10,7 @@ struct GitWorktree: Identifiable, Hashable {
     func hash(into hasher: inout Hasher) { hasher.combine(path) }
 }
 
-struct GitRepo: Identifiable {
+struct GitRepo: Identifiable, Equatable {
     var id: String { mainPath }
     let name: String
     let mainPath: String
@@ -20,39 +20,115 @@ struct GitRepo: Identifiable {
 @MainActor
 final class WorkspaceStore: ObservableObject {
     @Published var repos: [GitRepo] = []
+    @Published var hiddenWorktreeIDs: Set<String> = []
     private(set) var roots: [String] = []
+    private var excludedRepoPaths: Set<String> = []
     private var scanner: WorkspaceScanner?
 
     func load() {
-        roots = Self.loadRoots()
+        let config = Self.loadConfig()
+        roots = config.roots
+        hiddenWorktreeIDs = config.hiddenWorktreeIDs
+        excludedRepoPaths = config.excludedRepoPaths
+        startWatcher()
+        Task { await refresh() }
+    }
+
+    func addRoot(_ path: String) {
+        guard !roots.contains(path) else { return }
+        roots.append(path)
+        saveConfig()
+        startWatcher()
+        Task { await refresh() }
+    }
+
+    func removeRoot(_ path: String) {
+        roots.removeAll { $0 == path }
+        saveConfig()
+        startWatcher()
+        Task { await refresh() }
+    }
+
+    func removeRepo(mainPath: String) {
+        if roots.contains(mainPath) {
+            roots.removeAll { $0 == mainPath }
+            startWatcher()
+        } else {
+            excludedRepoPaths.insert(mainPath)
+        }
+        saveConfig()
+        Task { await refresh() }
+    }
+
+    func hideWorktree(id: String) {
+        hiddenWorktreeIDs.insert(id)
+        saveConfig()
+    }
+
+    func unhideWorktrees(repoID: String) {
+        guard let repo = repos.first(where: { $0.id == repoID }) else { return }
+        repo.worktrees.forEach { hiddenWorktreeIDs.remove($0.id) }
+        saveConfig()
+    }
+
+    func refresh() async {
+        let currentRoots = roots
+        let currentExcluded = excludedRepoPaths
+        let discovered = await Task.detached(priority: .userInitiated) {
+            currentRoots.flatMap { Self.findRepos(under: $0, excluding: currentExcluded) }
+        }.value
+        repos = discovered
+    }
+
+    private func startWatcher() {
         let watcher = WorkspaceScanner()
         watcher.onChange = { [weak self] in
             Task { @MainActor [weak self] in await self?.refresh() }
         }
         watcher.start(paths: roots)
         scanner = watcher
-        Task { await refresh() }
     }
 
-    func refresh() async {
-        let currentRoots = roots
-        let discovered = await Task.detached(priority: .userInitiated) {
-            currentRoots.flatMap { Self.findRepos(under: $0) }
-        }.value
-        repos = discovered
-    }
-
-    private nonisolated static func loadRoots() -> [String] {
+    private func saveConfig() {
         guard let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
-        ).first else { return defaultRoots() }
+        ).first else { return }
+        let dir = appSupport.appendingPathComponent("kotty")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        struct Config: Encodable {
+            let roots: [String]
+            let hiddenWorktreeIDs: [String]
+            let excludedRepoPaths: [String]
+        }
+        let data = try? JSONEncoder().encode(Config(
+            roots: roots,
+            hiddenWorktreeIDs: Array(hiddenWorktreeIDs),
+            excludedRepoPaths: Array(excludedRepoPaths)
+        ))
+        try? data?.write(to: dir.appendingPathComponent("workspaces.json"))
+    }
+
+    private nonisolated static func loadConfig()
+        -> (roots: [String], hiddenWorktreeIDs: Set<String>, excludedRepoPaths: Set<String>)
+    {
+        guard let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return (defaultRoots(), [], []) }
         let configURL = appSupport.appendingPathComponent("kotty/workspaces.json")
-        struct Config: Decodable { let roots: [String] }
+        struct Config: Decodable {
+            let roots: [String]
+            let hiddenWorktreeIDs: [String]?
+            let excludedRepoPaths: [String]?
+        }
         if let data = try? Data(contentsOf: configURL),
            let config = try? JSONDecoder().decode(Config.self, from: data) {
-            return config.roots
+            return (
+                config.roots,
+                Set(config.hiddenWorktreeIDs ?? []),
+                Set(config.excludedRepoPaths ?? [])
+            )
         }
-        return defaultRoots()
+        return (defaultRoots(), [], [])
     }
 
     private nonisolated static func defaultRoots() -> [String] {
@@ -65,11 +141,23 @@ final class WorkspaceStore: ObservableObject {
         return [home]
     }
 
-    private nonisolated static func findRepos(under root: String) -> [GitRepo] {
+    private nonisolated static func findRepos(under root: String, excluding: Set<String>) -> [GitRepo] {
         let files = FileManager.default
+
+        var isGitDir: ObjCBool = false
+        files.fileExists(atPath: root + "/.git", isDirectory: &isGitDir)
+        if isGitDir.boolValue {
+            guard !excluding.contains(root) else { return [] }
+            let worktrees = fetchWorktrees(repoPath: root)
+            guard !worktrees.isEmpty else { return [] }
+            let name = URL(fileURLWithPath: root).lastPathComponent
+            return [GitRepo(name: name, mainPath: root, worktrees: worktrees)]
+        }
+
         guard let entries = try? files.contentsOfDirectory(atPath: root) else { return [] }
         return entries.sorted().compactMap { name -> GitRepo? in
             let path = root + "/" + name
+            guard !excluding.contains(path) else { return nil }
             var isDir: ObjCBool = false
             files.fileExists(atPath: path + "/.git", isDirectory: &isDir)
             guard isDir.boolValue else { return nil }
