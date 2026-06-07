@@ -57,6 +57,7 @@ struct AppShellView: View {
                 let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
             else { return }
             pool.getOrCreate(id: id, workingDirectory: worktree.path)
+            agentBus.reset(for: id)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openLazygit)) { _ in
             guard let id = selectedWorktreeID,

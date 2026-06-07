@@ -23,6 +23,11 @@ final class AgentStateBus: ObservableObject {
         states[worktreePath] ?? .idle
     }
 
+    func reset(for worktreePath: String) {
+        cancelDoneTimer(for: worktreePath)
+        states[worktreePath] = .idle
+    }
+
     private func apply(_ payload: HookPayload) {
         let path = payload.worktreePath
         switch payload.state {
