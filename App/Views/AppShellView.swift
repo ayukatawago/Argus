@@ -2,7 +2,8 @@ import SwiftUI
 
 @MainActor
 private final class PanePool: ObservableObject {
-    let host = TerminalHost(frame: .zero)
+    let shellHost = TerminalHost(frame: .zero)
+    let agentHost = TerminalHost(frame: .zero)
     private var panes: [String: WorktreePane] = [:]
     @Published private(set) var activeIDs: Set<String> = []
 
@@ -10,21 +11,28 @@ private final class PanePool: ObservableObject {
         guard panes[id] == nil else { return }
         let pane = WorktreePane(workingDirectory: workingDirectory)
         panes[id] = pane
-        host.register(id: id, terminal: pane.terminalView)
+        shellHost.register(id: id, terminal: pane.shellView)
+        agentHost.register(id: id, terminal: pane.agentView)
         activeIDs.insert(id)
+    }
+
+    func activate(id: String?) {
+        shellHost.activate(id: id)
+        agentHost.activate(id: id)
     }
 }
 
 struct AppShellView: View {
     @StateObject private var store = WorkspaceStore()
     @StateObject private var pool = PanePool()
+    @StateObject private var lazygit = LazygitWindow()
     @State private var selectedWorktreeID: String?
 
     var body: some View {
         NavigationSplitView {
             SidebarView(store: store, selectedWorktreeID: $selectedWorktreeID, activeTerminalIDs: pool.activeIDs)
         } detail: {
-            WorktreeContentView(host: pool.host)
+            WorktreeContentView(shellHost: pool.shellHost, agentHost: pool.agentHost)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear {
@@ -36,11 +44,17 @@ struct AppShellView: View {
             selectedWorktreeID = first.id
         }
         .onChange(of: selectedWorktreeID) { _, newID in
-            pool.host.activate(id: newID)
+            pool.activate(id: newID)
             guard let id = newID,
                   let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
             else { return }
             pool.getOrCreate(id: id, workingDirectory: worktree.path)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openLazygit)) { _ in
+            guard let id = selectedWorktreeID,
+                  let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
+            else { return }
+            lazygit.open(workingDirectory: worktree.path)
         }
     }
 }
