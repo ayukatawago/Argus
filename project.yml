@@ -37,6 +37,9 @@ targets:
       - path: Sources/GhosttyBridge
         excludes:
           - "**/*.md"
+      - path: Sources/Workspaces
+        excludes:
+          - "**/*.md"
     dependencies:
       - package: libghostty-spm
         product: GhosttyTerminal
