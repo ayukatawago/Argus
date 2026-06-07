@@ -163,7 +163,7 @@ private struct AgentDot: View {
             .frame(width: 8, height: 8)
             .onAppear { startPulseIfNeeded() }
             .onChange(of: state) { _, newState in
-                pulse = false
+                withAnimation(.linear(duration: 0)) { pulse = false }
                 if newState == .running { startPulseIfNeeded() }
             }
     }
