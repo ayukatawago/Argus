@@ -29,6 +29,7 @@ struct AppShellView: View {
     @StateObject private var lazygit = LazygitWindow()
     @StateObject private var agentBus = AgentStateBus()
     @State private var selectedWorktreeID: String?
+    @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
 
     var body: some View {
         NavigationSplitView {
@@ -46,12 +47,16 @@ struct AppShellView: View {
             agentBus.start()
         }
         .onChange(of: store.repos) { _, newRepos in
-            guard selectedWorktreeID == nil,
-                let first = newRepos.first?.worktrees.first
-            else { return }
-            selectedWorktreeID = first.id
+            guard selectedWorktreeID == nil else { return }
+            let all = newRepos.flatMap(\.worktrees)
+            if !persistedWorktreeID.isEmpty, all.contains(where: { $0.id == persistedWorktreeID }) {
+                selectedWorktreeID = persistedWorktreeID
+            } else if let first = all.first {
+                selectedWorktreeID = first.id
+            }
         }
         .onChange(of: selectedWorktreeID) { _, newID in
+            if let newID { persistedWorktreeID = newID }
             pool.activate(id: newID)
             guard let id = newID,
                 let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
