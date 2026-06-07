@@ -38,5 +38,13 @@ struct KottyApp: App {
         }
         .defaultSize(width: 1200, height: 800)
         .windowStyle(.titleBar)
+        .commands {
+            CommandGroup(after: .windowArrangement) {
+                Button("Open lazygit") {
+                    NotificationCenter.default.post(name: .openLazygit, object: nil)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+            }
+        }
     }
 }
