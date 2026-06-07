@@ -195,8 +195,10 @@ private struct AgentStateBackground: View {
         ZStack {
             baseLayer
             if agentState == .done {
-                Rectangle()
+                RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(Color.green.opacity(0.55), lineWidth: 1.5)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
             }
         }
         .onAppear { startPulseIfNeeded() }
@@ -209,10 +211,16 @@ private struct AgentStateBackground: View {
     @ViewBuilder
     private var baseLayer: some View {
         if agentState == .running {
-            claudePeach.opacity(pulse ? 0.35 : 0.75)
+            RoundedRectangle(cornerRadius: 6)
+                .fill(claudePeach.opacity(pulse ? 0.35 : 0.75))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
         }
         else if isActive && !isSelected {
-            Color.accentColor.opacity(0.1)
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.accentColor.opacity(0.1))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
         }
         else {
             Color.clear
