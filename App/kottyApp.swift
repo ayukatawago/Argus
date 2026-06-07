@@ -62,25 +62,8 @@ struct KottyApp: App {
                     NotificationCenter.default.post(name: .openLazygit, object: nil)
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
-                Divider()
-                Button("Install Claude Code Hooks…") {
-                    KottyApp.installHooks()
-                }
             }
         }
     }
 
-    private static func installHooks() {
-        do {
-            try HookInstaller.install()
-            let alert = NSAlert()
-            alert.messageText = "Hooks installed"
-            alert.informativeText = "Claude Code hooks have been added to ~/.claude/settings.json."
-            alert.alertStyle = .informational
-            alert.runModal()
-        }
-        catch {
-            NSAlert(error: error).runModal()
-        }
-    }
 }

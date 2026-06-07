@@ -1,21 +1,28 @@
 import Foundation
 
-/// Writes hook scripts into App Support and patches ~/.claude/settings.json.
-/// Run once via the "Install Claude Code Hooks" menu item.
-enum HookInstaller {
+/// Writes hook scripts to App Support and wires them into a worktree's
+/// .claude/settings.local.json automatically when a pane is first opened.
+/// The file is gitignored by default, so no repo pollution.
+enum WorktreeHookManager {
     enum Failure: Error, LocalizedError {
         case noAppSupport
         var errorDescription: String? { "Cannot locate Application Support directory." }
     }
 
-    static func install() throws {
+    /// Idempotent: writes the shared hook scripts once and merges kotty's hook
+    /// entries into the worktree's .claude/settings.local.json.
+    static func install(worktreePath: String) throws {
         let hooksDir = try kottyHooksDir()
         let socketPath = HookIPC.socketPath
         let runningURL = hooksDir.appendingPathComponent("claude-running.sh")
         let doneURL = hooksDir.appendingPathComponent("claude-done.sh")
         try writeExecutable(at: runningURL, content: hookScript(state: "running", socketPath: socketPath))
         try writeExecutable(at: doneURL, content: hookScript(state: "done", socketPath: socketPath))
-        try patchClaudeSettings(running: runningURL.path, done: doneURL.path)
+        try patchLocalSettings(
+            worktreePath: worktreePath,
+            running: runningURL.path,
+            done: doneURL.path
+        )
     }
 
     private static func kottyHooksDir() throws -> URL {
@@ -49,17 +56,19 @@ enum HookInstaller {
         )
     }
 
-    // MARK: - ~/.claude/settings.json patching
+    // MARK: - .claude/settings.local.json
 
-    private static func patchClaudeSettings(running: String, done: String) throws {
-        let url = claudeSettingsURL()
-        var settings = loadSettings(at: url)
+    private static func patchLocalSettings(
+        worktreePath: String,
+        running: String,
+        done: String
+    ) throws {
+        let claudeDir = URL(fileURLWithPath: worktreePath).appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let settingsURL = claudeDir.appendingPathComponent("settings.local.json")
+        var settings = loadSettings(at: settingsURL)
         settings["hooks"] = mergedHooks(in: settings, running: running, done: done)
-        try saveSettings(settings, to: url)
-    }
-
-    private static func claudeSettingsURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json")
+        try saveSettings(settings, to: settingsURL)
     }
 
     private static func loadSettings(at url: URL) -> [String: Any] {
@@ -75,20 +84,19 @@ enum HookInstaller {
         done: String
     ) -> [String: Any] {
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
+        // PreToolUse fires on every tool call → signals Claude is actively working.
+        // matcher ".*" matches all tools.
         hooks["PreToolUse"] = [
             ["matcher": ".*", "hooks": [["type": "command", "command": running]]]
         ]
+        // Stop fires when Claude finishes a turn. No matcher for session-level events.
         hooks["Stop"] = [
-            ["matcher": ".*", "hooks": [["type": "command", "command": done]]]
+            ["hooks": [["type": "command", "command": done]]]
         ]
         return hooks
     }
 
     private static func saveSettings(_ settings: [String: Any], to url: URL) throws {
-        try FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
         let data = try JSONSerialization.data(
             withJSONObject: settings,
             options: [.prettyPrinted, .sortedKeys]

@@ -14,6 +14,7 @@ private final class PanePool: ObservableObject {
         shellHost.register(id: id, terminal: pane.shellView)
         agentHost.register(id: id, terminal: pane.agentView)
         activeIDs.insert(id)
+        try? WorktreeHookManager.install(worktreePath: workingDirectory)
     }
 
     func activate(id: String?) {
