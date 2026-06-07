@@ -34,4 +34,9 @@ final class TerminalController: ObservableObject {
     func start() {
         pty.start()
     }
+
+    func restart(workingDirectory: String) {
+        pty.stop()
+        pty.start(workingDirectory: workingDirectory)
+    }
 }
