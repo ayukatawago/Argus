@@ -19,11 +19,13 @@ final class LazygitWindow: NSObject, NSWindowDelegate, ObservableObject {
             return
         }
 
+        // Run lazygit via the user's login shell so Homebrew/nvm/etc. PATH entries are available.
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let state = TerminalViewState(
             terminalConfiguration: TerminalConfiguration {
                 $0.withFontSize(13)
                 $0.withCursorStyleBlink(true)
-                $0.withCustom("command", "lazygit")
+                $0.withCustom("command", "\(shell) -l -c lazygit")
             }
         )
         state.configuration = TerminalSurfaceOptions(backend: .exec, workingDirectory: workingDirectory)
@@ -36,7 +38,7 @@ final class LazygitWindow: NSObject, NSWindowDelegate, ObservableObject {
         termView.configuration = state.configuration
         termView.controller = state.controller
 
-        let screen = NSScreen.main ?? NSScreen.screens[0]
+        let screen = NSApp.keyWindow?.screen ?? NSApp.mainWindow?.screen ?? NSScreen.main ?? NSScreen.screens[0]
         let screenFrame = screen.visibleFrame
         let size = CGSize(width: screenFrame.width * 0.8, height: screenFrame.height * 0.8)
         let origin = NSPoint(x: screenFrame.midX - size.width / 2, y: screenFrame.midY - size.height / 2)

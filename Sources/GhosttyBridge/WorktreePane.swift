@@ -13,17 +13,20 @@ final class WorktreePane {
 
     init(workingDirectory: String) {
         let surfaceOptions = TerminalSurfaceOptions(backend: .exec, workingDirectory: workingDirectory)
+        // Run claude via the login shell so Homebrew/nvm/etc. PATH entries are available.
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let agentCommand = "\(shell) -l -c 'claude --continue || exec \(shell) -l'"
 
-        shellState = Self.makeState(workingDirectory: workingDirectory)
+        shellState = Self.makeState()
         shellState.configuration = surfaceOptions
         shellView = Self.makeView(state: shellState)
 
-        agentState = Self.makeState(workingDirectory: workingDirectory, command: "claude --continue")
+        agentState = Self.makeState(command: agentCommand)
         agentState.configuration = surfaceOptions
         agentView = Self.makeView(state: agentState)
     }
 
-    private static func makeState(workingDirectory: String, command: String? = nil) -> TerminalViewState {
+    private static func makeState(command: String? = nil) -> TerminalViewState {
         let state = TerminalViewState(
             terminalConfiguration: TerminalConfiguration {
                 $0.withFontSize(13)

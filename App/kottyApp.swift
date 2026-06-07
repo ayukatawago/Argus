@@ -2,6 +2,22 @@ import AppKit
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var keyEventMonitor: Any?
+
+    func applicationDidFinishLaunching(_: Notification) {
+        // Register ⌘⇧G via a local event monitor so it fires reliably even when
+        // the terminal surface has keyboard focus and might swallow menu key equivalents.
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let onlyCommandShift = event.modifierFlags
+                .intersection([.command, .shift, .option, .control]) == [.command, .shift]
+            guard onlyCommandShift, event.charactersIgnoringModifiers?.lowercased() == "g" else {
+                return event
+            }
+            NotificationCenter.default.post(name: .openLazygit, object: nil)
+            return nil
+        }
+    }
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Fires before state restoration — wipe any saved window state so crash-recovery
         // replays don't create extra surfaces on the next launch.
