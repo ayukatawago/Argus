@@ -9,9 +9,11 @@ import Foundation
 @MainActor
 final class HookIPC: @unchecked Sendable {
     nonisolated static var socketPath: String {
-        guard let support = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first else { return NSHomeDirectory() + "/.kotty-hook.sock" }
+        guard
+            let support = FileManager.default.urls(
+                for: .applicationSupportDirectory, in: .userDomainMask
+            ).first
+        else { return NSHomeDirectory() + "/.kotty-hook.sock" }
         return support.appendingPathComponent("kotty/hook.sock").path
     }
 
