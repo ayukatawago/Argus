@@ -4,12 +4,14 @@ import SwiftUI
 private final class PanePool: ObservableObject {
     let host = TerminalHost(frame: .zero)
     private var panes: [String: WorktreePane] = [:]
+    @Published private(set) var activeIDs: Set<String> = []
 
     func getOrCreate(id: String, workingDirectory: String) {
         guard panes[id] == nil else { return }
         let pane = WorktreePane(workingDirectory: workingDirectory)
         panes[id] = pane
         host.register(id: id, terminal: pane.terminalView)
+        activeIDs.insert(id)
     }
 }
 
@@ -20,7 +22,7 @@ struct AppShellView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(store: store, selectedWorktreeID: $selectedWorktreeID)
+            SidebarView(store: store, selectedWorktreeID: $selectedWorktreeID, activeTerminalIDs: pool.activeIDs)
         } detail: {
             WorktreeContentView(host: pool.host)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
