@@ -11,6 +11,7 @@ final class PTYProcess: @unchecked Sendable {
 
     func start(shell: String? = nil) {
         let shellPath = shell
+            ?? loginShell()
             ?? ProcessInfo.processInfo.environment["SHELL"]
             ?? "/bin/zsh"
 
@@ -44,6 +45,11 @@ final class PTYProcess: @unchecked Sendable {
     }
 
     deinit { stop() }
+
+    private func loginShell() -> String? {
+        guard let pw = getpwuid(getuid()) else { return nil }
+        return String(cString: pw.pointee.pw_shell)
+    }
 
     private func startReadLoop() {
         let fd = masterFD
