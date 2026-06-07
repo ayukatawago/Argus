@@ -40,6 +40,9 @@ targets:
       - path: Sources/Workspaces
         excludes:
           - "**/*.md"
+      - path: Sources/AgentState
+        excludes:
+          - "**/*.md"
     dependencies:
       - package: libghostty-spm
         product: GhosttyTerminal
