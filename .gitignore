@@ -35,6 +35,9 @@ Vendor/GhosttyKit.xcframework/
 kotty.xcodeproj/
 *.profraw
 
+# Claude Code
+.claude/settings.local.json
+
 # Editor
 .vscode/
 *.swp
