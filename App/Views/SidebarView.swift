@@ -4,6 +4,7 @@ import SwiftUI
 struct SidebarView: View {
     @ObservedObject var store: WorkspaceStore
     @Binding var selectedWorktreeID: String?
+    let activeTerminalIDs: Set<String>
 
     var body: some View {
         List(selection: $selectedWorktreeID) {
@@ -15,26 +16,28 @@ struct SidebarView: View {
                 ForEach(store.repos) { repo in
                     let hidden = repo.worktrees.filter { store.hiddenWorktreeIDs.contains($0.id) }
                     let visible = repo.worktrees.filter { !store.hiddenWorktreeIDs.contains($0.id) }
-                    Section {
-                        ForEach(visible) { worktree in
-                            WorktreeRow(worktree: worktree) {
-                                if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
-                                store.hideWorktree(id: worktree.id)
+                    RepoHeader(
+                        name: repo.name,
+                        hiddenCount: hidden.count,
+                        onRemove: {
+                            if repo.worktrees.map(\.id).contains(selectedWorktreeID ?? "") {
+                                selectedWorktreeID = nil
                             }
-                            .tag(worktree.id)
+                            store.removeRepo(mainPath: repo.mainPath)
+                        },
+                        onUnhide: { store.unhideWorktrees(repoID: repo.id) }
+                    )
+                    .selectionDisabled()
+                    ForEach(visible) { worktree in
+                        WorktreeRow(
+                            worktree: worktree,
+                            isActive: activeTerminalIDs.contains(worktree.id),
+                            isSelected: selectedWorktreeID == worktree.id
+                        ) {
+                            if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
+                            store.hideWorktree(id: worktree.id)
                         }
-                    } header: {
-                        RepoHeader(
-                            name: repo.name,
-                            hiddenCount: hidden.count,
-                            onRemove: {
-                                if repo.worktrees.map(\.id).contains(selectedWorktreeID ?? "") {
-                                    selectedWorktreeID = nil
-                                }
-                                store.removeRepo(mainPath: repo.mainPath)
-                            },
-                            onUnhide: { store.unhideWorktrees(repoID: repo.id) }
-                        )
+                        .tag(worktree.id)
                     }
                 }
             }
@@ -72,6 +75,7 @@ private struct RepoHeader: View {
     var body: some View {
         HStack(spacing: 4) {
             Text(name)
+                .font(.headline)
             Spacer()
             if hiddenCount > 0 {
                 Button(action: onUnhide) {
@@ -83,7 +87,7 @@ private struct RepoHeader: View {
             }
             Button(action: onRemove) {
                 Image(systemName: "minus.circle")
-                    .imageScale(.small)
+                    .imageScale(.medium)
             }
             .buttonStyle(.borderless)
             .help("Remove repository")
@@ -94,38 +98,46 @@ private struct RepoHeader: View {
 private struct WorktreeRow: View {
     let worktree: GitWorktree
     let sessionName: String?
+    let isActive: Bool
+    let isSelected: Bool
     let onHide: () -> Void
     @State private var isHovered = false
 
-    init(worktree: GitWorktree, sessionName: String? = nil, onHide: @escaping () -> Void) {
+    init(
+        worktree: GitWorktree,
+        sessionName: String? = nil,
+        isActive: Bool = false,
+        isSelected: Bool = false,
+        onHide: @escaping () -> Void
+    ) {
         self.worktree = worktree
         self.sessionName = sessionName
+        self.isActive = isActive
+        self.isSelected = isSelected
         self.onHide = onHide
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Circle()
                 .fill(Color.secondary.opacity(0.4))
                 .frame(width: 8, height: 8)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(URL(fileURLWithPath: worktree.path).lastPathComponent)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                if let branch = worktree.branch {
-                    Text(branch)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                if let name = sessionName {
-                    Text(name)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
+                Text(worktree.branch ?? " ")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .opacity(worktree.branch == nil ? 0 : 1)
+                Text(sessionName ?? " ")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .opacity(sessionName == nil ? 0 : 1)
             }
             Spacer()
             Button(action: onHide) {
@@ -136,6 +148,10 @@ private struct WorktreeRow: View {
             .buttonStyle(.borderless)
             .opacity(isHovered ? 1 : 0)
         }
+        .padding(.vertical, 4)
         .onHover { isHovered = $0 }
+        .listRowBackground(
+            isActive && !isSelected ? Color.accentColor.opacity(0.1) : Color.clear
+        )
     }
 }
