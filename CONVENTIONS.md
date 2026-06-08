@@ -14,14 +14,12 @@ Each folder under `Sources/` is a logical module. The rule:
 
 | Module | Allowed to import |
 | --- | --- |
-| `GhosttyBridge` | `GhosttyKit` (the C library) + Foundation |
-| `Panes` | `GhosttyBridge` + Foundation |
-| `Workspaces` | Foundation only |
-| `AgentState` | Foundation only |
-| `Canvas` | `GhosttyBridge`, `Panes` |
+| `AgentState` | Foundation, Darwin |
+| `Workspaces` | Foundation, CoreServices |
+| `GhosttyBridge` | AppKit, GhosttyTerminal (the C library), Foundation, Darwin |
 | App target (`App/`) | All of the above + SwiftUI + AppKit |
 
-**Only `GhosttyBridge` imports `GhosttyKit`.** All other modules interact with the terminal engine through `GhosttyBridge` types.
+**Only `GhosttyBridge` imports `GhosttyTerminal`.** All other modules interact with the terminal engine through `GhosttyBridge` types.
 
 ## Concurrency
 
@@ -38,6 +36,17 @@ Each folder under `Sources/` is a logical module. The rule:
 ## No force-unwrap or force-cast
 
 SwiftLint enforces `force_unwrapping` and `force_cast` as errors. There are no exceptions.
+
+## SwiftLint limits
+
+| Rule | Warning | Error |
+| --- | --- | --- |
+| Line length | 120 | 160 |
+| File length | 400 lines | 600 lines |
+| Type body length | 300 lines | 400 lines |
+| Function body length | 50 lines | 80 lines |
+
+Lint errors block the build. Warnings do not.
 
 ## Comments
 
