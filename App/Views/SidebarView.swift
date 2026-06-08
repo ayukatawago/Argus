@@ -9,50 +9,61 @@ struct SidebarView: View {
     let onRelease: (String) -> Void
 
     var body: some View {
-        List(selection: $selectedWorktreeID) {
-            if store.repos.isEmpty {
-                Text("No git repos found")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-            else {
-                ForEach(store.repos) { repo in
-                    let hidden = repo.worktrees.filter { store.hiddenWorktreeIDs.contains($0.id) }
-                    let visible = repo.worktrees.filter { !store.hiddenWorktreeIDs.contains($0.id) }
-                    RepoHeader(
-                        name: repo.name,
-                        hiddenCount: hidden.count,
-                        onAddWorktree: { addWorktree(for: repo) },
-                        onRemove: {
-                            if repo.worktrees.map(\.id).contains(selectedWorktreeID ?? "") {
-                                selectedWorktreeID = nil
-                            }
-                            store.removeRepo(mainPath: repo.mainPath)
-                        },
-                        onUnhide: { store.unhideWorktrees(repoID: repo.id) }
-                    )
-                    .selectionDisabled()
-                    ForEach(visible) { worktree in
-                        let isActive = activeTerminalIDs.contains(worktree.id)
-                        WorktreeRow(
-                            worktree: worktree,
-                            isActive: isActive,
-                            isSelected: selectedWorktreeID == worktree.id,
-                            agentState: agentBus.state(for: worktree.id),
-                            onRelease: isActive ? { onRelease(worktree.id) } : nil,
-                            onDelete: worktree.isMain ? nil : { deleteWorktree(worktree, in: repo) },
-                            onHide: {
-                                if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
-                                store.hideWorktree(id: worktree.id)
-                            }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if store.repos.isEmpty {
+                    Text("No git repos found")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                        .padding()
+                }
+                else {
+                    ForEach(store.repos) { repo in
+                        let hidden = repo.worktrees.filter { store.hiddenWorktreeIDs.contains($0.id) }
+                        let visible = repo.worktrees.filter { !store.hiddenWorktreeIDs.contains($0.id) }
+                        RepoHeader(
+                            name: repo.name,
+                            hiddenCount: hidden.count,
+                            onAddWorktree: { addWorktree(for: repo) },
+                            onRemove: {
+                                if repo.worktrees.map(\.id).contains(selectedWorktreeID ?? "") {
+                                    selectedWorktreeID = nil
+                                }
+                                store.removeRepo(mainPath: repo.mainPath)
+                            },
+                            onUnhide: { store.unhideWorktrees(repoID: repo.id) }
                         )
-                        .tag(worktree.id)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 2)
+                        ForEach(visible) { worktree in
+                            let isActive = activeTerminalIDs.contains(worktree.id)
+                            WorktreeRow(
+                                worktree: worktree,
+                                isActive: isActive,
+                                isSelected: selectedWorktreeID == worktree.id,
+                                agentState: agentBus.state(for: worktree.id),
+                                onRelease: isActive ? { onRelease(worktree.id) } : nil,
+                                onDelete: worktree.isMain ? nil : { deleteWorktree(worktree, in: repo) },
+                                onHide: {
+                                    if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
+                                    store.hideWorktree(id: worktree.id)
+                                }
+                            )
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 1)
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectedWorktreeID = worktree.id }
+                        }
                     }
                 }
             }
+            .padding(.bottom, 4)
         }
-        .listStyle(.sidebar)
         .frame(minWidth: 200)
+        .focusable()
+        .onKeyPress(.upArrow) { navigateSelection(forward: false); return .handled }
+        .onKeyPress(.downArrow) { navigateSelection(forward: true); return .handled }
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Button(action: pickFolder) {
@@ -61,6 +72,16 @@ struct SidebarView: View {
                 .help("Add repository or workspace folder")
             }
         }
+    }
+
+    private func navigateSelection(forward: Bool) {
+        let all = store.repos.flatMap(\.worktrees).filter { !store.hiddenWorktreeIDs.contains($0.id) }
+        guard !all.isEmpty else { return }
+        guard let current = selectedWorktreeID,
+              let idx = all.firstIndex(where: { $0.id == current })
+        else { selectedWorktreeID = all.first?.id; return }
+        let next = forward ? (idx + 1) % all.count : (idx - 1 + all.count) % all.count
+        selectedWorktreeID = all[next].id
     }
 
     private func deleteWorktree(_ worktree: GitWorktree, in repo: GitRepo) {
@@ -278,11 +299,13 @@ private struct WorktreeRow: View {
             .help("Hide worktree")
             .opacity(isHovered ? 1 : 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .onHover { isHovered = $0 }
-        .listRowBackground(
+        .background(
             AgentStateBackground(agentState: agentState, isActive: isActive, isSelected: isSelected)
         )
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -332,8 +355,6 @@ private struct AgentStateBackground: View {
             if agentState == .done {
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(Color.green.opacity(0.55), lineWidth: 1.5)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
             }
         }
         .onAppear { startPulseIfNeeded() }
@@ -348,14 +369,14 @@ private struct AgentStateBackground: View {
         if agentState == .running {
             RoundedRectangle(cornerRadius: 6)
                 .fill(claudePeach.opacity(pulse ? 0.35 : 0.75))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
         }
-        else if isActive && !isSelected {
+        else if isSelected {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.accentColor.opacity(0.75))
+        }
+        else if isActive {
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color.accentColor.opacity(0.1))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
         }
         else {
             Color.clear
