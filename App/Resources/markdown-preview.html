@@ -18,19 +18,6 @@ body {
   color: #1c1c1e;
 }
 
-@media (prefers-color-scheme: dark) {
-  body { background: #1c1c1e; color: #d4d4d4; }
-  code { background: #2c2c2e; }
-  pre { background: #2c2c2e; border-color: #3a3a3c; }
-  table th { background: #2c2c2e; }
-  table tr:nth-child(even) { background: #242426; }
-  blockquote { border-left-color: #3a3a3c; color: #8e8e93; }
-  a { color: #4da3ff; }
-  hr { border-top-color: #3a3a3c; }
-  h1, h2 { border-bottom-color: #3a3a3c; }
-  th, td { border-color: #3a3a3c; }
-}
-
 h1, h2, h3, h4, h5, h6 {
   font-weight: 600;
   line-height: 1.3;
@@ -49,6 +36,7 @@ code {
   font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace;
   font-size: 0.875em;
   background: #f2f2f7;
+  color: #1c1c1e;
   padding: 2px 5px;
   border-radius: 4px;
 }
@@ -61,7 +49,7 @@ pre {
   overflow-x: auto;
   margin: 0 0 16px;
 }
-pre code { background: none; padding: 0; border-radius: 0; font-size: 13px; }
+pre code { background: none; color: inherit; padding: 0; border-radius: 0; font-size: 13px; }
 
 table { border-collapse: collapse; width: 100%; margin: 16px 0; }
 th, td { border: 1px solid #d1d1d6; padding: 8px 12px; text-align: left; vertical-align: top; }
@@ -69,10 +57,10 @@ th { background: #f2f2f7; font-weight: 600; }
 tr:nth-child(even) { background: #f9f9fb; }
 
 blockquote {
-  border-left: 3px solid #d1d1d6;
+  border-left: 3px solid #c7c7cc;
   margin: 0 0 14px;
   padding: 2px 16px;
-  color: #6c6c70;
+  color: #3a3a3c;
 }
 
 hr { border: none; border-top: 1px solid #e5e5ea; margin: 24px 0; }
@@ -82,6 +70,21 @@ li { margin-bottom: 4px; }
 li > ul, li > ol { margin-top: 4px; margin-bottom: 0; }
 
 img { max-width: 100%; height: auto; }
+
+/* Dark mode — must be last so it overrides the base styles above */
+@media (prefers-color-scheme: dark) {
+  body { background: #1c1c1e; color: #f0f0f0; }
+  h1, h2 { border-bottom-color: #3a3a3c; }
+  a { color: #4da3ff; }
+  code { background: #3a3a3c; color: #f0f0f0; }
+  pre { background: #2a2a2c; border-color: #4a4a4c; }
+  pre code { background: none; color: #f0f0f0; }
+  th, td { border-color: #4a4a4c; }
+  th { background: #2c2c2e; }
+  tr:nth-child(even) { background: #242426; }
+  blockquote { border-left-color: #48484a; color: #b0b0b8; }
+  hr { border-top-color: #3a3a3c; }
+}
 </style>
 </head>
 <body>
