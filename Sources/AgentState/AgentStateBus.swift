@@ -29,8 +29,13 @@ final class AgentStateBus: ObservableObject {
         switch payload.state {
         case "running":
             states[path] = .running
+
+        case "waitingForApproval":
+            states[path] = .waitingForApproval
+
         case "done":
             states[path] = .done
+
         default:
             states[path] = .idle
         }

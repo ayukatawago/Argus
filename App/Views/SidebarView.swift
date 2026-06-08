@@ -368,6 +368,7 @@ private struct AgentDot: View {
         switch state {
         case .idle: Color.secondary.opacity(0.4)
         case .running: claudePeach
+        case .waitingForApproval: Color(nsColor: .systemOrange)
         case .done: Color.green.opacity(0.8)
         }
     }
@@ -393,6 +394,9 @@ private struct AgentStateBackground: View {
             if agentState == .done {
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(Color.green.opacity(0.55), lineWidth: 1.5)
+            } else if agentState == .waitingForApproval {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color(nsColor: .systemOrange).opacity(0.7), lineWidth: 2)
             }
         }
         .onAppear { startPulseIfNeeded() }
