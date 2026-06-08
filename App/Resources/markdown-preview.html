@@ -185,6 +185,13 @@
     <script>
       var markdownContent = {{MARKDOWN_JSON}};
       document.getElementById("content").innerHTML = marked.parse(markdownContent);
+      document.addEventListener("click", function (e) {
+        var a = e.target.closest("a");
+        if (a && a.href) {
+          e.preventDefault();
+          window.webkit.messageHandlers.linkClicked.postMessage(a.href);
+        }
+      });
     </script>
   </body>
 </html>
