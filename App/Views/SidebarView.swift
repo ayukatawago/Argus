@@ -7,6 +7,7 @@ struct SidebarView: View {
     let activeTerminalIDs: Set<String>
     @ObservedObject var agentBus: AgentStateBus
     let onRelease: (String) -> Void
+    @State private var dropTargetRepoID: String?
 
     var body: some View {
         ScrollView {
@@ -19,42 +20,7 @@ struct SidebarView: View {
                 }
                 else {
                     ForEach(store.repos) { repo in
-                        let hidden = repo.worktrees.filter { store.hiddenWorktreeIDs.contains($0.id) }
-                        let visible = repo.worktrees.filter { !store.hiddenWorktreeIDs.contains($0.id) }
-                        RepoHeader(
-                            name: repo.name,
-                            hiddenCount: hidden.count,
-                            onAddWorktree: { addWorktree(for: repo) },
-                            onRemove: {
-                                if repo.worktrees.map(\.id).contains(selectedWorktreeID ?? "") {
-                                    selectedWorktreeID = nil
-                                }
-                                store.removeRepo(mainPath: repo.mainPath)
-                            },
-                            onUnhide: { store.unhideWorktrees(repoID: repo.id) }
-                        )
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                        .padding(.bottom, 2)
-                        ForEach(visible) { worktree in
-                            let isActive = activeTerminalIDs.contains(worktree.id)
-                            WorktreeRow(
-                                worktree: worktree,
-                                isActive: isActive,
-                                isSelected: selectedWorktreeID == worktree.id,
-                                agentState: agentBus.state(for: worktree.id),
-                                onRelease: isActive ? { onRelease(worktree.id) } : nil,
-                                onDelete: worktree.isMain ? nil : { deleteWorktree(worktree, in: repo) },
-                                onHide: {
-                                    if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
-                                    store.hideWorktree(id: worktree.id)
-                                }
-                            )
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 1)
-                            .contentShape(Rectangle())
-                            .onTapGesture { selectedWorktreeID = worktree.id }
-                        }
+                        repoSection(for: repo, isDropTarget: dropTargetRepoID == repo.id)
                     }
                 }
             }
@@ -70,6 +36,78 @@ struct SidebarView: View {
                     Image(systemName: "plus")
                 }
                 .help("Add repository or workspace folder")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func repoSection(for repo: GitRepo, isDropTarget: Bool) -> some View {
+        let hidden = repo.worktrees.filter { store.hiddenWorktreeIDs.contains($0.id) }
+        let visible = repo.worktrees.filter { !store.hiddenWorktreeIDs.contains($0.id) }
+        VStack(alignment: .leading, spacing: 0) {
+            RepoHeader(
+                name: repo.name,
+                hiddenCount: hidden.count,
+                onAddWorktree: { addWorktree(for: repo) },
+                onRemove: {
+                    if repo.worktrees.map(\.id).contains(selectedWorktreeID ?? "") {
+                        selectedWorktreeID = nil
+                    }
+                    store.removeRepo(mainPath: repo.mainPath)
+                },
+                onUnhide: { store.unhideWorktrees(repoID: repo.id) }
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 2)
+            .contentShape(Rectangle())
+            .draggable(repo.id) {
+                Text(repo.name)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.regularMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            ForEach(visible) { worktree in
+                let isActive = activeTerminalIDs.contains(worktree.id)
+                WorktreeRow(
+                    worktree: worktree,
+                    isActive: isActive,
+                    isSelected: selectedWorktreeID == worktree.id,
+                    agentState: agentBus.state(for: worktree.id),
+                    onRelease: isActive ? { onRelease(worktree.id) } : nil,
+                    onDelete: worktree.isMain ? nil : { deleteWorktree(worktree, in: repo) },
+                    onHide: {
+                        if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
+                        store.hideWorktree(id: worktree.id)
+                    }
+                )
+                .padding(.horizontal, 8)
+                .padding(.vertical, 1)
+                .contentShape(Rectangle())
+                .onTapGesture { selectedWorktreeID = worktree.id }
+            }
+        }
+        .dropDestination(for: String.self) { items, _ in
+            guard let draggedID = items.first,
+                  draggedID != repo.id,
+                  let fromIdx = store.repos.firstIndex(where: { $0.id == draggedID }),
+                  let toIdx = store.repos.firstIndex(where: { $0.id == repo.id })
+            else { return false }
+            store.moveRepo(fromIndex: fromIdx, toIndex: toIdx)
+            return true
+        } isTargeted: { nowTargeted in
+            if nowTargeted {
+                dropTargetRepoID = repo.id
+            } else if dropTargetRepoID == repo.id {
+                dropTargetRepoID = nil
+            }
+        }
+        .overlay(alignment: .top) {
+            if isDropTarget {
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(height: 2)
             }
         }
     }
