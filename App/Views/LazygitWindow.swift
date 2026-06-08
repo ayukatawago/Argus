@@ -8,6 +8,7 @@ extension Notification.Name {
     static let selectNextWorktree = Notification.Name("kotty.selectNextWorktree")
     static let selectPreviousWorktree = Notification.Name("kotty.selectPreviousWorktree")
     static let refreshWorkspace = Notification.Name("kotty.refreshWorkspace")
+    static let workspaceInteracted = Notification.Name("kotty.workspaceInteracted")
 }
 
 /// Manages a floating NSWindow running lazygit in the active worktree directory.

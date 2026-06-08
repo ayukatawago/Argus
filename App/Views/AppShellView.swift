@@ -85,9 +85,14 @@ struct AppShellView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusShellPane)) { _ in
             pool.shellHost.focusActiveTerminal()
+            dismissDoneIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusAgentPane)) { _ in
             pool.agentHost.focusActiveTerminal()
+            dismissDoneIfNeeded()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .workspaceInteracted)) { _ in
+            dismissDoneIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .selectNextWorktree)) { _ in
             navigateWorktrees(forward: true)
@@ -124,15 +129,20 @@ struct AppShellView: View {
     private var terminalDetail: some View {
         WorktreeContentView(shellHost: pool.shellHost, agentHost: pool.agentHost)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(currentAgentState == .done ? Color(nsColor: .systemBlue).opacity(0.05) : Color.clear)
             .overlay(terminalBorder)
-            .animation(.easeInOut(duration: 0.35), value: currentAgentState)
     }
 
     @ViewBuilder
     private var terminalBorder: some View {
         if currentAgentState == .done {
             Rectangle()
-                .strokeBorder(Color.green.opacity(0.5), lineWidth: 2)
+                .strokeBorder(Color(nsColor: .systemBlue).opacity(0.5), lineWidth: 2)
         }
+    }
+
+    private func dismissDoneIfNeeded() {
+        guard let id = selectedWorktreeID, agentBus.state(for: id) == .done else { return }
+        agentBus.reset(for: id)
     }
 }

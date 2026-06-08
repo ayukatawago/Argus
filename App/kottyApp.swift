@@ -3,6 +3,7 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var keyEventMonitor: Any?
+    private var mouseEventMonitor: Any?
     private var awaitingLeader = false
     private var leaderTimer: Timer?
 
@@ -50,6 +51,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return nil
             }
 
+            NotificationCenter.default.post(name: .workspaceInteracted, object: nil)
+            return event
+        }
+
+        mouseEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            NotificationCenter.default.post(name: .workspaceInteracted, object: nil)
             return event
         }
     }
