@@ -1,16 +1,21 @@
 # kotty
 
-A native macOS terminal for running AI agents in parallel across git worktrees.
+A native macOS app for running AI agents in parallel across git worktrees.
 
 Built with Swift + SwiftUI/AppKit, powered by [libghostty](https://github.com/ghostty-org/ghostty).
 
-## Features (planned)
+## Features
 
-- Sidebar with workspaces (git repos) and their worktrees
-- Visual agent status — idle / running / done — for Claude Code, Codex, and other CLI agents
-- Multiple terminal tabs per workspace
-- Split panes within a tab (horizontal and vertical)
-- Canvas overlay (`⌘⇧Space`) — see all live terminals at a glance
+- Sidebar listing git repos and their worktrees
+- Split layout: Claude Code pane (left) + shell terminal (right) per worktree
+- Visual agent status — idle / running / waitingForApproval / done — driven by Claude Code hooks
+- Sidebar dot and border color change to reflect agent state at a glance
+- Lazygit popup (`⌘G`) per worktree
+- Leader key shortcuts (`Ctrl+B` prefix): `j`/`k` to cycle worktrees, `n`/`d` to create/delete
+- Drag-and-drop reordering of repos in the sidebar
+- Create and force-delete worktrees directly from the sidebar
+- Per-worktree terminal sessions with release button to free resources
+- Restores the last selected worktree on relaunch
 
 ## Requirements
 
@@ -50,7 +55,7 @@ See [CONVENTIONS.md](CONVENTIONS.md) for coding standards.
 
 ## Architecture
 
-See the [implementation plan](https://github.com/takkyuuplayer/kotty) for the full milestone breakdown and design decisions.
+See [CLAUDE.md](CLAUDE.md) for module layout, the hook IPC system, and build notes.
 
 ## License
 
