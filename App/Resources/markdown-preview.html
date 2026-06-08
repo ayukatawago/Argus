@@ -9,16 +9,88 @@
         color-scheme: light dark;
       }
 
+      html,
       body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      body {
+        display: flex;
         font-family:
           -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
         font-size: 15px;
-        line-height: 1.65;
-        max-width: 1600px;
-        margin: 0 auto;
-        padding: 32px 40px 80px;
         background: #ffffff;
         color: #1c1c1e;
+      }
+
+      /* ── Sidebar ─────────────────────────────────────────── */
+      #sidebar {
+        width: 220px;
+        min-width: 140px;
+        overflow-y: auto;
+        border-right: 1px solid #e5e5ea;
+        background: #f7f7f7;
+        padding: 8px 0 24px;
+        font-size: 13px;
+        flex-shrink: 0;
+        user-select: none;
+      }
+
+      details.tree-dir > summary {
+        list-style: none;
+        cursor: default;
+        padding: 5px 10px 3px;
+        font-weight: 600;
+        color: #6c6c70;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      details.tree-dir > summary::-webkit-details-marker {
+        display: none;
+      }
+      details.tree-dir > summary::before {
+        content: "▸ ";
+      }
+      details.tree-dir[open] > summary::before {
+        content: "▾ ";
+      }
+
+      .tree-children {
+        padding-left: 10px;
+      }
+
+      a.tree-file {
+        display: block;
+        padding: 4px 10px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #1c1c1e;
+        text-decoration: none;
+        border-radius: 5px;
+        margin: 1px 4px;
+      }
+      a.tree-file:hover {
+        background: #e8e8e8;
+        text-decoration: none;
+      }
+      a.tree-file.active {
+        background: #0066cc;
+        color: #ffffff;
+      }
+      a.tree-file.active:hover {
+        background: #0055bb;
+      }
+
+      /* ── Main content ────────────────────────────────────── */
+      #main {
+        flex: 1;
+        overflow-y: auto;
+        padding: 32px 40px 80px;
+        line-height: 1.65;
       }
 
       h1,
@@ -141,6 +213,25 @@
           background: #1c1c1e;
           color: #f0f0f0;
         }
+        #sidebar {
+          background: #161618;
+          border-right-color: #2c2c2e;
+        }
+        details.tree-dir > summary {
+          color: #8e8e93;
+        }
+        a.tree-file {
+          color: #f0f0f0;
+        }
+        a.tree-file:hover {
+          background: #2c2c2e;
+        }
+        a.tree-file.active {
+          background: #1a56c4;
+        }
+        a.tree-file.active:hover {
+          background: #1648a8;
+        }
         h1,
         h2 {
           border-bottom-color: #3a3a3c;
@@ -181,10 +272,42 @@
     </style>
   </head>
   <body>
-    <div id="content"></div>
+    <div id="sidebar"></div>
+    <div id="main">
+      <div id="content"></div>
+    </div>
     <script>
-      var markdownContent = {{MARKDOWN_JSON}};
-      document.getElementById("content").innerHTML = marked.parse(markdownContent);
+      var MARKDOWN_CONTENT = {{MARKDOWN_JSON}};
+      var FILE_TREE = {{FILE_TREE_JSON}};
+      var CURRENT_FILE_PATH = {{CURRENT_FILE_JSON}};
+
+      document.getElementById("content").innerHTML = marked.parse(MARKDOWN_CONTENT);
+
+      function escHtml(s) {
+        return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      }
+
+      function buildTree(items) {
+        var html = "";
+        for (var i = 0; i < items.length; i++) {
+          var item = items[i];
+          if (item.type === "dir" && item.children && item.children.length > 0) {
+            html += '<details class="tree-dir" open>';
+            html += "<summary>" + escHtml(item.name) + "</summary>";
+            html += '<div class="tree-children">' + buildTree(item.children) + "</div>";
+            html += "</details>";
+          } else if (item.type === "file" && item.path) {
+            var active = item.path === CURRENT_FILE_PATH ? " active" : "";
+            var href = encodeURI("file://" + item.path);
+            html +=
+              '<a class="tree-file' + active + '" href="' + href + '">' + escHtml(item.name) + "</a>";
+          }
+        }
+        return html;
+      }
+
+      document.getElementById("sidebar").innerHTML = buildTree(FILE_TREE);
+
       document.addEventListener("click", function (e) {
         var a = e.target.closest("a");
         if (a && a.href) {
