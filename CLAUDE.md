@@ -82,4 +82,6 @@ Scripts live in `~/Library/Application Support/kotty/hooks/` and are written onc
 
 See [CONVENTIONS.md](CONVENTIONS.md) for Swift style, concurrency, and error handling rules.
 
+See [UI.md](UI.md) for how the view hierarchy maps to source files.
+
 Commit format: `type: brief description` (Conventional Commits, lowercase imperative, ≤ 72 chars). See `.claude/skills/commit/`.
