@@ -94,17 +94,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var flags: NSEvent.ModifierFlags = []
         for part in parts.dropLast() {
             switch part {
-            case "ctrl":                       flags.insert(.control)
-            case "cmd", "command":             flags.insert(.command)
-            case "opt", "option", "alt":       flags.insert(.option)
-            case "shift":                      flags.insert(.shift)
-            default:                           break
+            case "ctrl": flags.insert(.control)
+            case "cmd", "command": flags.insert(.command)
+            case "opt", "option", "alt": flags.insert(.option)
+            case "shift": flags.insert(.shift)
+            default: break
             }
         }
         return (flags, char)
     }
 
-    // swiftlint:disable:next function_parameter_count
     private static func notificationMap(from bindings: KottyConfig.KeyBindings) -> [String: Notification.Name] {
         [
             bindings.focusShellPane: .focusShellPane,

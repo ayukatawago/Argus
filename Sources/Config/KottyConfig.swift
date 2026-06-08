@@ -7,14 +7,14 @@ struct KottyConfig: Codable, Equatable {
     var keyBindings = KeyBindings()
 
     struct KeyBindings: Codable, Equatable {
-        var focusShellPane: String         = "h"
-        var focusAgentPane: String         = "l"
-        var selectNextWorktree: String     = "j"
+        var focusShellPane: String = "h"
+        var focusAgentPane: String = "l"
+        var selectNextWorktree: String = "j"
         var selectPreviousWorktree: String = "k"
-        var openLazygit: String            = "g"
-        var refreshWorkspace: String       = "r"
-        var openMarkdownPreview: String    = "m"
-        var openSettings: String           = ","
+        var openLazygit: String = "g"
+        var refreshWorkspace: String = "r"
+        var openMarkdownPreview: String = "m"
+        var openSettings: String = ","
     }
 }
 
