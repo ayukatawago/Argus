@@ -22,6 +22,7 @@ struct SidebarView: View {
                     RepoHeader(
                         name: repo.name,
                         hiddenCount: hidden.count,
+                        onAddWorktree: { addWorktree(for: repo) },
                         onRemove: {
                             if repo.worktrees.map(\.id).contains(selectedWorktreeID ?? "") {
                                 selectedWorktreeID = nil
@@ -61,6 +62,50 @@ struct SidebarView: View {
         }
     }
 
+    private func addWorktree(for repo: GitRepo) {
+        let alert = NSAlert()
+        alert.messageText = "New Worktree"
+        alert.informativeText = "Enter a branch name for the new worktree."
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        textField.placeholderString = "feature-branch"
+        alert.accessoryView = textField
+        alert.layout()
+        alert.window.initialFirstResponder = textField
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let branch = textField.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !branch.isEmpty else { return }
+
+        let safeName = branch.replacingOccurrences(of: "/", with: "-")
+        let parent = URL(fileURLWithPath: repo.mainPath).deletingLastPathComponent().path
+        let newPath = (parent as NSString).appendingPathComponent(safeName)
+
+        Task {
+            let exitCode = await Task.detached(priority: .userInitiated) {
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+                proc.arguments = ["-C", repo.mainPath, "worktree", "add", newPath, "-b", branch]
+                proc.standardOutput = Pipe()
+                proc.standardError = Pipe()
+                guard (try? proc.run()) != nil else { return Int32(-1) }
+                proc.waitUntilExit()
+                return proc.terminationStatus
+            }.value
+
+            if exitCode != 0 {
+                let errAlert = NSAlert()
+                errAlert.messageText = "Could not create worktree"
+                errAlert.informativeText = "Make sure the branch '\(branch)' does not already exist."
+                errAlert.alertStyle = .warning
+                errAlert.runModal()
+            }
+            await store.refresh()
+        }
+    }
+
     private func pickFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -76,6 +121,7 @@ struct SidebarView: View {
 private struct RepoHeader: View {
     let name: String
     let hiddenCount: Int
+    let onAddWorktree: () -> Void
     let onRemove: () -> Void
     let onUnhide: () -> Void
 
@@ -92,6 +138,12 @@ private struct RepoHeader: View {
                 .buttonStyle(.borderless)
                 .help("Unhide \(hiddenCount) worktree\(hiddenCount == 1 ? "" : "s")")
             }
+            Button(action: onAddWorktree) {
+                Image(systemName: "plus.circle")
+                    .imageScale(.medium)
+            }
+            .buttonStyle(.borderless)
+            .help("Add worktree")
             Button(action: onRemove) {
                 Image(systemName: "minus.circle")
                     .imageScale(.medium)
