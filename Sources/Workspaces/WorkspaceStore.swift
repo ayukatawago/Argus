@@ -23,13 +23,15 @@ final class WorkspaceStore: ObservableObject {
     @Published var hiddenWorktreeIDs: Set<String> = []
     private(set) var roots: [String] = []
     private var excludedRepoPaths: Set<String> = []
+    private var repoOrder: [String] = []
     private var scanner: WorkspaceScanner?
 
     func load() {
-        let config = Self.loadConfig()
-        roots = config.roots
-        hiddenWorktreeIDs = config.hiddenWorktreeIDs
-        excludedRepoPaths = config.excludedRepoPaths
+        let stored = Self.loadConfig()
+        roots = stored.roots
+        hiddenWorktreeIDs = stored.hiddenWorktreeIDs
+        excludedRepoPaths = stored.excludedRepoPaths
+        repoOrder = stored.repoOrder
         startWatcher()
         Task { await refresh() }
     }
@@ -71,13 +73,34 @@ final class WorkspaceStore: ObservableObject {
         saveConfig()
     }
 
+    func moveRepo(fromIndex: Int, toIndex: Int) {
+        guard fromIndex != toIndex, repos.indices.contains(fromIndex), repos.indices.contains(toIndex) else { return }
+        let snapshot = repos
+        var order = snapshot.map(\.mainPath)
+        let item = order.remove(at: fromIndex)
+        let insertAt = fromIndex < toIndex ? toIndex - 1 : toIndex
+        order.insert(item, at: insertAt)
+        repoOrder = order
+        repos = order.compactMap { path in snapshot.first(where: { $0.mainPath == path }) }
+        saveConfig()
+    }
+
     func refresh() async {
         let currentRoots = roots
         let currentExcluded = excludedRepoPaths
         let discovered = await Task.detached(priority: .userInitiated) {
             currentRoots.flatMap { Self.findRepos(under: $0, excluding: currentExcluded) }
         }.value
-        repos = discovered
+        repos = applyOrder(discovered)
+    }
+
+    private func applyOrder(_ discovered: [GitRepo]) -> [GitRepo] {
+        guard !repoOrder.isEmpty else { return discovered }
+        let byPath = discovered.reduce(into: [String: GitRepo]()) { $0[$1.mainPath] = $1 }
+        let ordered = repoOrder.compactMap { byPath[$0] }
+        let known = Set(repoOrder)
+        let appended = discovered.filter { !known.contains($0.mainPath) }
+        return ordered + appended
     }
 
     private func startWatcher() {
@@ -99,36 +122,45 @@ final class WorkspaceStore: ObservableObject {
             let roots: [String]
             let hiddenWorktreeIDs: [String]
             let excludedRepoPaths: [String]
+            let repoOrder: [String]
         }
         let data = try? JSONEncoder().encode(Config(
             roots: roots,
             hiddenWorktreeIDs: Array(hiddenWorktreeIDs),
-            excludedRepoPaths: Array(excludedRepoPaths)
+            excludedRepoPaths: Array(excludedRepoPaths),
+            repoOrder: repoOrder
         ))
         try? data?.write(to: dir.appendingPathComponent("workspaces.json"))
     }
 
-    private nonisolated static func loadConfig()
-        -> (roots: [String], hiddenWorktreeIDs: Set<String>, excludedRepoPaths: Set<String>)
-    {
+    private struct StoredConfig {
+        let roots: [String]
+        let hiddenWorktreeIDs: Set<String>
+        let excludedRepoPaths: Set<String>
+        let repoOrder: [String]
+    }
+
+    private nonisolated static func loadConfig() -> StoredConfig {
         guard let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
-        ).first else { return (defaultRoots(), [], []) }
+        ).first else { return StoredConfig(roots: defaultRoots(), hiddenWorktreeIDs: [], excludedRepoPaths: [], repoOrder: []) }
         let configURL = appSupport.appendingPathComponent("kotty/workspaces.json")
-        struct Config: Decodable {
+        struct Payload: Decodable {
             let roots: [String]
             let hiddenWorktreeIDs: [String]?
             let excludedRepoPaths: [String]?
+            let repoOrder: [String]?
         }
         if let data = try? Data(contentsOf: configURL),
-           let config = try? JSONDecoder().decode(Config.self, from: data) {
-            return (
-                config.roots,
-                Set(config.hiddenWorktreeIDs ?? []),
-                Set(config.excludedRepoPaths ?? [])
+           let payload = try? JSONDecoder().decode(Payload.self, from: data) {
+            return StoredConfig(
+                roots: payload.roots,
+                hiddenWorktreeIDs: Set(payload.hiddenWorktreeIDs ?? []),
+                excludedRepoPaths: Set(payload.excludedRepoPaths ?? []),
+                repoOrder: payload.repoOrder ?? []
             )
         }
-        return (defaultRoots(), [], [])
+        return StoredConfig(roots: defaultRoots(), hiddenWorktreeIDs: [], excludedRepoPaths: [], repoOrder: [])
     }
 
     private nonisolated static func defaultRoots() -> [String] {
