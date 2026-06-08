@@ -21,6 +21,14 @@ private final class PanePool: ObservableObject {
         shellHost.activate(id: id)
         agentHost.activate(id: id)
     }
+
+    func release(id: String) {
+        guard panes[id] != nil else { return }
+        panes.removeValue(forKey: id)
+        shellHost.unregister(id: id)
+        agentHost.unregister(id: id)
+        activeIDs.remove(id)
+    }
 }
 
 struct AppShellView: View {
@@ -37,7 +45,12 @@ struct AppShellView: View {
                 store: store,
                 selectedWorktreeID: $selectedWorktreeID,
                 activeTerminalIDs: pool.activeIDs,
-                agentBus: agentBus
+                agentBus: agentBus,
+                onRelease: { id in
+                    if selectedWorktreeID == id { selectedWorktreeID = nil }
+                    pool.release(id: id)
+                    agentBus.reset(for: id)
+                }
             )
         } detail: {
             terminalDetail

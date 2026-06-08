@@ -6,6 +6,7 @@ struct SidebarView: View {
     @Binding var selectedWorktreeID: String?
     let activeTerminalIDs: Set<String>
     @ObservedObject var agentBus: AgentStateBus
+    let onRelease: (String) -> Void
 
     var body: some View {
         List(selection: $selectedWorktreeID) {
@@ -31,15 +32,18 @@ struct SidebarView: View {
                     )
                     .selectionDisabled()
                     ForEach(visible) { worktree in
+                        let isActive = activeTerminalIDs.contains(worktree.id)
                         WorktreeRow(
                             worktree: worktree,
-                            isActive: activeTerminalIDs.contains(worktree.id),
+                            isActive: isActive,
                             isSelected: selectedWorktreeID == worktree.id,
-                            agentState: agentBus.state(for: worktree.id)
-                        ) {
-                            if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
-                            store.hideWorktree(id: worktree.id)
-                        }
+                            agentState: agentBus.state(for: worktree.id),
+                            onRelease: isActive ? { onRelease(worktree.id) } : nil,
+                            onHide: {
+                                if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
+                                store.hideWorktree(id: worktree.id)
+                            }
+                        )
                         .tag(worktree.id)
                     }
                 }
@@ -103,6 +107,7 @@ private struct WorktreeRow: View {
     let isActive: Bool
     let isSelected: Bool
     let agentState: AgentState
+    let onRelease: (() -> Void)?
     let onHide: () -> Void
     @State private var isHovered = false
 
@@ -111,12 +116,14 @@ private struct WorktreeRow: View {
         isActive: Bool = false,
         isSelected: Bool = false,
         agentState: AgentState = .idle,
+        onRelease: (() -> Void)? = nil,
         onHide: @escaping () -> Void
     ) {
         self.worktree = worktree
         self.isActive = isActive
         self.isSelected = isSelected
         self.agentState = agentState
+        self.onRelease = onRelease
         self.onHide = onHide
     }
 
@@ -135,12 +142,23 @@ private struct WorktreeRow: View {
                     .opacity(worktree.branch == nil ? 0 : 1)
             }
             Spacer()
+            if let onRelease {
+                Button(action: onRelease) {
+                    Image(systemName: "xmark.circle")
+                        .imageScale(.small)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Release terminal sessions")
+                .opacity(isHovered ? 1 : 0)
+            }
             Button(action: onHide) {
                 Image(systemName: "eye.slash")
                     .imageScale(.small)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.borderless)
+            .help("Hide worktree")
             .opacity(isHovered ? 1 : 0)
         }
         .padding(.vertical, 4)

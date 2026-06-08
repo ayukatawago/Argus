@@ -31,6 +31,14 @@ final class TerminalHost: NSView {
         }
     }
 
+    func unregister(id: String) {
+        if activeID == id {
+            terminals[id]?.removeFromSuperview()
+            activeID = nil
+        }
+        terminals.removeValue(forKey: id)
+    }
+
     func register(id: String, terminal: AppTerminalView) {
         guard terminals[id] == nil else { return }
         terminals[id] = terminal
