@@ -137,7 +137,7 @@ struct AppShellView: View {
     private var terminalBackground: some View {
         switch currentAgentState {
         case .done:
-            Color(nsColor: .systemBlue).opacity(0.05)
+            Color(nsColor: .systemGreen).opacity(0.05)
 
         case .waitingForApproval:
             Color(nsColor: .systemOrange).opacity(0.07)
@@ -152,7 +152,7 @@ struct AppShellView: View {
         switch currentAgentState {
         case .done:
             Rectangle()
-                .strokeBorder(Color(nsColor: .systemBlue).opacity(0.5), lineWidth: 2)
+                .strokeBorder(Color(nsColor: .systemGreen).opacity(0.5), lineWidth: 2)
 
         case .waitingForApproval:
             Rectangle()
