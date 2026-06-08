@@ -13,9 +13,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
             let char = event.charactersIgnoringModifiers?.lowercased()
 
-            // Ctrl+B enters leader mode. A second Ctrl+B while in leader mode
-            // passes the keystroke through (useful for nested tmux).
-            if modifiers == [.control] && char == "b" {
+            let config = KottyConfigStore.shared.config
+
+            // Leader key: enter leader mode, or pass through on double press (e.g. for nested tmux).
+            if let (leaderMods, leaderChar) = Self.parseLeaderKey(config.leaderKey),
+               modifiers == leaderMods, char == leaderChar {
                 if self.awaitingLeader {
                     self.awaitingLeader = false
                     self.leaderTimer?.invalidate()
@@ -23,7 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 self.awaitingLeader = true
                 self.leaderTimer?.invalidate()
-                self.leaderTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
+                self.leaderTimer = Timer.scheduledTimer(
+                    withTimeInterval: config.leaderTimeoutSeconds,
+                    repeats: false
+                ) { [weak self] _ in
                     self?.awaitingLeader = false
                 }
                 return nil
@@ -33,16 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if self.awaitingLeader && modifiers.isEmpty {
                 self.awaitingLeader = false
                 self.leaderTimer?.invalidate()
-                let nc = NotificationCenter.default
-                switch char {
-                case "h": nc.post(name: .focusShellPane, object: nil);         return nil
-                case "l": nc.post(name: .focusAgentPane, object: nil);         return nil
-                case "j": nc.post(name: .selectNextWorktree, object: nil);     return nil
-                case "k": nc.post(name: .selectPreviousWorktree, object: nil); return nil
-                case "g": nc.post(name: .openLazygit, object: nil);            return nil
-                case "r": nc.post(name: .refreshWorkspace, object: nil);       return nil
-                case "m": nc.post(name: .openMarkdownPreview, object: nil);   return nil
-                default: break
+                if let char, let name = Self.notificationMap(from: config.keyBindings)[char] {
+                    NotificationCenter.default.post(name: name, object: nil)
+                    return nil
                 }
             }
 
@@ -87,6 +85,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return false
     }
+
+    // MARK: - Helpers
+
+    private static func parseLeaderKey(_ key: String) -> (NSEvent.ModifierFlags, String)? {
+        let parts = key.lowercased().split(separator: "+").map(String.init)
+        guard let char = parts.last, !char.isEmpty else { return nil }
+        var flags: NSEvent.ModifierFlags = []
+        for part in parts.dropLast() {
+            switch part {
+            case "ctrl":                       flags.insert(.control)
+            case "cmd", "command":             flags.insert(.command)
+            case "opt", "option", "alt":       flags.insert(.option)
+            case "shift":                      flags.insert(.shift)
+            default:                           break
+            }
+        }
+        return (flags, char)
+    }
+
+    // swiftlint:disable:next function_parameter_count
+    private static func notificationMap(from bindings: KottyConfig.KeyBindings) -> [String: Notification.Name] {
+        [
+            bindings.focusShellPane: .focusShellPane,
+            bindings.focusAgentPane: .focusAgentPane,
+            bindings.selectNextWorktree: .selectNextWorktree,
+            bindings.selectPreviousWorktree: .selectPreviousWorktree,
+            bindings.openLazygit: .openLazygit,
+            bindings.refreshWorkspace: .refreshWorkspace,
+            bindings.openMarkdownPreview: .openMarkdownPreview,
+            bindings.openSettings: .openSettings
+        ]
+    }
 }
 
 @main
@@ -106,7 +136,12 @@ struct KottyApp: App {
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
             }
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    NotificationCenter.default.post(name: .openSettings, object: nil)
+                }
+                .keyboardShortcut(",", modifiers: [.command])
+            }
         }
     }
-
 }
