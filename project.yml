@@ -46,6 +46,7 @@ targets:
     dependencies:
       - package: libghostty-spm
         product: GhosttyTerminal
+      - sdk: WebKit.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kotty.app

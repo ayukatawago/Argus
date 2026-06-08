@@ -9,6 +9,7 @@ extension Notification.Name {
     static let selectPreviousWorktree = Notification.Name("kotty.selectPreviousWorktree")
     static let refreshWorkspace = Notification.Name("kotty.refreshWorkspace")
     static let workspaceInteracted = Notification.Name("kotty.workspaceInteracted")
+    static let openMarkdownPreview = Notification.Name("kotty.openMarkdownPreview")
 }
 
 /// Manages a floating NSWindow running lazygit in the active worktree directory.
