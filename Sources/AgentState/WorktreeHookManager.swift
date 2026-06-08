@@ -18,16 +18,22 @@ enum WorktreeHookManager {
         let doneURL = hooksDir.appendingPathComponent("claude-done.sh")
         let approvalURL = hooksDir.appendingPathComponent("claude-waiting-approval.sh")
         let userPromptURL = hooksDir.appendingPathComponent("claude-user-prompt.sh")
+        let preCompactURL = hooksDir.appendingPathComponent("claude-pre-compact.sh")
+        let postCompactURL = hooksDir.appendingPathComponent("claude-post-compact.sh")
         try writeExecutable(at: runningURL, content: hookScript(state: "running", socketPath: socketPath))
         try writeExecutable(at: doneURL, content: hookScript(state: "done", socketPath: socketPath))
         try writeExecutable(at: approvalURL, content: hookScript(state: "waitingForApproval", socketPath: socketPath))
         try writeExecutable(at: userPromptURL, content: hookScript(state: "running", socketPath: socketPath))
+        try writeExecutable(at: preCompactURL, content: hookScript(state: "running", socketPath: socketPath))
+        try writeExecutable(at: postCompactURL, content: hookScript(state: "done", socketPath: socketPath))
         try patchLocalSettings(
             worktreePath: worktreePath,
             running: runningURL.path,
             done: doneURL.path,
             approval: approvalURL.path,
-            userPrompt: userPromptURL.path
+            userPrompt: userPromptURL.path,
+            preCompact: preCompactURL.path,
+            postCompact: postCompactURL.path
         )
     }
 
@@ -69,13 +75,19 @@ enum WorktreeHookManager {
         running: String,
         done: String,
         approval: String,
-        userPrompt: String
+        userPrompt: String,
+        preCompact: String,
+        postCompact: String
     ) throws {
         let claudeDir = URL(fileURLWithPath: worktreePath).appendingPathComponent(".claude")
         try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
         let settingsURL = claudeDir.appendingPathComponent("settings.local.json")
         var settings = loadSettings(at: settingsURL)
-        settings["hooks"] = mergedHooks(in: settings, running: running, done: done, approval: approval, userPrompt: userPrompt)
+        settings["hooks"] = mergedHooks(
+            in: settings, running: running, done: done,
+            approval: approval, userPrompt: userPrompt,
+            preCompact: preCompact, postCompact: postCompact
+        )
         try saveSettings(settings, to: settingsURL)
     }
 
@@ -91,7 +103,9 @@ enum WorktreeHookManager {
         running: String,
         done: String,
         approval: String,
-        userPrompt: String
+        userPrompt: String,
+        preCompact: String,
+        postCompact: String
     ) -> [String: Any] {
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
         hooks["PreToolUse"] = upsertKottyEntry(
@@ -102,6 +116,16 @@ enum WorktreeHookManager {
         hooks["Stop"] = upsertKottyEntry(
             in: hooks["Stop"] as? [[String: Any]] ?? [],
             entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(done)]]]
+        )
+        // PreCompact fires when /compact begins — show running indicator during compaction.
+        hooks["PreCompact"] = upsertKottyEntry(
+            in: hooks["PreCompact"] as? [[String: Any]] ?? [],
+            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(preCompact)]]]
+        )
+        // PostCompact fires after /compact finishes — Stop does not fire in this case.
+        hooks["PostCompact"] = upsertKottyEntry(
+            in: hooks["PostCompact"] as? [[String: Any]] ?? [],
+            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(postCompact)]]]
         )
         // PermissionRequest fires when Claude Code shows an approval dialog (blocking).
         hooks["PermissionRequest"] = upsertKottyEntry(
