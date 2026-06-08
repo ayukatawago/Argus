@@ -101,7 +101,9 @@ struct AppShellView: View {
     }
 
     private func navigateWorktrees(forward: Bool) {
-        let all = store.repos.flatMap(\.worktrees).filter { !store.hiddenWorktreeIDs.contains($0.id) }
+        let all = store.repos.flatMap(\.worktrees).filter {
+            !store.hiddenWorktreeIDs.contains($0.id) && pool.activeIDs.contains($0.id)
+        }
         guard !all.isEmpty else { return }
         guard let current = selectedWorktreeID,
               let idx = all.firstIndex(where: { $0.id == current })
