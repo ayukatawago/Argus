@@ -40,6 +40,7 @@ struct SidebarView: View {
                             isSelected: selectedWorktreeID == worktree.id,
                             agentState: agentBus.state(for: worktree.id),
                             onRelease: isActive ? { onRelease(worktree.id) } : nil,
+                            onDelete: worktree.isMain ? nil : { deleteWorktree(worktree, in: repo) },
                             onHide: {
                                 if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
                                 store.hideWorktree(id: worktree.id)
@@ -59,6 +60,57 @@ struct SidebarView: View {
                 }
                 .help("Add repository or workspace folder")
             }
+        }
+    }
+
+    private func deleteWorktree(_ worktree: GitWorktree, in repo: GitRepo) {
+        let name = URL(fileURLWithPath: worktree.path).lastPathComponent
+        let confirm = NSAlert()
+        confirm.messageText = "Delete Worktree \"\(name)\"?"
+        confirm.informativeText = "The working directory will be removed. Committed work is safe in the repository."
+        confirm.alertStyle = .warning
+        confirm.addButton(withTitle: "Delete")
+        confirm.addButton(withTitle: "Cancel")
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+        if activeTerminalIDs.contains(worktree.id) { onRelease(worktree.id) }
+        if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
+
+        Task {
+            let exitCode = await Task.detached(priority: .userInitiated) {
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+                proc.arguments = ["-C", repo.mainPath, "worktree", "remove", worktree.path]
+                proc.standardOutput = Pipe()
+                proc.standardError = Pipe()
+                guard (try? proc.run()) != nil else { return Int32(-1) }
+                proc.waitUntilExit()
+                return proc.terminationStatus
+            }.value
+
+            if exitCode != 0 {
+                let forceAlert = NSAlert()
+                forceAlert.messageText = "Worktree has uncommitted changes"
+                forceAlert.informativeText = "Force delete will discard all uncommitted changes in \"\(name)\" permanently."
+                forceAlert.alertStyle = .critical
+                forceAlert.addButton(withTitle: "Force Delete")
+                forceAlert.addButton(withTitle: "Cancel")
+                guard forceAlert.runModal() == .alertFirstButtonReturn else {
+                    await store.refresh()
+                    return
+                }
+                await Task.detached(priority: .userInitiated) {
+                    let proc = Process()
+                    proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+                    proc.arguments = ["-C", repo.mainPath, "worktree", "remove", "--force", worktree.path]
+                    proc.standardOutput = Pipe()
+                    proc.standardError = Pipe()
+                    try? proc.run()
+                    proc.waitUntilExit()
+                }.value
+            }
+
+            await store.refresh()
         }
     }
 
@@ -160,6 +212,7 @@ private struct WorktreeRow: View {
     let isSelected: Bool
     let agentState: AgentState
     let onRelease: (() -> Void)?
+    let onDelete: (() -> Void)?
     let onHide: () -> Void
     @State private var isHovered = false
 
@@ -169,6 +222,7 @@ private struct WorktreeRow: View {
         isSelected: Bool = false,
         agentState: AgentState = .idle,
         onRelease: (() -> Void)? = nil,
+        onDelete: (() -> Void)? = nil,
         onHide: @escaping () -> Void
     ) {
         self.worktree = worktree
@@ -176,6 +230,7 @@ private struct WorktreeRow: View {
         self.isSelected = isSelected
         self.agentState = agentState
         self.onRelease = onRelease
+        self.onDelete = onDelete
         self.onHide = onHide
     }
 
@@ -202,6 +257,16 @@ private struct WorktreeRow: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Release terminal sessions")
+                .opacity(isHovered ? 1 : 0)
+            }
+            if let onDelete {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .imageScale(.small)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Delete worktree")
                 .opacity(isHovered ? 1 : 0)
             }
             Button(action: onHide) {
