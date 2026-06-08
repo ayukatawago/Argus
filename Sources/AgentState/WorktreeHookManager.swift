@@ -16,12 +16,18 @@ enum WorktreeHookManager {
         let socketPath = HookIPC.socketPath
         let runningURL = hooksDir.appendingPathComponent("claude-running.sh")
         let doneURL = hooksDir.appendingPathComponent("claude-done.sh")
+        let approvalURL = hooksDir.appendingPathComponent("claude-waiting-approval.sh")
+        let userPromptURL = hooksDir.appendingPathComponent("claude-user-prompt.sh")
         try writeExecutable(at: runningURL, content: hookScript(state: "running", socketPath: socketPath))
         try writeExecutable(at: doneURL, content: hookScript(state: "done", socketPath: socketPath))
+        try writeExecutable(at: approvalURL, content: hookScript(state: "waitingForApproval", socketPath: socketPath))
+        try writeExecutable(at: userPromptURL, content: hookScript(state: "running", socketPath: socketPath))
         try patchLocalSettings(
             worktreePath: worktreePath,
             running: runningURL.path,
-            done: doneURL.path
+            done: doneURL.path,
+            approval: approvalURL.path,
+            userPrompt: userPromptURL.path
         )
     }
 
@@ -61,13 +67,15 @@ enum WorktreeHookManager {
     private static func patchLocalSettings(
         worktreePath: String,
         running: String,
-        done: String
+        done: String,
+        approval: String,
+        userPrompt: String
     ) throws {
         let claudeDir = URL(fileURLWithPath: worktreePath).appendingPathComponent(".claude")
         try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
         let settingsURL = claudeDir.appendingPathComponent("settings.local.json")
         var settings = loadSettings(at: settingsURL)
-        settings["hooks"] = mergedHooks(in: settings, running: running, done: done)
+        settings["hooks"] = mergedHooks(in: settings, running: running, done: done, approval: approval, userPrompt: userPrompt)
         try saveSettings(settings, to: settingsURL)
     }
 
@@ -81,7 +89,9 @@ enum WorktreeHookManager {
     private static func mergedHooks(
         in settings: [String: Any],
         running: String,
-        done: String
+        done: String,
+        approval: String,
+        userPrompt: String
     ) -> [String: Any] {
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
         hooks["PreToolUse"] = upsertKottyEntry(
@@ -92,6 +102,17 @@ enum WorktreeHookManager {
         hooks["Stop"] = upsertKottyEntry(
             in: hooks["Stop"] as? [[String: Any]] ?? [],
             entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(done)]]]
+        )
+        // PermissionRequest fires when Claude Code shows an approval dialog (blocking).
+        hooks["PermissionRequest"] = upsertKottyEntry(
+            in: hooks["PermissionRequest"] as? [[String: Any]] ?? [],
+            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(approval)]]]
+        )
+        // UserPromptSubmit fires when the user sends a message — transitions to running
+        // before PreToolUse so the done/approval indicator clears immediately on reply.
+        hooks["UserPromptSubmit"] = upsertKottyEntry(
+            in: hooks["UserPromptSubmit"] as? [[String: Any]] ?? [],
+            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(userPrompt)]]]
         )
         return hooks
     }

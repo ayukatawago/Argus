@@ -129,20 +129,42 @@ struct AppShellView: View {
     private var terminalDetail: some View {
         WorktreeContentView(shellHost: pool.shellHost, agentHost: pool.agentHost)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(currentAgentState == .done ? Color(nsColor: .systemBlue).opacity(0.05) : Color.clear)
+            .background(terminalBackground)
             .overlay(terminalBorder)
     }
 
     @ViewBuilder
+    private var terminalBackground: some View {
+        switch currentAgentState {
+        case .done:
+            Color(nsColor: .systemBlue).opacity(0.05)
+
+        case .waitingForApproval:
+            Color(nsColor: .systemOrange).opacity(0.07)
+
+        default:
+            Color.clear
+        }
+    }
+
+    @ViewBuilder
     private var terminalBorder: some View {
-        if currentAgentState == .done {
+        switch currentAgentState {
+        case .done:
             Rectangle()
                 .strokeBorder(Color(nsColor: .systemBlue).opacity(0.5), lineWidth: 2)
+
+        case .waitingForApproval:
+            Rectangle()
+                .strokeBorder(Color(nsColor: .systemOrange).opacity(0.7), lineWidth: 3)
+
+        default:
+            EmptyView()
         }
     }
 
     private func dismissDoneIfNeeded() {
-        guard let id = selectedWorktreeID, agentBus.state(for: id) == .done else { return }
+        guard let id = selectedWorktreeID, agentBus.state(for: id) != .idle else { return }
         agentBus.reset(for: id)
     }
 }

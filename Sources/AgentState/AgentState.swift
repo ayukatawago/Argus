@@ -3,6 +3,7 @@ import Foundation
 enum AgentState: Equatable, Sendable {
     case idle
     case running
+    case waitingForApproval
     case done
 }
 
