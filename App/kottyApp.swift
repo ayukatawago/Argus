@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case "k": nc.post(name: .selectPreviousWorktree, object: nil); return nil
                 case "g": nc.post(name: .openLazygit, object: nil);            return nil
                 case "r": nc.post(name: .refreshWorkspace, object: nil);       return nil
+                case "m": nc.post(name: .openMarkdownPreview, object: nil);   return nil
                 default: break
                 }
             }
