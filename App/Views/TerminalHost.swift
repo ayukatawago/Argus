@@ -39,6 +39,11 @@ final class TerminalHost: NSView {
         terminals.removeValue(forKey: id)
     }
 
+    func focusActiveTerminal() {
+        guard let id = activeID, let terminal = terminals[id] else { return }
+        window?.makeFirstResponder(terminal)
+    }
+
     func register(id: String, terminal: AppTerminalView) {
         guard terminals[id] == nil else { return }
         terminals[id] = terminal

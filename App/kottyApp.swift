@@ -3,19 +3,54 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var keyEventMonitor: Any?
+    private var awaitingLeader = false
+    private var leaderTimer: Timer?
 
     func applicationDidFinishLaunching(_: Notification) {
-        // Register ⌘⇧G via a local event monitor so it fires reliably even when
-        // the terminal surface has keyboard focus and might swallow menu key equivalents.
-        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let onlyCommandShift =
-                event.modifierFlags
-                .intersection([.command, .shift, .option, .control]) == [.command, .shift]
-            guard onlyCommandShift, event.charactersIgnoringModifiers?.lowercased() == "g" else {
-                return event
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            let char = event.charactersIgnoringModifiers?.lowercased()
+
+            // Ctrl+B enters leader mode. A second Ctrl+B while in leader mode
+            // passes the keystroke through (useful for nested tmux).
+            if modifiers == [.control] && char == "b" {
+                if self.awaitingLeader {
+                    self.awaitingLeader = false
+                    self.leaderTimer?.invalidate()
+                    return event
+                }
+                self.awaitingLeader = true
+                self.leaderTimer?.invalidate()
+                self.leaderTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
+                    self?.awaitingLeader = false
+                }
+                return nil
             }
-            NotificationCenter.default.post(name: .openLazygit, object: nil)
-            return nil
+
+            // Leader sequences (no modifier required on the second key)
+            if self.awaitingLeader && modifiers.isEmpty {
+                self.awaitingLeader = false
+                self.leaderTimer?.invalidate()
+                let nc = NotificationCenter.default
+                switch char {
+                case "h": nc.post(name: .focusShellPane, object: nil);         return nil
+                case "l": nc.post(name: .focusAgentPane, object: nil);         return nil
+                case "j": nc.post(name: .selectNextWorktree, object: nil);     return nil
+                case "k": nc.post(name: .selectPreviousWorktree, object: nil); return nil
+                case "g": nc.post(name: .openLazygit, object: nil);            return nil
+                case "r": nc.post(name: .refreshWorkspace, object: nil);       return nil
+                default: break
+                }
+            }
+
+            // ⌘⇧G as a direct shortcut for lazygit (keeps the menu item working)
+            if modifiers == [.command, .shift] && char == "g" {
+                NotificationCenter.default.post(name: .openLazygit, object: nil)
+                return nil
+            }
+
+            return event
         }
     }
 

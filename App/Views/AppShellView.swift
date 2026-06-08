@@ -83,6 +83,34 @@ struct AppShellView: View {
             else { return }
             lazygit.open(workingDirectory: worktree.path)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .focusShellPane)) { _ in
+            pool.shellHost.focusActiveTerminal()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .focusAgentPane)) { _ in
+            pool.agentHost.focusActiveTerminal()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .selectNextWorktree)) { _ in
+            navigateWorktrees(forward: true)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .selectPreviousWorktree)) { _ in
+            navigateWorktrees(forward: false)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshWorkspace)) { _ in
+            Task { await store.refresh() }
+        }
+    }
+
+    private func navigateWorktrees(forward: Bool) {
+        let all = store.repos.flatMap(\.worktrees).filter { !store.hiddenWorktreeIDs.contains($0.id) }
+        guard !all.isEmpty else { return }
+        guard let current = selectedWorktreeID,
+              let idx = all.firstIndex(where: { $0.id == current })
+        else {
+            selectedWorktreeID = all.first?.id
+            return
+        }
+        let next = forward ? (idx + 1) % all.count : (idx - 1 + all.count) % all.count
+        selectedWorktreeID = all[next].id
     }
 
     private var currentAgentState: AgentState {

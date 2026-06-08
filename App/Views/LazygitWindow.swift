@@ -3,6 +3,11 @@ import GhosttyTerminal
 
 extension Notification.Name {
     static let openLazygit = Notification.Name("kotty.openLazygit")
+    static let focusShellPane = Notification.Name("kotty.focusShellPane")
+    static let focusAgentPane = Notification.Name("kotty.focusAgentPane")
+    static let selectNextWorktree = Notification.Name("kotty.selectNextWorktree")
+    static let selectPreviousWorktree = Notification.Name("kotty.selectPreviousWorktree")
+    static let refreshWorkspace = Notification.Name("kotty.refreshWorkspace")
 }
 
 /// Manages a floating NSWindow running lazygit in the active worktree directory.
