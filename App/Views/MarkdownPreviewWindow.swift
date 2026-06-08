@@ -45,7 +45,7 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, ObservableObject 
 
         let screen = NSApp.keyWindow?.screen ?? NSApp.mainWindow?.screen ?? NSScreen.main ?? NSScreen.screens[0]
         let sf = screen.visibleFrame
-        let size = CGSize(width: min(900, sf.width * 0.6), height: sf.height * 0.8)
+        let size = CGSize(width: sf.width * 0.85, height: sf.height * 0.85)
         let origin = NSPoint(x: sf.midX - size.width / 2, y: sf.midY - size.height / 2)
 
         let win = NSWindow(
