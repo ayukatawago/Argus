@@ -10,26 +10,43 @@ struct SidebarView: View {
     @State private var dropTargetRepoID: String?
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                if store.repos.isEmpty {
-                    Text("No git repos found")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                        .padding()
-                }
-                else {
-                    ForEach(store.repos) { repo in
-                        repoSection(for: repo, isDropTarget: dropTargetRepoID == repo.id)
+        VStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if store.repos.isEmpty {
+                        Text("No git repos found")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                            .padding()
+                    }
+                    else {
+                        ForEach(store.repos) { repo in
+                            repoSection(for: repo, isDropTarget: dropTargetRepoID == repo.id)
+                        }
                     }
                 }
+                .padding(.bottom, 4)
             }
-            .padding(.bottom, 4)
+            .focusable()
+            .onKeyPress(.upArrow) { navigateSelection(forward: false); return .handled }
+            .onKeyPress(.downArrow) { navigateSelection(forward: true); return .handled }
+
+            Divider()
+
+            HStack(spacing: 0) {
+                Button {
+                    NotificationCenter.default.post(name: .openSettings, object: nil)
+                } label: {
+                    Image(systemName: "gear")
+                        .imageScale(.medium)
+                }
+                .buttonStyle(.borderless)
+                .help("Settings (⌘,)")
+                .padding(8)
+                Spacer()
+            }
         }
         .frame(minWidth: 200)
-        .focusable()
-        .onKeyPress(.upArrow) { navigateSelection(forward: false); return .handled }
-        .onKeyPress(.downArrow) { navigateSelection(forward: true); return .handled }
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Button(action: pickFolder) {

@@ -36,6 +36,7 @@ struct AppShellView: View {
     @StateObject private var pool = PanePool()
     @StateObject private var lazygit = LazygitWindow()
     @StateObject private var markdownPreview = MarkdownPreviewWindow()
+    @StateObject private var settings = SettingsWindow()
     @StateObject private var agentBus = AgentStateBus()
     @State private var selectedWorktreeID: String?
     @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
@@ -109,6 +110,9 @@ struct AppShellView: View {
                   let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
             else { return }
             markdownPreview.open(worktreePath: worktree.path)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
+            settings.open()
         }
     }
 
