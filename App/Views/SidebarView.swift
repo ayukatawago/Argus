@@ -404,17 +404,25 @@ private struct WorktreeRow: View {
 
 private struct AgentDot: View {
     let state: AgentState
-    @State private var pulse = false
+
+    private let frames: [String] = ["·", "✢", "✳", "✶", "✽", "*", "✶", "+", "·"]
 
     var body: some View {
-        Circle()
-            .fill(dotColor.opacity(pulse ? 0.5 : 1.0))
-            .frame(width: 8, height: 8)
-            .onAppear { startPulseIfNeeded() }
-            .onChange(of: state) { _, newState in
-                withAnimation(.linear(duration: 0)) { pulse = false }
-                if newState == .running { startPulseIfNeeded() }
+        Group {
+            if state == .running {
+                TimelineView(.periodic(from: .now, by: 0.12)) { context in
+                    let idx = Int(context.date.timeIntervalSinceReferenceDate / 0.12) % frames.count
+                    Text(frames[idx])
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(claudePeach)
+                        .frame(width: 10, height: 10)
+                }
+            } else {
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: 10, height: 10)
             }
+        }
     }
 
     private var dotColor: Color {
@@ -424,11 +432,6 @@ private struct AgentDot: View {
         case .waitingForApproval: Color.orange
         case .done: Color.green.opacity(0.8)
         }
-    }
-
-    private func startPulseIfNeeded() {
-        guard state == .running else { return }
-        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
     }
 }
 
