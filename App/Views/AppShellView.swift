@@ -36,8 +36,8 @@ struct AppShellView: View {
     @StateObject private var pool = PanePool()
     @StateObject private var lazygit = LazygitWindow()
     @StateObject private var markdownPreview = MarkdownPreviewWindow()
-    @StateObject private var settings = SettingsWindow()
     @StateObject private var agentBus = AgentStateBus()
+    @Environment(\.openWindow) private var openWindow
     @State private var selectedWorktreeID: String?
     @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
 
@@ -112,7 +112,7 @@ struct AppShellView: View {
             markdownPreview.open(worktreePath: worktree.path)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
-            settings.open()
+            openWindow(id: "settings")
         }
     }
 
