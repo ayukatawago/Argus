@@ -11,10 +11,12 @@ final class SettingsWindow: NSObject, NSWindowDelegate, ObservableObject {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let controller = NSHostingController(rootView: SettingsPopupView(configStore: KottyConfigStore.shared))
+        let controller = NSHostingController(rootView: SettingsRootView(configStore: KottyConfigStore.shared))
         let win = NSWindow(contentViewController: controller)
         win.title = "Settings"
-        win.styleMask = [.titled, .closable]
+        win.styleMask = [.titled, .closable, .resizable]
+        win.setContentSize(NSSize(width: 540, height: 460))
+        win.minSize = NSSize(width: 480, height: 360)
         win.isReleasedWhenClosed = false
         win.delegate = self
         win.center()
@@ -28,16 +30,70 @@ final class SettingsWindow: NSObject, NSWindowDelegate, ObservableObject {
     }
 }
 
-// MARK: - Popup view
+// MARK: - Root layout
 
-private struct SettingsPopupView: View {
+private enum SettingsCategory: String, CaseIterable, Identifiable {
+    case keyboard = "Keyboard"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .keyboard: "keyboard"
+        }
+    }
+}
+
+private struct SettingsRootView: View {
     @ObservedObject var configStore: KottyConfigStore
+    @State private var selected: SettingsCategory = .keyboard
 
     var body: some View {
-        KeyboardSettingsView(config: $configStore.config)
-            .onChange(of: configStore.config) { _, _ in configStore.save() }
+        HStack(spacing: 0) {
+            navColumn
+            Divider()
+            contentColumn
+        }
+    }
+
+    private var navColumn: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(SettingsCategory.allCases) { cat in
+                navRow(cat)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 8)
+        .frame(width: 150)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var contentColumn: some View {
+        ScrollView {
+            Group {
+                switch selected {
+                case .keyboard:
+                    KeyboardSettingsView(config: $configStore.config)
+                        .onChange(of: configStore.config) { _, _ in configStore.save() }
+                }
+            }
             .padding(20)
-            .frame(width: 420)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func navRow(_ cat: SettingsCategory) -> some View {
+        Button(action: { selected = cat }) {
+            Label(cat.rawValue, systemImage: cat.icon)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(selected == cat ? Color.accentColor.opacity(0.2) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -70,7 +126,7 @@ private struct KeyboardSettingsView: View {
             }
             settingRow("Timeout") {
                 Slider(value: $config.leaderTimeoutSeconds, in: 0.5...3.0, step: 0.1)
-                    .frame(width: 130)
+                    .frame(width: 120)
                 Text(String(format: "%.1f s", config.leaderTimeoutSeconds))
                     .monospacedDigit()
                     .frame(width: 40, alignment: .leading)
