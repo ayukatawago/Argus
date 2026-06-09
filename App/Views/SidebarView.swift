@@ -1,5 +1,10 @@
-import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
+
+private struct WorktreeDeleteTarget {
+    let worktree: GitWorktree
+    let repo: GitRepo
+}
 
 struct SidebarView: View {
     @ObservedObject var store: WorkspaceStore
@@ -8,8 +13,83 @@ struct SidebarView: View {
     @ObservedObject var agentBus: AgentStateBus
     let onRelease: (String) -> Void
     @State private var dropTargetRepoID: String?
+    @State private var showPickFolder = false
+    @State private var showDeleteConfirmation = false
+    @State private var deleteTarget: WorktreeDeleteTarget?
+    @State private var showForceDeleteAlert = false
+    @State private var forceDeleteTarget: WorktreeDeleteTarget?
+    @State private var showAddWorktree = false
+    @State private var addWorktreeRepo: GitRepo?
+    @State private var newBranchName = ""
+    @State private var showAddWorktreeError = false
+    @State private var addWorktreeError = ""
 
     var body: some View {
+        repoList
+            .frame(minWidth: 200)
+            .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    Button(action: { showPickFolder = true }) {
+                        Image(systemName: "plus")
+                    }
+                    .help("Add repository or workspace folder")
+                }
+            }
+            .confirmationDialog(
+                deleteDialogTitle,
+                isPresented: $showDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let target = deleteTarget { performDelete(target) }
+                }
+            } message: {
+                Text("The working directory will be removed. Committed work is safe in the repository.")
+            }
+            .alert("Worktree has uncommitted changes", isPresented: $showForceDeleteAlert) {
+                Button("Force Delete", role: .destructive) {
+                    if let target = forceDeleteTarget { performForceDelete(target) }
+                }
+                Button("Cancel", role: .cancel) { Task { await store.refresh() } }
+            } message: {
+                let name = forceDeleteTarget.map {
+                    URL(fileURLWithPath: $0.worktree.path).lastPathComponent
+                } ?? ""
+                Text("Force delete will discard all uncommitted changes in \"\(name)\" permanently.")
+            }
+            .alert("New Worktree", isPresented: $showAddWorktree) {
+                TextField("feature-branch", text: $newBranchName)
+                Button("Create") {
+                    let branch = newBranchName.trimmingCharacters(in: .whitespaces)
+                    let repo = addWorktreeRepo
+                    newBranchName = ""
+                    addWorktreeRepo = nil
+                    guard !branch.isEmpty, let repo else { return }
+                    Task { await createWorktree(branch: branch, in: repo) }
+                }
+                Button("Cancel", role: .cancel) { newBranchName = "" }
+            } message: {
+                Text("Enter a branch name for the new worktree.")
+            }
+            .alert("Could not create worktree", isPresented: $showAddWorktreeError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(addWorktreeError)
+            }
+            .fileImporter(isPresented: $showPickFolder, allowedContentTypes: [.folder]) { result in
+                if case .success(let url) = result {
+                    store.addRoot(url.path)
+                }
+            }
+    }
+
+    private var deleteDialogTitle: String {
+        guard let target = deleteTarget else { return "Delete Worktree?" }
+        let name = URL(fileURLWithPath: target.worktree.path).lastPathComponent
+        return "Delete Worktree \"\(name)\"?"
+    }
+
+    private var repoList: some View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -18,8 +98,7 @@ struct SidebarView: View {
                             .foregroundStyle(.secondary)
                             .font(.caption)
                             .padding()
-                    }
-                    else {
+                    } else {
                         ForEach(store.repos) { repo in
                             repoSection(for: repo, isDropTarget: dropTargetRepoID == repo.id)
                         }
@@ -44,15 +123,6 @@ struct SidebarView: View {
                 .help("Settings (⌘,)")
                 .padding(8)
                 Spacer()
-            }
-        }
-        .frame(minWidth: 200)
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Button(action: pickFolder) {
-                    Image(systemName: "plus")
-                }
-                .help("Add repository or workspace folder")
             }
         }
     }
@@ -140,18 +210,15 @@ struct SidebarView: View {
     }
 
     private func deleteWorktree(_ worktree: GitWorktree, in repo: GitRepo) {
-        let name = URL(fileURLWithPath: worktree.path).lastPathComponent
-        let confirm = NSAlert()
-        confirm.messageText = "Delete Worktree \"\(name)\"?"
-        confirm.informativeText = "The working directory will be removed. Committed work is safe in the repository."
-        confirm.alertStyle = .warning
-        confirm.addButton(withTitle: "Delete")
-        confirm.addButton(withTitle: "Cancel")
-        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+        deleteTarget = WorktreeDeleteTarget(worktree: worktree, repo: repo)
+        showDeleteConfirmation = true
+    }
 
+    private func performDelete(_ target: WorktreeDeleteTarget) {
+        let worktree = target.worktree
+        let repo = target.repo
         if activeTerminalIDs.contains(worktree.id) { onRelease(worktree.id) }
         if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
-
         Task {
             let exitCode = await Task.detached(priority: .userInitiated) {
                 let proc = Process()
@@ -163,86 +230,55 @@ struct SidebarView: View {
                 proc.waitUntilExit()
                 return proc.terminationStatus
             }.value
-
             if exitCode != 0 {
-                let forceAlert = NSAlert()
-                forceAlert.messageText = "Worktree has uncommitted changes"
-                forceAlert.informativeText = "Force delete will discard all uncommitted changes in \"\(name)\" permanently."
-                forceAlert.alertStyle = .critical
-                forceAlert.addButton(withTitle: "Force Delete")
-                forceAlert.addButton(withTitle: "Cancel")
-                guard forceAlert.runModal() == .alertFirstButtonReturn else {
-                    await store.refresh()
-                    return
-                }
-                await Task.detached(priority: .userInitiated) {
-                    let proc = Process()
-                    proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-                    proc.arguments = ["-C", repo.mainPath, "worktree", "remove", "--force", worktree.path]
-                    proc.standardOutput = Pipe()
-                    proc.standardError = Pipe()
-                    try? proc.run()
-                    proc.waitUntilExit()
-                }.value
+                forceDeleteTarget = WorktreeDeleteTarget(worktree: worktree, repo: repo)
+                showForceDeleteAlert = true
+            } else {
+                await store.refresh()
             }
+        }
+    }
 
+    private func performForceDelete(_ target: WorktreeDeleteTarget) {
+        Task {
+            await Task.detached(priority: .userInitiated) {
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+                proc.arguments = ["-C", target.repo.mainPath, "worktree", "remove", "--force", target.worktree.path]
+                proc.standardOutput = Pipe()
+                proc.standardError = Pipe()
+                try? proc.run()
+                proc.waitUntilExit()
+            }.value
             await store.refresh()
         }
     }
 
     private func addWorktree(for repo: GitRepo) {
-        let alert = NSAlert()
-        alert.messageText = "New Worktree"
-        alert.informativeText = "Enter a branch name for the new worktree."
-        alert.addButton(withTitle: "Create")
-        alert.addButton(withTitle: "Cancel")
+        newBranchName = ""
+        addWorktreeRepo = repo
+        showAddWorktree = true
+    }
 
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        textField.placeholderString = "feature-branch"
-        alert.accessoryView = textField
-        alert.layout()
-        alert.window.initialFirstResponder = textField
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let branch = textField.stringValue.trimmingCharacters(in: .whitespaces)
-        guard !branch.isEmpty else { return }
-
+    private func createWorktree(branch: String, in repo: GitRepo) async {
         let safeName = branch.replacingOccurrences(of: "/", with: "-")
         let parent = URL(fileURLWithPath: repo.mainPath).deletingLastPathComponent().path
         let newPath = (parent as NSString).appendingPathComponent(safeName)
-
-        Task {
-            let exitCode = await Task.detached(priority: .userInitiated) {
-                let proc = Process()
-                proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-                proc.arguments = ["-C", repo.mainPath, "worktree", "add", newPath, "-b", branch]
-                proc.standardOutput = Pipe()
-                proc.standardError = Pipe()
-                guard (try? proc.run()) != nil else { return Int32(-1) }
-                proc.waitUntilExit()
-                return proc.terminationStatus
-            }.value
-
-            if exitCode != 0 {
-                let errAlert = NSAlert()
-                errAlert.messageText = "Could not create worktree"
-                errAlert.informativeText = "Make sure the branch '\(branch)' does not already exist."
-                errAlert.alertStyle = .warning
-                errAlert.runModal()
-            }
-            await store.refresh()
+        let exitCode = await Task.detached(priority: .userInitiated) {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            proc.arguments = ["-C", repo.mainPath, "worktree", "add", newPath, "-b", branch]
+            proc.standardOutput = Pipe()
+            proc.standardError = Pipe()
+            guard (try? proc.run()) != nil else { return Int32(-1) }
+            proc.waitUntilExit()
+            return proc.terminationStatus
+        }.value
+        if exitCode != 0 {
+            addWorktreeError = "Make sure the branch '\(branch)' does not already exist."
+            showAddWorktreeError = true
         }
-    }
-
-    private func pickFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Add"
-        panel.message = "Select a git repository or a folder containing repositories."
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        store.addRoot(url.path)
+        await store.refresh()
     }
 }
 
@@ -385,8 +421,8 @@ private struct AgentDot: View {
         switch state {
         case .idle: Color.secondary.opacity(0.4)
         case .running: claudePeach
-        case .waitingForApproval: Color(nsColor: .systemOrange)
-        case .done: Color(nsColor: .systemGreen).opacity(0.8)
+        case .waitingForApproval: Color.orange
+        case .done: Color.green.opacity(0.8)
         }
     }
 
@@ -410,10 +446,10 @@ private struct AgentStateBackground: View {
             baseLayer
             if agentState == .done {
                 RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color(nsColor: .systemGreen).opacity(0.55), lineWidth: 1.5)
+                    .strokeBorder(Color.green.opacity(0.55), lineWidth: 1.5)
             } else if agentState == .waitingForApproval {
                 RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color(nsColor: .systemOrange).opacity(0.7), lineWidth: 2)
+                    .strokeBorder(Color.orange.opacity(0.7), lineWidth: 2)
             }
         }
         .onAppear { startPulseIfNeeded() }
@@ -428,16 +464,13 @@ private struct AgentStateBackground: View {
         if agentState == .running {
             RoundedRectangle(cornerRadius: 6)
                 .fill(claudePeach.opacity(pulse ? 0.35 : 0.75))
-        }
-        else if isSelected {
+        } else if isSelected {
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color.accentColor.opacity(0.75))
-        }
-        else if isActive {
+        } else if isActive {
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color.accentColor.opacity(0.1))
-        }
-        else {
+        } else {
             Color.clear
         }
     }
