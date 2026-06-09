@@ -11,15 +11,21 @@ final class SettingsWindow: NSObject, NSWindowDelegate, ObservableObject {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let controller = NSHostingController(rootView: SettingsRootView(configStore: KottyConfigStore.shared))
-        let win = NSWindow(contentViewController: controller)
+        let size = NSSize(width: 540, height: 460)
+        let screen = NSApp.keyWindow?.screen ?? NSScreen.main ?? NSScreen.screens[0]
+        let screenFrame = screen.visibleFrame
+        let origin = NSPoint(x: screenFrame.midX - size.width / 2, y: screenFrame.midY - size.height / 2)
+        let win = NSWindow(
+            contentRect: NSRect(origin: origin, size: size),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
         win.title = "Settings"
-        win.styleMask = [.titled, .closable, .resizable]
-        win.setContentSize(NSSize(width: 540, height: 460))
         win.minSize = NSSize(width: 480, height: 360)
         win.isReleasedWhenClosed = false
         win.delegate = self
-        win.center()
+        win.contentView = NSHostingView(rootView: SettingsRootView(configStore: KottyConfigStore.shared))
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         window = win
