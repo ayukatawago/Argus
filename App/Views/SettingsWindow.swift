@@ -25,7 +25,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate, ObservableObject {
         win.minSize = NSSize(width: 480, height: 360)
         win.isReleasedWhenClosed = false
         win.delegate = self
-        win.contentView = NSHostingView(rootView: SettingsRootView(configStore: KottyConfigStore.shared))
+        let hostingView = NSHostingView(rootView: SettingsRootView(configStore: KottyConfigStore.shared))
+        hostingView.sizingOptions = []
+        win.contentView = hostingView
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         window = win
