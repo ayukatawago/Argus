@@ -1,46 +1,9 @@
 import AppKit
 import SwiftUI
 
-@MainActor
-final class SettingsWindow: NSObject, NSWindowDelegate, ObservableObject {
-    private var window: NSWindow?
-
-    func open() {
-        if let existing = window {
-            existing.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        let size = NSSize(width: 540, height: 460)
-        let screen = NSApp.keyWindow?.screen ?? NSScreen.main ?? NSScreen.screens[0]
-        let screenFrame = screen.visibleFrame
-        let origin = NSPoint(x: screenFrame.midX - size.width / 2, y: screenFrame.midY - size.height / 2)
-        let win = NSWindow(
-            contentRect: NSRect(origin: origin, size: size),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        win.title = "Settings"
-        win.minSize = NSSize(width: 480, height: 360)
-        win.isReleasedWhenClosed = false
-        win.delegate = self
-        let hostingView = NSHostingView(rootView: SettingsRootView(configStore: KottyConfigStore.shared))
-        hostingView.sizingOptions = []
-        win.contentView = hostingView
-        win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        window = win
-    }
-
-    func windowWillClose(_: Notification) {
-        window = nil
-    }
-}
-
 // MARK: - Root layout
 
-private enum SettingsCategory: String, CaseIterable, Identifiable {
+enum SettingsCategory: String, CaseIterable, Identifiable {
     case keyboard = "Keyboard"
 
     var id: String { rawValue }
@@ -52,8 +15,8 @@ private enum SettingsCategory: String, CaseIterable, Identifiable {
     }
 }
 
-private struct SettingsRootView: View {
-    @ObservedObject var configStore: KottyConfigStore
+struct SettingsRootView: View {
+    @EnvironmentObject private var configStore: KottyConfigStore
     @State private var selected: SettingsCategory = .keyboard
 
     var body: some View {
@@ -107,7 +70,7 @@ private struct SettingsRootView: View {
 
 // MARK: - Keyboard settings
 
-private struct KeyboardSettingsView: View {
+struct KeyboardSettingsView: View {
     @Binding var config: KottyConfig
 
     private let leaderOptions = ["ctrl+b", "ctrl+a", "ctrl+x", "ctrl+space"]

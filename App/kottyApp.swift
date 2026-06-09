@@ -142,5 +142,12 @@ struct KottyApp: App {
                 .keyboardShortcut(",", modifiers: [.command])
             }
         }
+
+        Window("Settings", id: "settings") {
+            SettingsRootView()
+                .environmentObject(KottyConfigStore.shared)
+        }
+        .defaultSize(width: 540, height: 460)
+        .windowResizability(.contentMinSize)
     }
 }
