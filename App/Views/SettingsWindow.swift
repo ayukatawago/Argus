@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 // MARK: - Root layout
@@ -37,7 +36,7 @@ struct SettingsRootView: View {
         .padding(.vertical, 12)
         .padding(.horizontal, 8)
         .frame(width: 150)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(.windowBackground)
     }
 
     private var contentColumn: some View {
