@@ -54,14 +54,15 @@ Co-authored-by: Claude Code <claude@anthropic.com>
 
 1. Run `git status` and `git diff --cached` to inspect staged changes.
 2. If nothing is staged, run `git diff` to see unstaged changes, then ask the user which files to stage (or stage all with their confirmation).
-3. **Pre-commit check — run the build and fail fast if anything is wrong:**
+3. **Pre-commit check — run format/lint checks then the build; fail fast if anything is wrong:**
+   - First invoke the `code-format-check` skill and resolve all violations (zero output from both `swiftlint` and `swift-format lint`) before building.
+   - Then build:
    ```
    xcodebuild -scheme kotty -configuration Debug build 2>&1 \
      | grep -E "warning:|error:" \
      | grep -v "appintentsmetadata"
    ```
    - If any Swift compiler **warnings** appear, stop and fix them before committing.
-   - If any SwiftLint **warnings** appear, stop and fix them before committing.
    - If the build itself fails (errors), stop and fix before committing.
    - Only proceed when the output of the above command is empty.
 4. Analyse the diff to determine:
