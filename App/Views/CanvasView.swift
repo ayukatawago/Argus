@@ -2,29 +2,58 @@ import AppKit
 import GhosttyTerminal
 import SwiftUI
 
+private let canvasPadding: CGFloat = 12
+private let canvasSpacing: CGFloat = 8
+private let titleBarHeight: CGFloat = 26
+
 struct CanvasView: View {
     let worktrees: [WorktreeCard]
     let canvasViews: [String: AppTerminalView]
     @ObservedObject var agentBus: AgentStateBus
     let onSelect: (String) -> Void
 
-    private let columns = [GridItem(.adaptive(minimum: 320), spacing: 12)]
-
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(worktrees, id: \.id) { card in
-                    CanvasCardView(
-                        name: card.name,
-                        branch: card.branch,
-                        agentState: agentBus.state(for: card.id),
-                        terminalView: canvasViews[card.id]
-                    )
-                    .onTapGesture { onSelect(card.id) }
+        GeometryReader { geo in
+            let layout = CanvasLayout(count: worktrees.count, available: geo.size)
+            let gridColumns = Array(
+                repeating: GridItem(.fixed(layout.cardWidth), spacing: canvasSpacing),
+                count: layout.columns
+            )
+            ScrollView {
+                LazyVGrid(columns: gridColumns, spacing: canvasSpacing) {
+                    ForEach(worktrees, id: \.id) { card in
+                        CanvasCardView(
+                            name: card.name,
+                            branch: card.branch,
+                            agentState: agentBus.state(for: card.id),
+                            terminalView: canvasViews[card.id],
+                            terminalHeight: layout.terminalHeight
+                        )
+                        .onTapGesture { onSelect(card.id) }
+                    }
                 }
+                .padding(canvasPadding)
             }
-            .padding(16)
         }
+    }
+}
+
+private struct CanvasLayout {
+    let columns: Int
+    let cardWidth: CGFloat
+    let terminalHeight: CGFloat
+
+    init(count: Int, available: CGSize) {
+        let cols = max(1, Int(ceil(sqrt(Double(max(1, count))))))
+        columns = cols
+
+        let totalHPad = canvasPadding * 2 + canvasSpacing * CGFloat(cols - 1)
+        cardWidth = max(100, (available.width - totalHPad) / CGFloat(cols))
+
+        let rows = max(1, Int(ceil(Double(count) / Double(cols))))
+        let totalVPad = canvasPadding * 2 + canvasSpacing * CGFloat(rows - 1)
+        let cardHeight = max(60, (available.height - totalVPad) / CGFloat(rows))
+        terminalHeight = max(40, cardHeight - titleBarHeight)
     }
 }
 
@@ -33,6 +62,7 @@ struct CanvasCardView: View {
     let branch: String?
     let agentState: AgentState
     let terminalView: AppTerminalView?
+    let terminalHeight: CGFloat
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,16 +80,16 @@ struct CanvasCardView: View {
                 }
                 Spacer()
             }
+            .frame(height: titleBarHeight)
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
             .background(Color(nsColor: .windowBackgroundColor))
 
             if let termView = terminalView {
                 CanvasTerminalView(terminal: termView)
-                    .frame(height: 200)
+                    .frame(height: terminalHeight)
             } else {
                 Color.secondary.opacity(0.1)
-                    .frame(height: 200)
+                    .frame(height: terminalHeight)
             }
         }
         .background(AgentStateBackground(agentState: agentState, isActive: true, isSelected: false))
