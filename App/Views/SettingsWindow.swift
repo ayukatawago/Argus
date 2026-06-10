@@ -55,14 +55,17 @@ struct SettingsRootView: View {
     }
 
     private func navRow(_ cat: SettingsCategory) -> some View {
-        Button(action: { selected = cat }) {
-            Label(cat.rawValue, systemImage: cat.icon)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(selected == cat ? Color.accentColor.opacity(0.2) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
-        }
+        Button(
+            action: { selected = cat },
+            label: {
+                Label(cat.rawValue, systemImage: cat.icon)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(selected == cat ? Color.accentColor.opacity(0.2) : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+            }
+        )
         .buttonStyle(.plain)
     }
 }
