@@ -77,7 +77,6 @@ struct AppShellView: View {
                 let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
             else { return }
             pool.getOrCreate(id: id, workingDirectory: worktree.path)
-            agentBus.reset(for: id)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openLazygit)) { _ in
             guard let id = selectedWorktreeID,
@@ -175,7 +174,9 @@ struct AppShellView: View {
     }
 
     private func dismissDoneIfNeeded() {
-        guard let id = selectedWorktreeID, agentBus.state(for: id) != .idle else { return }
+        guard let id = selectedWorktreeID else { return }
+        let state = agentBus.state(for: id)
+        guard state == .done || state == .waitingForApproval else { return }
         agentBus.reset(for: id)
     }
 }
