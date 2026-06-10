@@ -38,7 +38,7 @@ struct CanvasView: View {
     }
 }
 
-private struct CanvasLayout {
+struct CanvasLayout {
     let columns: Int
     let cardWidth: CGFloat
     let terminalHeight: CGFloat
@@ -55,6 +55,9 @@ private struct CanvasLayout {
         let cardHeight = max(60, (available.height - totalVPad) / CGFloat(rows))
         terminalHeight = max(40, cardHeight - titleBarHeight)
     }
+
+    /// Font size (pt) scaled so roughly 20 lines fit in the terminal area.
+    var fontSize: Int { max(7, min(13, Int(terminalHeight / 25.0))) }
 }
 
 struct CanvasCardView: View {
