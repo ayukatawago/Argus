@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script src="marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <style>
       :root {
         color-scheme: light dark;
@@ -207,6 +208,16 @@
         height: auto;
       }
 
+      .mermaid {
+        text-align: center;
+        margin: 16px 0;
+        overflow-x: auto;
+      }
+      .mermaid svg {
+        max-width: 100%;
+        height: auto;
+      }
+
       /* Dark mode — must be last so it overrides the base styles above */
       @media (prefers-color-scheme: dark) {
         body {
@@ -282,6 +293,20 @@
       var CURRENT_FILE_PATH = {{CURRENT_FILE_JSON}};
 
       document.getElementById("content").innerHTML = marked.parse(MARKDOWN_CONTENT);
+
+      // Convert fenced ```mermaid blocks to div.mermaid for the renderer
+      document.querySelectorAll("pre code.language-mermaid").forEach(function (el) {
+        var div = document.createElement("div");
+        div.className = "mermaid";
+        div.textContent = el.textContent;
+        el.closest("pre").replaceWith(div);
+      });
+
+      if (typeof mermaid !== "undefined") {
+        var isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        mermaid.initialize({ startOnLoad: false, theme: isDark ? "dark" : "default" });
+        mermaid.run().catch(function () {});
+      }
 
       function escHtml(s) {
         return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
