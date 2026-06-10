@@ -9,32 +9,38 @@ enum WorktreeHookManager {
         var errorDescription: String? { "Cannot locate Application Support directory." }
     }
 
+    private struct HookPaths {
+        let running: URL
+        let done: URL
+        let approval: URL
+        let userPrompt: URL
+        let preCompact: URL
+        let postCompact: URL
+    }
+
     /// Idempotent: writes the shared hook scripts once and merges kotty's hook
     /// entries into the worktree's .claude/settings.local.json.
     static func install(worktreePath: String) throws {
         let hooksDir = try kottyHooksDir()
         let socketPath = HookIPC.socketPath
-        let runningURL = hooksDir.appendingPathComponent("claude-running.sh")
-        let doneURL = hooksDir.appendingPathComponent("claude-done.sh")
-        let approvalURL = hooksDir.appendingPathComponent("claude-waiting-approval.sh")
-        let userPromptURL = hooksDir.appendingPathComponent("claude-user-prompt.sh")
-        let preCompactURL = hooksDir.appendingPathComponent("claude-pre-compact.sh")
-        let postCompactURL = hooksDir.appendingPathComponent("claude-post-compact.sh")
-        try writeExecutable(at: runningURL, content: hookScript(state: "running", socketPath: socketPath))
-        try writeExecutable(at: doneURL, content: hookScript(state: "done", socketPath: socketPath))
-        try writeExecutable(at: approvalURL, content: hookScript(state: "waitingForApproval", socketPath: socketPath))
-        try writeExecutable(at: userPromptURL, content: hookScript(state: "running", socketPath: socketPath))
-        try writeExecutable(at: preCompactURL, content: hookScript(state: "running", socketPath: socketPath))
-        try writeExecutable(at: postCompactURL, content: hookScript(state: "done", socketPath: socketPath))
-        try patchLocalSettings(
-            worktreePath: worktreePath,
-            running: runningURL.path,
-            done: doneURL.path,
-            approval: approvalURL.path,
-            userPrompt: userPromptURL.path,
-            preCompact: preCompactURL.path,
-            postCompact: postCompactURL.path
+        let paths = HookPaths(
+            running: hooksDir.appendingPathComponent("claude-running.sh"),
+            done: hooksDir.appendingPathComponent("claude-done.sh"),
+            approval: hooksDir.appendingPathComponent("claude-waiting-approval.sh"),
+            userPrompt: hooksDir.appendingPathComponent("claude-user-prompt.sh"),
+            preCompact: hooksDir.appendingPathComponent("claude-pre-compact.sh"),
+            postCompact: hooksDir.appendingPathComponent("claude-post-compact.sh")
         )
+        try writeExecutable(at: paths.running, content: hookScript(state: "running", socketPath: socketPath))
+        try writeExecutable(at: paths.done, content: hookScript(state: "done", socketPath: socketPath))
+        try writeExecutable(
+            at: paths.approval,
+            content: hookScript(state: "waitingForApproval", socketPath: socketPath)
+        )
+        try writeExecutable(at: paths.userPrompt, content: hookScript(state: "running", socketPath: socketPath))
+        try writeExecutable(at: paths.preCompact, content: hookScript(state: "running", socketPath: socketPath))
+        try writeExecutable(at: paths.postCompact, content: hookScript(state: "done", socketPath: socketPath))
+        try patchLocalSettings(worktreePath: worktreePath, paths: paths)
     }
 
     private static func kottyHooksDir() throws -> URL {
@@ -70,24 +76,12 @@ enum WorktreeHookManager {
 
     // MARK: - .claude/settings.local.json
 
-    private static func patchLocalSettings(
-        worktreePath: String,
-        running: String,
-        done: String,
-        approval: String,
-        userPrompt: String,
-        preCompact: String,
-        postCompact: String
-    ) throws {
+    private static func patchLocalSettings(worktreePath: String, paths: HookPaths) throws {
         let claudeDir = URL(fileURLWithPath: worktreePath).appendingPathComponent(".claude")
         try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
         let settingsURL = claudeDir.appendingPathComponent("settings.local.json")
         var settings = loadSettings(at: settingsURL)
-        settings["hooks"] = mergedHooks(
-            in: settings, running: running, done: done,
-            approval: approval, userPrompt: userPrompt,
-            preCompact: preCompact, postCompact: postCompact
-        )
+        settings["hooks"] = mergedHooks(in: settings, paths: paths)
         try saveSettings(settings, to: settingsURL)
     }
 
@@ -98,45 +92,37 @@ enum WorktreeHookManager {
         return obj
     }
 
-    private static func mergedHooks(
-        in settings: [String: Any],
-        running: String,
-        done: String,
-        approval: String,
-        userPrompt: String,
-        preCompact: String,
-        postCompact: String
-    ) -> [String: Any] {
+    private static func mergedHooks(in settings: [String: Any], paths: HookPaths) -> [String: Any] {
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
         hooks["PreToolUse"] = upsertKottyEntry(
             in: hooks["PreToolUse"] as? [[String: Any]] ?? [],
-            entry: ["matcher": ".*", "hooks": [["type": "command", "command": quoted(running)]]]
+            entry: ["matcher": ".*", "hooks": [["type": "command", "command": quoted(paths.running.path)]]]
         )
         // Stop is a session-level event; "matcher": "" is required even though it's unused.
         hooks["Stop"] = upsertKottyEntry(
             in: hooks["Stop"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(done)]]]
+            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.done.path)]]]
         )
         // PreCompact fires when /compact begins — show running indicator during compaction.
         hooks["PreCompact"] = upsertKottyEntry(
             in: hooks["PreCompact"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(preCompact)]]]
+            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.preCompact.path)]]]
         )
         // PostCompact fires after /compact finishes — Stop does not fire in this case.
         hooks["PostCompact"] = upsertKottyEntry(
             in: hooks["PostCompact"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(postCompact)]]]
+            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.postCompact.path)]]]
         )
         // PermissionRequest fires when Claude Code shows an approval dialog (blocking).
         hooks["PermissionRequest"] = upsertKottyEntry(
             in: hooks["PermissionRequest"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(approval)]]]
+            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.approval.path)]]]
         )
         // UserPromptSubmit fires when the user sends a message — transitions to running
         // before PreToolUse so the done/approval indicator clears immediately on reply.
         hooks["UserPromptSubmit"] = upsertKottyEntry(
             in: hooks["UserPromptSubmit"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(userPrompt)]]]
+            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.userPrompt.path)]]]
         )
         return hooks
     }
