@@ -15,6 +15,7 @@ struct GitRepo: Identifiable, Equatable {
     let name: String
     let mainPath: String
     var worktrees: [GitWorktree]
+    var isGitRepo: Bool = true
 }
 
 @MainActor
@@ -189,7 +190,7 @@ final class WorkspaceStore: ObservableObject {
         }
 
         guard let entries = try? files.contentsOfDirectory(atPath: root) else { return [] }
-        return entries.sorted().compactMap { name -> GitRepo? in
+        let found = entries.sorted().compactMap { name -> GitRepo? in
             let path = root + "/" + name
             guard !excluding.contains(path) else { return nil }
             var isDir: ObjCBool = false
@@ -199,6 +200,14 @@ final class WorkspaceStore: ObservableObject {
             guard !worktrees.isEmpty else { return nil }
             return GitRepo(name: name, mainPath: path, worktrees: worktrees)
         }
+        if found.isEmpty {
+            guard !excluding.contains(root) else { return [] }
+            let name = URL(fileURLWithPath: root).lastPathComponent
+            return [GitRepo(name: name, mainPath: root,
+                            worktrees: [GitWorktree(path: root, branch: nil, isMain: true)],
+                            isGitRepo: false)]
+        }
+        return found
     }
 
     private nonisolated static func fetchWorktrees(repoPath: String) -> [GitWorktree] {

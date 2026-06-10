@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RepoHeader: View {
     let name: String
+    let isGitRepo: Bool
     let hiddenCount: Int
     let onAddWorktree: () -> Void
     let onRemove: () -> Void
@@ -20,12 +21,14 @@ struct RepoHeader: View {
                 .buttonStyle(.borderless)
                 .help("Unhide \(hiddenCount) worktree\(hiddenCount == 1 ? "" : "s")")
             }
-            Button(action: onAddWorktree) {
-                Image(systemName: "plus.circle")
-                    .imageScale(.medium)
+            if isGitRepo {
+                Button(action: onAddWorktree) {
+                    Image(systemName: "plus.circle")
+                        .imageScale(.medium)
+                }
+                .buttonStyle(.borderless)
+                .help("Add worktree")
             }
-            .buttonStyle(.borderless)
-            .help("Add worktree")
             Button(action: onRemove) {
                 Image(systemName: "minus.circle")
                     .imageScale(.medium)
