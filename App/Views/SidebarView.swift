@@ -95,7 +95,7 @@ struct SidebarView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if store.repos.isEmpty {
-                        Text("No git repos found")
+                        Text("No folders found")
                             .foregroundStyle(.secondary)
                             .font(.caption)
                             .padding()
@@ -135,6 +135,7 @@ struct SidebarView: View {
         VStack(alignment: .leading, spacing: 0) {
             RepoHeader(
                 name: repo.name,
+                isGitRepo: repo.isGitRepo,
                 hiddenCount: hidden.count,
                 onAddWorktree: { addWorktree(for: repo) },
                 onRemove: {
