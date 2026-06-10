@@ -74,24 +74,26 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, WKScriptMessageHa
     private func buildHTML(for fileURL: URL) -> String? {
         let encoder = JSONEncoder()
         guard let content = try? String(contentsOf: fileURL, encoding: .utf8),
-              let templateURL = Bundle.main.url(forResource: "markdown-preview", withExtension: "html"),
-              let template = try? String(contentsOf: templateURL, encoding: .utf8),
-              let markedURL = Bundle.main.url(forResource: "marked.min", withExtension: "js"),
-              let markedJS = try? String(contentsOf: markedURL, encoding: .utf8),
-              let mdJSON = String(data: (try? encoder.encode(content)) ?? Data(), encoding: .utf8),
-              let pathJSON = String(data: (try? encoder.encode(fileURL.path)) ?? Data(), encoding: .utf8)
+            let templateURL = Bundle.main.url(forResource: "markdown-preview", withExtension: "html"),
+            let template = try? String(contentsOf: templateURL, encoding: .utf8),
+            let markedURL = Bundle.main.url(forResource: "marked.min", withExtension: "js"),
+            let markedJS = try? String(contentsOf: markedURL, encoding: .utf8),
+            let mdJSON = String(data: (try? encoder.encode(content)) ?? Data(), encoding: .utf8),
+            let pathJSON = String(data: (try? encoder.encode(fileURL.path)) ?? Data(), encoding: .utf8)
         else { return nil }
 
         let rootPath = currentWorktreePath ?? fileURL.deletingLastPathComponent().path
         let tree = buildFileTree(at: rootPath)
         let treeJSON = String(data: (try? encoder.encode(tree)) ?? Data(), encoding: .utf8) ?? "[]"
 
-        let html = template
+        let html =
+            template
             .replacingOccurrences(of: "{{MARKDOWN_JSON}}", with: mdJSON)
             .replacingOccurrences(of: "{{FILE_TREE_JSON}}", with: treeJSON)
             .replacingOccurrences(of: "{{CURRENT_FILE_JSON}}", with: pathJSON)
-        return html.replacingOccurrences(of: #"<script src="marked.min.js"></script>"#,
-                                         with: "<script>\(markedJS)</script>")
+        return html.replacingOccurrences(
+            of: #"<script src="marked.min.js"></script>"#,
+            with: "<script>\(markedJS)</script>")
     }
 
     private struct TreeNode: Encodable {
@@ -137,8 +139,8 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, WKScriptMessageHa
     ) {
         MainActor.assumeIsolated {
             guard message.name == "linkClicked",
-                  let urlString = message.body as? String,
-                  let url = URL(string: urlString)
+                let urlString = message.body as? String,
+                let url = URL(string: urlString)
             else { return }
             if url.isFileURL && url.pathExtension.lowercased() == "md" {
                 show(fileURL: url)

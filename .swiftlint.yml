@@ -10,6 +10,7 @@ opt_in_rules:
 
 disabled_rules:
   - todo
+  - opening_brace
 
 excluded:
   - Vendor/
@@ -34,3 +35,6 @@ function_body_length:
 
 force_cast: error
 force_unwrapping: error
+
+trailing_comma:
+  mandatory_comma: true

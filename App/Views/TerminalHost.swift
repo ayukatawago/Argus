@@ -59,7 +59,7 @@ final class TerminalHost: NSView {
             terminal.topAnchor.constraint(equalTo: topAnchor),
             terminal.bottomAnchor.constraint(equalTo: bottomAnchor),
             terminal.leadingAnchor.constraint(equalTo: leadingAnchor),
-            terminal.trailingAnchor.constraint(equalTo: trailingAnchor)
+            terminal.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
     }
 }
