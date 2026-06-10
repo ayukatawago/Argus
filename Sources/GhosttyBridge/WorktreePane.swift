@@ -19,10 +19,12 @@ final class WorktreePane {
 
         let shellCommand =
             "tmux new-session -A -s \(shellSession)"
+            + " \\; set -s extended-keys on"
             + " \\; set-option -t \(shellSession) status off"
         let claudeCmd = "claude --continue || exec \(shell) -l"
         let agentCommand =
             "tmux new-session -A -s \(agentSession) \(shell) -l -c '\(claudeCmd)'"
+            + " \\; set -s extended-keys on"
             + " \\; set-option -t \(agentSession) status off"
 
         shellState = Self.makeState(command: shellCommand)
