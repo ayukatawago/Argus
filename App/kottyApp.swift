@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var keyEventMonitor: Any?
     private var mouseEventMonitor: Any?
@@ -29,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     withTimeInterval: config.leaderTimeoutSeconds,
                     repeats: false
                 ) { [weak self] _ in
-                    self?.awaitingLeader = false
+                    MainActor.assumeIsolated { self?.awaitingLeader = false }
                 }
                 return nil
             }
