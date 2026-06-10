@@ -1,4 +1,11 @@
+import GhosttyTerminal
 import SwiftUI
+
+struct WorktreeCard {
+    let id: String
+    let name: String
+    let branch: String?
+}
 
 @MainActor
 private final class PanePool: ObservableObject {
@@ -6,6 +13,7 @@ private final class PanePool: ObservableObject {
     let agentHost = TerminalHost(frame: .zero)
     private var panes: [String: WorktreePane] = [:]
     @Published private(set) var activeIDs: Set<String> = []
+    @Published private(set) var canvasViews: [String: AppTerminalView] = [:]
 
     func getOrCreate(id: String, workingDirectory: String) {
         guard panes[id] == nil else { return }
@@ -28,6 +36,26 @@ private final class PanePool: ObservableObject {
         shellHost.unregister(id: id)
         agentHost.unregister(id: id)
         activeIDs.remove(id)
+        canvasViews.removeValue(forKey: id)
+    }
+
+    func openCanvas(worktrees: [(id: String, path: String)]) {
+        for (id, path) in worktrees where canvasViews[id] == nil {
+            let session = WorktreePane.sessionName("a", path: path)
+            let state = TerminalViewState(
+                terminalConfiguration: TerminalConfiguration {
+                    $0.withFontSize(9)
+                    $0.withCursorStyleBlink(false)
+                    $0.withCustom("command", "tmux attach-session -t \(session)")
+                }
+            )
+            state.configuration = TerminalSurfaceOptions(backend: .exec, workingDirectory: path)
+            canvasViews[id] = WorktreePane.makeView(state: state)
+        }
+    }
+
+    func closeCanvas() {
+        canvasViews.removeAll()
     }
 }
 
@@ -39,6 +67,7 @@ struct AppShellView: View {
     @StateObject private var agentBus = AgentStateBus()
     @Environment(\.openWindow) private var openWindow
     @State private var selectedWorktreeID: String?
+    @State private var isCanvasMode = false
     @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
 
     var body: some View {
@@ -56,6 +85,15 @@ struct AppShellView: View {
             )
         } detail: {
             terminalDetail
+        }
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Button(action: toggleCanvas) {
+                    Image(systemName: isCanvasMode ? "rectangle.split.3x1" : "square.grid.2x2")
+                }
+                .help(isCanvasMode ? "Exit canvas (⌘⇧C)" : "Canvas view (⌘⇧C)")
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+            }
         }
         .onAppear {
             store.load()
@@ -137,10 +175,46 @@ struct AppShellView: View {
 
     @ViewBuilder
     private var terminalDetail: some View {
-        WorktreeContentView(shellHost: pool.shellHost, agentHost: pool.agentHost)
+        if isCanvasMode {
+            CanvasView(
+                worktrees: activeWorktrees,
+                canvasViews: pool.canvasViews,
+                agentBus: agentBus,
+                onSelect: { id in
+                    selectedWorktreeID = id
+                    isCanvasMode = false
+                    pool.closeCanvas()
+                }
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(terminalBackground)
-            .overlay(terminalBorder)
+        } else {
+            WorktreeContentView(shellHost: pool.shellHost, agentHost: pool.agentHost)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(terminalBackground)
+                .overlay(terminalBorder)
+        }
+    }
+
+    private var activeWorktrees: [WorktreeCard] {
+        store.repos.flatMap(\.worktrees)
+            .filter { pool.activeIDs.contains($0.id) }
+            .map { worktree in
+                WorktreeCard(
+                    id: worktree.id,
+                    name: URL(fileURLWithPath: worktree.path).lastPathComponent,
+                    branch: worktree.branch
+                )
+            }
+    }
+
+    private func toggleCanvas() {
+        if isCanvasMode {
+            pool.closeCanvas()
+            isCanvasMode = false
+        } else {
+            pool.openCanvas(worktrees: activeWorktrees.map { (id: $0.id, path: $0.id) })
+            isCanvasMode = true
+        }
     }
 
     @ViewBuilder
