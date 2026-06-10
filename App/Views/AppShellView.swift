@@ -46,7 +46,8 @@ private final class PanePool: ObservableObject {
                 terminalConfiguration: TerminalConfiguration {
                     $0.withFontSize(Float(fontSize))
                     $0.withCursorStyleBlink(false)
-                    $0.withCustom("command", "tmux attach-session -t \(session)")
+                    $0.withCustom(
+                        "command", "tmux attach-session -t \(session) \\; set-option -t \(session) status off")
                 }
             )
             state.configuration = TerminalSurfaceOptions(backend: .exec, workingDirectory: path)
