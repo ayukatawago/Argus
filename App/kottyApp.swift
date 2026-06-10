@@ -18,7 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Leader key: enter leader mode, or pass through on double press (e.g. for nested tmux).
             if let (leaderMods, leaderChar) = Self.parseLeaderKey(config.leaderKey),
-               modifiers == leaderMods, char == leaderChar {
+                modifiers == leaderMods, char == leaderChar
+            {
                 if self.awaitingLeader {
                     self.awaitingLeader = false
                     self.leaderTimer?.invalidate()
@@ -114,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             bindings.openLazygit: .openLazygit,
             bindings.refreshWorkspace: .refreshWorkspace,
             bindings.openMarkdownPreview: .openMarkdownPreview,
-            bindings.openSettings: .openSettings
+            bindings.openSettings: .openSettings,
         ]
     }
 }

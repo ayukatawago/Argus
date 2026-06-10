@@ -107,7 +107,7 @@ struct AppShellView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .openMarkdownPreview)) { _ in
             guard let id = selectedWorktreeID,
-                  let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
+                let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
             else { return }
             markdownPreview.open(worktreePath: worktree.path)
         }
@@ -122,7 +122,7 @@ struct AppShellView: View {
         }
         guard !all.isEmpty else { return }
         guard let current = selectedWorktreeID,
-              let idx = all.firstIndex(where: { $0.id == current })
+            let idx = all.firstIndex(where: { $0.id == current })
         else {
             selectedWorktreeID = all.first?.id
             return

@@ -53,9 +53,10 @@ struct SidebarView: View {
                 }
                 Button("Cancel", role: .cancel) { Task { await store.refresh() } }
             } message: {
-                let name = forceDeleteTarget.map {
-                    URL(fileURLWithPath: $0.worktree.path).lastPathComponent
-                } ?? ""
+                let name =
+                    forceDeleteTarget.map {
+                        URL(fileURLWithPath: $0.worktree.path).lastPathComponent
+                    } ?? ""
                 Text("Force delete will discard all uncommitted changes in \"\(name)\" permanently.")
             }
             .alert("New Worktree", isPresented: $showAddWorktree) {
@@ -108,8 +109,12 @@ struct SidebarView: View {
                 .padding(.bottom, 4)
             }
             .focusable()
-            .onKeyPress(.upArrow) { navigateSelection(forward: false); return .handled }
-            .onKeyPress(.downArrow) { navigateSelection(forward: true); return .handled }
+            .onKeyPress(.upArrow) {
+                navigateSelection(forward: false); return .handled
+            }
+            .onKeyPress(.downArrow) {
+                navigateSelection(forward: true); return .handled
+            }
 
             Divider()
 
@@ -161,9 +166,9 @@ struct SidebarView: View {
         }
         .dropDestination(for: String.self) { items, _ in
             guard let draggedID = items.first,
-                  draggedID != repo.id,
-                  let fromIdx = store.repos.firstIndex(where: { $0.id == draggedID }),
-                  let toIdx = store.repos.firstIndex(where: { $0.id == repo.id })
+                draggedID != repo.id,
+                let fromIdx = store.repos.firstIndex(where: { $0.id == draggedID }),
+                let toIdx = store.repos.firstIndex(where: { $0.id == repo.id })
             else { return false }
             store.moveRepo(fromIndex: fromIdx, toIndex: toIdx)
             return true
@@ -213,7 +218,7 @@ struct SidebarView: View {
         let all = store.repos.flatMap(\.worktrees).filter { !store.hiddenWorktreeIDs.contains($0.id) }
         guard !all.isEmpty else { return }
         guard let current = selectedWorktreeID,
-              let idx = all.firstIndex(where: { $0.id == current })
+            let idx = all.firstIndex(where: { $0.id == current })
         else { selectedWorktreeID = all.first?.id; return }
         let next = forward ? (idx + 1) % all.count : (idx - 1 + all.count) % all.count
         selectedWorktreeID = all[next].id

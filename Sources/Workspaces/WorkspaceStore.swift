@@ -114,9 +114,11 @@ final class WorkspaceStore: ObservableObject {
     }
 
     private func saveConfig() {
-        guard let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first else { return }
+        guard
+            let appSupport = FileManager.default.urls(
+                for: .applicationSupportDirectory, in: .userDomainMask
+            ).first
+        else { return }
         let dir = appSupport.appendingPathComponent("kotty")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         struct Config: Encodable {
@@ -125,12 +127,13 @@ final class WorkspaceStore: ObservableObject {
             let excludedRepoPaths: [String]
             let repoOrder: [String]
         }
-        let data = try? JSONEncoder().encode(Config(
-            roots: roots,
-            hiddenWorktreeIDs: Array(hiddenWorktreeIDs),
-            excludedRepoPaths: Array(excludedRepoPaths),
-            repoOrder: repoOrder
-        ))
+        let data = try? JSONEncoder().encode(
+            Config(
+                roots: roots,
+                hiddenWorktreeIDs: Array(hiddenWorktreeIDs),
+                excludedRepoPaths: Array(excludedRepoPaths),
+                repoOrder: repoOrder
+            ))
         try? data?.write(to: dir.appendingPathComponent("workspaces.json"))
     }
 
@@ -142,9 +145,11 @@ final class WorkspaceStore: ObservableObject {
     }
 
     private nonisolated static func loadConfig() -> StoredConfig {
-        guard let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first else {
+        guard
+            let appSupport = FileManager.default.urls(
+                for: .applicationSupportDirectory, in: .userDomainMask
+            ).first
+        else {
             return StoredConfig(roots: defaultRoots(), hiddenWorktreeIDs: [], excludedRepoPaths: [], repoOrder: [])
         }
         let configURL = appSupport.appendingPathComponent("kotty/workspaces.json")
@@ -155,7 +160,8 @@ final class WorkspaceStore: ObservableObject {
             let repoOrder: [String]?
         }
         if let data = try? Data(contentsOf: configURL),
-           let payload = try? JSONDecoder().decode(Payload.self, from: data) {
+            let payload = try? JSONDecoder().decode(Payload.self, from: data)
+        {
             return StoredConfig(
                 roots: payload.roots,
                 hiddenWorktreeIDs: Set(payload.hiddenWorktreeIDs ?? []),
@@ -227,7 +233,8 @@ final class WorkspaceStore: ObservableObject {
                 if line.hasPrefix("worktree ") {
                     path = String(line.dropFirst("worktree ".count))
                 } else if line.hasPrefix("branch ") {
-                    branch = String(line.dropFirst("branch ".count))
+                    branch =
+                        String(line.dropFirst("branch ".count))
                         .components(separatedBy: "/").last
                 } else if line == "detached" {
                     isDetached = true

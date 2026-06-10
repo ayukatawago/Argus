@@ -10,7 +10,8 @@ final class PTYProcess: @unchecked Sendable {
     private var childPID: Int32 = -1
 
     func start(shell: String? = nil, workingDirectory: String? = nil) {
-        let shellPath = shell
+        let shellPath =
+            shell
             ?? loginShell()
             ?? ProcessInfo.processInfo.environment["SHELL"]
             ?? "/bin/zsh"

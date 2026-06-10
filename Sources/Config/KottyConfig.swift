@@ -35,7 +35,7 @@ final class KottyConfigStore: ObservableObject {
 
     func load() {
         guard let data = try? Data(contentsOf: Self.configURL),
-              let decoded = try? JSONDecoder().decode(KottyConfig.self, from: data)
+            let decoded = try? JSONDecoder().decode(KottyConfig.self, from: data)
         else { return }
         config = decoded
     }
