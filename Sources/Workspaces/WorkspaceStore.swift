@@ -143,7 +143,9 @@ final class WorkspaceStore: ObservableObject {
     private nonisolated static func loadConfig() -> StoredConfig {
         guard let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
-        ).first else { return StoredConfig(roots: defaultRoots(), hiddenWorktreeIDs: [], excludedRepoPaths: [], repoOrder: []) }
+        ).first else {
+            return StoredConfig(roots: defaultRoots(), hiddenWorktreeIDs: [], excludedRepoPaths: [], repoOrder: [])
+        }
         let configURL = appSupport.appendingPathComponent("kotty/workspaces.json")
         struct Payload: Decodable {
             let roots: [String]
