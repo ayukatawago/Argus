@@ -16,8 +16,6 @@ struct SidebarView: View {
     @State private var showPickFolder = false
     @State private var showDeleteConfirmation = false
     @State private var deleteTarget: WorktreeDeleteTarget?
-    @State private var showForceDeleteAlert = false
-    @State private var forceDeleteTarget: WorktreeDeleteTarget?
     @State private var showAddWorktree = false
     @State private var addWorktreeRepo: GitRepo?
     @State private var newBranchName = ""
@@ -36,28 +34,13 @@ struct SidebarView: View {
                     .help("Add repository or workspace folder")
                 }
             }
-            .confirmationDialog(
-                deleteDialogTitle,
-                isPresented: $showDeleteConfirmation,
-                titleVisibility: .visible
-            ) {
+            .alert(deleteDialogTitle, isPresented: $showDeleteConfirmation) {
                 Button("Delete", role: .destructive) {
                     if let target = deleteTarget { performDelete(target) }
                 }
+                Button("Cancel", role: .cancel) {}
             } message: {
-                Text("The working directory will be removed. Committed work is safe in the repository.")
-            }
-            .alert("Worktree has uncommitted changes", isPresented: $showForceDeleteAlert) {
-                Button("Force Delete", role: .destructive) {
-                    if let target = forceDeleteTarget { performForceDelete(target) }
-                }
-                Button("Cancel", role: .cancel) { Task { await store.refresh() } }
-            } message: {
-                let name =
-                    forceDeleteTarget.map {
-                        URL(fileURLWithPath: $0.worktree.path).lastPathComponent
-                    } ?? ""
-                Text("Force delete will discard all uncommitted changes in \"\(name)\" permanently.")
+                Text("The working directory will be permanently removed, including any uncommitted changes.")
             }
             .alert("New Worktree", isPresented: $showAddWorktree) {
                 TextField("feature-branch", text: $newBranchName)
@@ -234,32 +217,12 @@ struct SidebarView: View {
         let repo = target.repo
         if activeTerminalIDs.contains(worktree.id) { onRelease(worktree.id) }
         if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
-        Task {
-            let exitCode = await Task.detached(priority: .userInitiated) {
-                let proc = Process()
-                proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-                proc.arguments = ["-C", repo.mainPath, "worktree", "remove", worktree.path]
-                proc.standardOutput = Pipe()
-                proc.standardError = Pipe()
-                guard (try? proc.run()) != nil else { return Int32(-1) }
-                proc.waitUntilExit()
-                return proc.terminationStatus
-            }.value
-            if exitCode != 0 {
-                forceDeleteTarget = WorktreeDeleteTarget(worktree: worktree, repo: repo)
-                showForceDeleteAlert = true
-            } else {
-                await store.refresh()
-            }
-        }
-    }
-
-    private func performForceDelete(_ target: WorktreeDeleteTarget) {
+        store.hideWorktree(id: worktree.id)
         Task {
             await Task.detached(priority: .userInitiated) {
                 let proc = Process()
                 proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-                proc.arguments = ["-C", target.repo.mainPath, "worktree", "remove", "--force", target.worktree.path]
+                proc.arguments = ["-C", repo.mainPath, "worktree", "remove", "--force", worktree.path]
                 proc.standardOutput = Pipe()
                 proc.standardError = Pipe()
                 try? proc.run()
