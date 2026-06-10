@@ -54,12 +54,22 @@ Co-authored-by: Claude Code <claude@anthropic.com>
 
 1. Run `git status` and `git diff --cached` to inspect staged changes.
 2. If nothing is staged, run `git diff` to see unstaged changes, then ask the user which files to stage (or stage all with their confirmation).
-3. Analyse the diff to determine:
+3. **Pre-commit check — run the build and fail fast if anything is wrong:**
+   ```
+   xcodebuild -scheme kotty -configuration Debug build 2>&1 \
+     | grep -E "warning:|error:" \
+     | grep -v "appintentsmetadata"
+   ```
+   - If any Swift compiler **warnings** appear, stop and fix them before committing.
+   - If any SwiftLint **warnings** appear, stop and fix them before committing.
+   - If the build itself fails (errors), stop and fix before committing.
+   - Only proceed when the output of the above command is empty.
+4. Analyse the diff to determine:
    - The appropriate **type** from the table above
    - A concise **description** in imperative mood that says *what changed and why*, not just *what files changed*
-4. If the change is large or spans multiple concerns, propose splitting into separate commits and ask the user.
-5. Show the proposed commit message to the user before creating it.
-6. Create the commit:
+5. If the change is large or spans multiple concerns, propose splitting into separate commits and ask the user.
+6. Show the proposed commit message to the user before creating it.
+7. Create the commit:
 
 ```
 git commit -m "$(cat <<'EOF'
@@ -70,7 +80,7 @@ EOF
 )"
 ```
 
-7. Confirm success by showing the one-line git log entry.
+8. Confirm success by showing the one-line git log entry.
 
 ## Examples
 
