@@ -203,9 +203,8 @@ final class WorkspaceStore: ObservableObject {
         if found.isEmpty {
             guard !excluding.contains(root) else { return [] }
             let name = URL(fileURLWithPath: root).lastPathComponent
-            return [GitRepo(name: name, mainPath: root,
-                            worktrees: [GitWorktree(path: root, branch: nil, isMain: true)],
-                            isGitRepo: false)]
+            let worktree = GitWorktree(path: root, branch: nil, isMain: true)
+            return [GitRepo(name: name, mainPath: root, worktrees: [worktree], isGitRepo: false)]
         }
         return found
     }
