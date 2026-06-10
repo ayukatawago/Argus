@@ -57,7 +57,8 @@ enum WorktreeHookManager {
     private static func hookScript(state: String, socketPath: String) -> String {
         """
         #!/bin/bash
-        WORKTREE=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+        WORKTREE=$(git rev-parse --show-toplevel 2>/dev/null)
+        WORKTREE="${WORKTREE:-$PWD}"
         [ -z "$WORKTREE" ] && exit 0
         SOCK='\(socketPath)'
         [ -S "$SOCK" ] || exit 0
