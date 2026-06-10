@@ -39,12 +39,12 @@ private final class PanePool: ObservableObject {
         canvasViews.removeValue(forKey: id)
     }
 
-    func openCanvas(worktrees: [(id: String, path: String)]) {
+    func openCanvas(worktrees: [(id: String, path: String)], fontSize: Int) {
         for (id, path) in worktrees where canvasViews[id] == nil {
             let session = WorktreePane.sessionName("a", path: path)
             let state = TerminalViewState(
                 terminalConfiguration: TerminalConfiguration {
-                    $0.withFontSize(9)
+                    $0.withFontSize(Float(fontSize))
                     $0.withCursorStyleBlink(false)
                     $0.withCustom("command", "tmux attach-session -t \(session)")
                 }
@@ -68,6 +68,7 @@ struct AppShellView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var selectedWorktreeID: String?
     @State private var isCanvasMode = false
+    @State private var detailSize: CGSize = .zero
     @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
 
     var body: some View {
@@ -85,6 +86,13 @@ struct AppShellView: View {
             )
         } detail: {
             terminalDetail
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { detailSize = geo.size }
+                            .onChange(of: geo.size) { _, size in detailSize = size }
+                    }
+                )
         }
         .toolbar {
             ToolbarItem(placement: .automatic) {
@@ -212,7 +220,11 @@ struct AppShellView: View {
             pool.closeCanvas()
             isCanvasMode = false
         } else {
-            pool.openCanvas(worktrees: activeWorktrees.map { (id: $0.id, path: $0.id) })
+            let layout = CanvasLayout(count: activeWorktrees.count, available: detailSize)
+            pool.openCanvas(
+                worktrees: activeWorktrees.map { (id: $0.id, path: $0.id) },
+                fontSize: layout.fontSize
+            )
             isCanvasMode = true
         }
     }
