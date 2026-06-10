@@ -17,9 +17,13 @@ final class WorktreePane {
         let shellSession = Self.sessionName("s", path: workingDirectory)
         let agentSession = Self.sessionName("a", path: workingDirectory)
 
-        let shellCommand = "tmux new-session -A -s \(shellSession)"
+        let shellCommand =
+            "tmux new-session -A -s \(shellSession)"
+            + " \\; set-option -t \(shellSession) status off"
         let claudeCmd = "claude --continue || exec \(shell) -l"
-        let agentCommand = "tmux new-session -A -s \(agentSession) \(shell) -l -c '\(claudeCmd)'"
+        let agentCommand =
+            "tmux new-session -A -s \(agentSession) \(shell) -l -c '\(claudeCmd)'"
+            + " \\; set-option -t \(agentSession) status off"
 
         shellState = Self.makeState(command: shellCommand)
         shellState.configuration = surfaceOptions
