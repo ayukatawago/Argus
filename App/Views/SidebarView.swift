@@ -174,6 +174,7 @@ struct SidebarView: View {
                 isActive: isActive,
                 isSelected: selectedWorktreeID == worktree.id,
                 agentState: agentBus.state(for: worktree.id),
+                agentType: agentBus.agentType(for: worktree.id),
                 onRelease: isActive ? { onRelease(worktree.id) } : nil,
                 onDelete: worktree.isMain ? nil : { deleteWorktree(worktree, in: repo) },
                 onHide: {
@@ -265,6 +266,7 @@ private struct WorktreeRow: View {
     let isActive: Bool
     let isSelected: Bool
     let agentState: AgentState
+    let agentType: AgentType
     let onRelease: (() -> Void)?
     let onDelete: (() -> Void)?
     let onHide: () -> Void
@@ -275,6 +277,7 @@ private struct WorktreeRow: View {
         isActive: Bool = false,
         isSelected: Bool = false,
         agentState: AgentState = .idle,
+        agentType: AgentType = .claude,
         onRelease: (() -> Void)? = nil,
         onDelete: (() -> Void)? = nil,
         onHide: @escaping () -> Void
@@ -283,6 +286,7 @@ private struct WorktreeRow: View {
         self.isActive = isActive
         self.isSelected = isSelected
         self.agentState = agentState
+        self.agentType = agentType
         self.onRelease = onRelease
         self.onDelete = onDelete
         self.onHide = onHide
@@ -290,11 +294,9 @@ private struct WorktreeRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            AgentDot(state: agentState)
+            AgentDot(state: agentState, agentType: agentType)
             VStack(alignment: .leading, spacing: 2) {
-                Text(URL(fileURLWithPath: worktree.path).lastPathComponent)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                worktreeName
                 Text(worktree.branch ?? " ")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -336,8 +338,25 @@ private struct WorktreeRow: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(
-            AgentStateBackground(agentState: agentState, isActive: isActive, isSelected: isSelected)
+            AgentStateBackground(
+                agentState: agentState,
+                isActive: isActive,
+                isSelected: isSelected,
+                agentType: agentType
+            )
         )
         .onHover { isHovered = $0 }
+    }
+
+    @ViewBuilder
+    private var worktreeName: some View {
+        let name = URL(fileURLWithPath: worktree.path).lastPathComponent
+        if agentState == .running && agentType == .codex {
+            ShimmerText(text: name, color: .white)
+        } else {
+            Text(name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
     }
 }
