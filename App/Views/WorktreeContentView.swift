@@ -3,6 +3,7 @@ import SwiftUI
 struct WorktreeContentView: View {
     @ObservedObject var shellHost: TerminalHost
     @ObservedObject var agentHost: TerminalHost
+    var agentState: AgentState = .idle
 
     var body: some View {
         HSplitView {
@@ -11,6 +12,7 @@ struct WorktreeContentView: View {
                 .frame(minWidth: 200)
             TerminalHostView(host: agentHost)
                 .overlay(focusBorder(isFocused: agentHost.hasFocus))
+                .overlay(agentStateBorder)
                 .frame(minWidth: 200)
         }
     }
@@ -20,6 +22,22 @@ struct WorktreeContentView: View {
         if isFocused {
             Rectangle()
                 .strokeBorder(Color.accentColor.opacity(0.5), lineWidth: 1.5)
+        }
+    }
+
+    @ViewBuilder
+    private var agentStateBorder: some View {
+        switch agentState {
+        case .done:
+            Rectangle()
+                .strokeBorder(Color.green.opacity(0.5), lineWidth: 2)
+
+        case .waitingForApproval:
+            Rectangle()
+                .strokeBorder(Color.orange.opacity(0.7), lineWidth: 3)
+
+        default:
+            EmptyView()
         }
     }
 }

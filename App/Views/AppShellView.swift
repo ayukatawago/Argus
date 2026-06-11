@@ -218,10 +218,9 @@ struct AppShellView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            WorktreeContentView(shellHost: pool.shellHost, agentHost: pool.agentHost)
+            WorktreeContentView(shellHost: pool.shellHost, agentHost: pool.agentHost, agentState: currentAgentState)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(terminalBackground)
-                .overlay(terminalBorder)
         }
     }
 
@@ -262,22 +261,6 @@ struct AppShellView: View {
 
         default:
             Color.clear
-        }
-    }
-
-    @ViewBuilder
-    private var terminalBorder: some View {
-        switch currentAgentState {
-        case .done:
-            Rectangle()
-                .strokeBorder(Color.green.opacity(0.5), lineWidth: 2)
-
-        case .waitingForApproval:
-            Rectangle()
-                .strokeBorder(Color.orange.opacity(0.7), lineWidth: 3)
-
-        default:
-            EmptyView()
         }
     }
 
