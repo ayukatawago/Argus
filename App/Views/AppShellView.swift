@@ -23,6 +23,7 @@ private final class PanePool: ObservableObject {
         agentHost.register(id: id, terminal: pane.agentView)
         activeIDs.insert(id)
         try? WorktreeHookManager.install(worktreePath: workingDirectory)
+        try? CodexHookManager.install(worktreePath: workingDirectory)
     }
 
     func activate(id: String?) {

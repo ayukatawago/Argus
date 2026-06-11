@@ -22,7 +22,7 @@ enum WorktreeHookManager {
     /// entries into the worktree's .claude/settings.local.json.
     static func install(worktreePath: String) throws {
         let hooksDir = try kottyHooksDir()
-        let socketPath = HookIPC.socketPath
+        let eventLogPath = HookIPC.eventLogPath
         let paths = HookPaths(
             running: hooksDir.appendingPathComponent("claude-running.sh"),
             done: hooksDir.appendingPathComponent("claude-done.sh"),
@@ -31,15 +31,15 @@ enum WorktreeHookManager {
             preCompact: hooksDir.appendingPathComponent("claude-pre-compact.sh"),
             postCompact: hooksDir.appendingPathComponent("claude-post-compact.sh")
         )
-        try writeExecutable(at: paths.running, content: hookScript(state: "running", socketPath: socketPath))
-        try writeExecutable(at: paths.done, content: hookScript(state: "done", socketPath: socketPath))
+        try writeExecutable(at: paths.running, content: hookScript(state: "running", eventLogPath: eventLogPath))
+        try writeExecutable(at: paths.done, content: hookScript(state: "done", eventLogPath: eventLogPath))
         try writeExecutable(
             at: paths.approval,
-            content: hookScript(state: "waitingForApproval", socketPath: socketPath)
+            content: hookScript(state: "waitingForApproval", eventLogPath: eventLogPath)
         )
-        try writeExecutable(at: paths.userPrompt, content: hookScript(state: "running", socketPath: socketPath))
-        try writeExecutable(at: paths.preCompact, content: hookScript(state: "running", socketPath: socketPath))
-        try writeExecutable(at: paths.postCompact, content: hookScript(state: "done", socketPath: socketPath))
+        try writeExecutable(at: paths.userPrompt, content: hookScript(state: "running", eventLogPath: eventLogPath))
+        try writeExecutable(at: paths.preCompact, content: hookScript(state: "running", eventLogPath: eventLogPath))
+        try writeExecutable(at: paths.postCompact, content: hookScript(state: "done", eventLogPath: eventLogPath))
         try patchLocalSettings(worktreePath: worktreePath, paths: paths)
     }
 
@@ -54,16 +54,15 @@ enum WorktreeHookManager {
         return dir
     }
 
-    private static func hookScript(state: String, socketPath: String) -> String {
+    private static func hookScript(state: String, eventLogPath: String) -> String {
         """
         #!/bin/bash
         WORKTREE=$(git rev-parse --show-toplevel 2>/dev/null)
         WORKTREE="${WORKTREE:-$PWD}"
         [ -z "$WORKTREE" ] && exit 0
-        SOCK='\(socketPath)'
-        [ -S "$SOCK" ] || exit 0
-        printf '{"worktreePath":"%s","state":"\(state)"}\\n' "$WORKTREE" \\
-            | nc -w 1 -U "$SOCK" 2>/dev/null || true
+        EVENT_LOG='\(eventLogPath)'
+        printf '{"worktreePath":"%s","state":"\(state)","agent":"claude"}\\n' "$WORKTREE" \\
+            >> "$EVENT_LOG" 2>/dev/null || true
         """
     }
 

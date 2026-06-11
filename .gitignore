@@ -38,6 +38,9 @@ kotty.xcodeproj/
 # Claude Code
 .claude/settings.local.json
 
+# Codex
+.codex/hooks.json
+
 # Editor
 .vscode/
 *.swp
