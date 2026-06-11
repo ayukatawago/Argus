@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import GhosttyTerminal
 
 /// NSView container that keeps every worktree terminal alive while displaying
@@ -13,9 +14,11 @@ import GhosttyTerminal
 /// Only the active terminal is a subview, ensuring exactly one Metal surface
 /// composites on screen at a time.
 @MainActor
-final class TerminalHost: NSView {
+final class TerminalHost: NSView, ObservableObject {
     private var terminals: [String: AppTerminalView] = [:]
     private(set) var activeID: String?
+    @Published private(set) var hasFocus: Bool = false
+    private var focusObservation: AnyCancellable?
 
     func activate(id: String?) {
         guard activeID != id else { return }
@@ -42,6 +45,21 @@ final class TerminalHost: NSView {
     func focusActiveTerminal() {
         guard let id = activeID, let terminal = terminals[id] else { return }
         window?.makeFirstResponder(terminal)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        focusObservation = nil
+        guard let win = window else {
+            hasFocus = false
+            return
+        }
+        focusObservation = win.publisher(for: \.firstResponder)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] responder in
+                guard let self else { return }
+                self.hasFocus = (responder as? NSView)?.isDescendant(of: self) == true
+            }
     }
 
     func register(id: String, terminal: AppTerminalView) {
