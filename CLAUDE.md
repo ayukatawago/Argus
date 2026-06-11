@@ -59,7 +59,7 @@ Note: `Stop` does **not** fire when `/compact` finishes — `PostCompact` covers
 
 ### IPC path
 
-Scripts live in `~/Library/Application Support/kotty/hooks/` and are written once on first pane open. They send to the Unix socket at `~/Library/Application Support/kotty/hook.sock` (`HookIPC.socketPath`).
+Scripts live in `~/Library/Application Support/kotty/hooks/` and are written once on first pane open. They append JSON lines to `/private/tmp/kotty-$UID-hook-events.jsonl` (`HookIPC.eventLogPath`) because sandboxed Codex hook processes cannot connect to kotty's Unix socket. Kotty still opens `/private/tmp/kotty-$UID-hook.sock` (`HookIPC.socketPath`) for best-effort direct IPC.
 
 `WorktreeHookManager.install(worktreePath:)` is idempotent: it overwrites the scripts and upserts kotty's entries in `.claude/settings.local.json` without disturbing other hook entries. That file is gitignored.
 

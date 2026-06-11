@@ -9,24 +9,32 @@ import Foundation
 @MainActor
 final class HookIPC: @unchecked Sendable {
     nonisolated static var socketPath: String {
-        guard
-            let support = FileManager.default.urls(
-                for: .applicationSupportDirectory, in: .userDomainMask
-            ).first
-        else { return NSHomeDirectory() + "/.kotty-hook.sock" }
-        return support.appendingPathComponent("kotty/hook.sock").path
+        "/private/tmp/kotty-\(getuid())-hook.sock"
+    }
+
+    nonisolated static var eventLogPath: String {
+        "/private/tmp/kotty-\(getuid())-hook-events.jsonl"
     }
 
     var onPayload: ((HookPayload) -> Void)?
     private var serverTask: Task<Void, Never>?
+    private var fileTask: Task<Void, Never>?
 
     func start() {
         try? FileManager.default.removeItem(atPath: Self.socketPath)
+        try? FileManager.default.removeItem(atPath: Self.eventLogPath)
         let path = Self.socketPath
+        let eventLogPath = Self.eventLogPath
         serverTask = Task.detached(priority: .utility) { [weak self] in
             // Bind to a strong `let` so the inner @Sendable closure captures a non-var reference.
             guard let ipc = self else { return }
             await Self.runServer(socketPath: path) { payload in
+                await MainActor.run { ipc.onPayload?(payload) }
+            }
+        }
+        fileTask = Task.detached(priority: .utility) { [weak self] in
+            guard let ipc = self else { return }
+            await Self.pollEventLog(path: eventLogPath) { payload in
                 await MainActor.run { ipc.onPayload?(payload) }
             }
         }
@@ -35,7 +43,10 @@ final class HookIPC: @unchecked Sendable {
     func stop() {
         serverTask?.cancel()
         serverTask = nil
+        fileTask?.cancel()
+        fileTask = nil
         try? FileManager.default.removeItem(atPath: Self.socketPath)
+        try? FileManager.default.removeItem(atPath: Self.eventLogPath)
     }
 
     private nonisolated static func runServer(
@@ -85,6 +96,50 @@ final class HookIPC: @unchecked Sendable {
                 guard let payload = try? JSONDecoder().decode(HookPayload.self, from: accumulated) else { return }
                 await handler(payload)
             }
+        }
+    }
+
+    private nonisolated static func pollEventLog(
+        path: String,
+        handler: @Sendable @escaping (HookPayload) async -> Void
+    ) async {
+        let url = URL(fileURLWithPath: path)
+        var offset: UInt64 = 0
+
+        while !Task.isCancelled {
+            guard
+                let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+                let fileSize = attrs[.size] as? NSNumber
+            else {
+                offset = 0
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                continue
+            }
+            let size = fileSize.uint64Value
+
+            if size < offset { offset = 0 }
+            guard size > offset, let handle = try? FileHandle(forReadingFrom: url) else {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                continue
+            }
+
+            do {
+                try handle.seek(toOffset: offset)
+                let data = try handle.readToEnd() ?? Data()
+                offset = try handle.offset()
+                try handle.close()
+
+                guard let text = String(data: data, encoding: .utf8) else { continue }
+                for line in text.split(separator: "\n") {
+                    guard let payloadData = line.data(using: .utf8),
+                        let payload = try? JSONDecoder().decode(HookPayload.self, from: payloadData)
+                    else { continue }
+                    await handler(payload)
+                }
+            } catch {
+                try? handle.close()
+            }
+            try? await Task.sleep(nanoseconds: 200_000_000)
         }
     }
 }
