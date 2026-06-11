@@ -17,13 +17,13 @@ private final class PanePool: ObservableObject {
 
     func getOrCreate(id: String, workingDirectory: String) {
         guard panes[id] == nil else { return }
+        try? WorktreeHookManager.install(worktreePath: workingDirectory)
+        try? CodexHookManager.install(worktreePath: workingDirectory)
         let pane = WorktreePane(workingDirectory: workingDirectory)
         panes[id] = pane
         shellHost.register(id: id, terminal: pane.shellView)
         agentHost.register(id: id, terminal: pane.agentView)
         activeIDs.insert(id)
-        try? WorktreeHookManager.install(worktreePath: workingDirectory)
-        try? CodexHookManager.install(worktreePath: workingDirectory)
     }
 
     func activate(id: String?) {

@@ -26,6 +26,7 @@ struct CanvasView: View {
                             name: card.name,
                             branch: card.branch,
                             agentState: agentBus.state(for: card.id),
+                            agentType: agentBus.agentType(for: card.id),
                             terminalView: canvasViews[card.id],
                             terminalHeight: layout.terminalHeight
                         )
@@ -64,13 +65,14 @@ struct CanvasCardView: View {
     let name: String
     let branch: String?
     let agentState: AgentState
+    let agentType: AgentType
     let terminalView: AppTerminalView?
     let terminalHeight: CGFloat
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
-                AgentDot(state: agentState)
+                AgentDot(state: agentState, agentType: agentType)
                 Text(name)
                     .font(.caption)
                     .fontWeight(.medium)
@@ -95,7 +97,14 @@ struct CanvasCardView: View {
                     .frame(height: terminalHeight)
             }
         }
-        .background(AgentStateBackground(agentState: agentState, isActive: true, isSelected: false))
+        .background(
+            AgentStateBackground(
+                agentState: agentState,
+                isActive: true,
+                isSelected: false,
+                agentType: agentType
+            )
+        )
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
