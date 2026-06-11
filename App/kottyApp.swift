@@ -116,6 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             bindings.refreshWorkspace: .refreshWorkspace,
             bindings.openMarkdownPreview: .openMarkdownPreview,
             bindings.openSettings: .openSettings,
+            bindings.reloadAgentPane: .reloadAgentPane,
         ]
     }
 }

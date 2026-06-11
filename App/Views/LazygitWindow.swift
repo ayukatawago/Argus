@@ -11,6 +11,7 @@ extension Notification.Name {
     static let workspaceInteracted = Notification.Name("kotty.workspaceInteracted")
     static let openMarkdownPreview = Notification.Name("kotty.openMarkdownPreview")
     static let openSettings = Notification.Name("kotty.openSettings")
+    static let reloadAgentPane = Notification.Name("kotty.reloadAgentPane")
 }
 
 /// Manages a floating NSWindow running lazygit in the active worktree directory.

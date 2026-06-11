@@ -61,6 +61,17 @@ private final class PanePool: ObservableObject {
     func closeCanvas() {
         canvasViews.removeAll()
     }
+
+    func reloadAgentPane(id: String, workingDirectory: String) {
+        let session = WorktreePane.sessionName("a", path: workingDirectory)
+        let task = Process()
+        task.launchPath = "/usr/bin/env"
+        task.arguments = ["tmux", "kill-session", "-t", session]
+        try? task.run()
+        release(id: id)
+        getOrCreate(id: id, workingDirectory: workingDirectory)
+        activate(id: id)
+    }
 }
 
 struct AppShellView: View {
@@ -162,6 +173,13 @@ struct AppShellView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
             openWindow(id: "settings")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .reloadAgentPane)) { _ in
+            guard let id = selectedWorktreeID,
+                let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
+            else { return }
+            pool.reloadAgentPane(id: id, workingDirectory: worktree.path)
+            agentBus.reset(for: id)
         }
     }
 

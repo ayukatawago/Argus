@@ -15,6 +15,7 @@ struct KottyConfig: Codable, Equatable {
         var refreshWorkspace: String = "r"
         var openMarkdownPreview: String = "m"
         var openSettings: String = ","
+        var reloadAgentPane: String = "a"
     }
 }
 
