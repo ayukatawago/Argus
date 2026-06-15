@@ -1,25 +1,11 @@
 import AppKit
 import GhosttyTerminal
 
-extension Notification.Name {
-    static let openLazygit = Notification.Name("kotty.openLazygit")
-    static let openNvim = Notification.Name("kotty.openNvim")
-    static let focusShellPane = Notification.Name("kotty.focusShellPane")
-    static let focusAgentPane = Notification.Name("kotty.focusAgentPane")
-    static let selectNextWorktree = Notification.Name("kotty.selectNextWorktree")
-    static let selectPreviousWorktree = Notification.Name("kotty.selectPreviousWorktree")
-    static let refreshWorkspace = Notification.Name("kotty.refreshWorkspace")
-    static let workspaceInteracted = Notification.Name("kotty.workspaceInteracted")
-    static let openMarkdownPreview = Notification.Name("kotty.openMarkdownPreview")
-    static let openSettings = Notification.Name("kotty.openSettings")
-    static let reloadAgentPane = Notification.Name("kotty.reloadAgentPane")
-}
-
-/// Manages a floating NSWindow running lazygit in the active worktree directory.
-/// The window is created fresh on each open and destroyed when lazygit exits or
+/// Manages a floating NSWindow running nvim in the active worktree directory.
+/// The window is created fresh on each open and destroyed when nvim exits or
 /// the user closes the window manually.
 @MainActor
-final class LazygitWindow: NSObject, NSWindowDelegate, ObservableObject {
+final class NvimWindow: NSObject, NSWindowDelegate, ObservableObject {
     private var window: NSWindow?
     private var viewState: TerminalViewState?
 
@@ -29,13 +15,12 @@ final class LazygitWindow: NSObject, NSWindowDelegate, ObservableObject {
             return
         }
 
-        // Run lazygit via the user's login shell so Homebrew/nvm/etc. PATH entries are available.
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let state = TerminalViewState(
             terminalConfiguration: TerminalConfiguration {
                 $0.withFontSize(13)
                 $0.withCursorStyleBlink(true)
-                $0.withCustom("command", "\(shell) -l -c lazygit")
+                $0.withCustom("command", "\(shell) -l -c nvim")
             }
         )
         state.configuration = TerminalSurfaceOptions(backend: .exec, workingDirectory: workingDirectory)
@@ -59,7 +44,7 @@ final class LazygitWindow: NSObject, NSWindowDelegate, ObservableObject {
             backing: .buffered,
             defer: false
         )
-        win.title = "lazygit"
+        win.title = "nvim"
         win.level = .floating
         win.isReleasedWhenClosed = false
         win.contentView = termView

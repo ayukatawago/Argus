@@ -78,6 +78,7 @@ struct AppShellView: View {
     @StateObject private var store = WorkspaceStore()
     @StateObject private var pool = PanePool()
     @StateObject private var lazygit = LazygitWindow()
+    @StateObject private var nvim = NvimWindow()
     @StateObject private var markdownPreview = MarkdownPreviewWindow()
     @StateObject private var agentBus = AgentStateBus()
     @Environment(\.openWindow) private var openWindow
@@ -87,6 +88,38 @@ struct AppShellView: View {
     @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
 
     var body: some View {
+        coreView
+            .onReceive(NotificationCenter.default.publisher(for: .openLazygit)) { _ in
+                guard let id = selectedWorktreeID,
+                    let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
+                else { return }
+                lazygit.open(workingDirectory: worktree.path)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openNvim)) { _ in
+                guard let id = selectedWorktreeID,
+                    let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
+                else { return }
+                nvim.open(workingDirectory: worktree.path)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openMarkdownPreview)) { _ in
+                guard let id = selectedWorktreeID,
+                    let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
+                else { return }
+                markdownPreview.open(worktreePath: worktree.path)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
+                openWindow(id: "settings")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .reloadAgentPane)) { _ in
+                guard let id = selectedWorktreeID,
+                    let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
+                else { return }
+                pool.reloadAgentPane(id: id, workingDirectory: worktree.path)
+                agentBus.reset(for: id)
+            }
+    }
+
+    private var coreView: some View {
         NavigationSplitView {
             SidebarView(
                 store: store,
@@ -139,12 +172,6 @@ struct AppShellView: View {
             else { return }
             pool.getOrCreate(id: id, workingDirectory: worktree.path)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .openLazygit)) { _ in
-            guard let id = selectedWorktreeID,
-                let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
-            else { return }
-            lazygit.open(workingDirectory: worktree.path)
-        }
         .onReceive(NotificationCenter.default.publisher(for: .focusShellPane)) { _ in
             pool.shellHost.focusActiveTerminal()
             dismissDoneIfNeeded()
@@ -164,22 +191,6 @@ struct AppShellView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshWorkspace)) { _ in
             Task { await store.refresh() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openMarkdownPreview)) { _ in
-            guard let id = selectedWorktreeID,
-                let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
-            else { return }
-            markdownPreview.open(worktreePath: worktree.path)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
-            openWindow(id: "settings")
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .reloadAgentPane)) { _ in
-            guard let id = selectedWorktreeID,
-                let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
-            else { return }
-            pool.reloadAgentPane(id: id, workingDirectory: worktree.path)
-            agentBus.reset(for: id)
         }
     }
 
