@@ -217,6 +217,37 @@
         max-width: 100%;
         height: auto;
       }
+      .mermaid-error {
+        text-align: left;
+        color: #c0392b;
+        background: #fdecea;
+        border: 1px solid #e74c3c;
+        border-radius: 6px;
+        padding: 12px 14px;
+        margin: 16px 0;
+      }
+      .mermaid-error b {
+        display: block;
+        margin-bottom: 8px;
+      }
+      .mermaid-error pre {
+        margin: 0;
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: none;
+        border: none;
+        padding: 0;
+        color: inherit;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .mermaid-error {
+          color: #ff8a80;
+          background: #3a1515;
+          border-color: #c0392b;
+        }
+      }
 
       /* Dark mode — must be last so it overrides the base styles above */
       @media (prefers-color-scheme: dark) {
@@ -305,7 +336,23 @@
       if (typeof mermaid !== "undefined") {
         var isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
         mermaid.initialize({ startOnLoad: false, theme: isDark ? "dark" : "default" });
-        mermaid.run().catch(function () {});
+        var mermaidDivs = Array.from(document.querySelectorAll("div.mermaid"));
+        var validDivs = [];
+        Promise.all(mermaidDivs.map(function (div) {
+          return mermaid.parse(div.textContent).then(function () {
+            validDivs.push(div);
+          }).catch(function (err) {
+            var msg = (err && err.message) ? err.message : String(err);
+            div.innerHTML =
+              '<div class="mermaid-error"><b>Mermaid error</b><pre>' +
+              escHtml(msg) +
+              "</pre></div>";
+          });
+        })).then(function () {
+          if (validDivs.length > 0) {
+            mermaid.run({ nodes: validDivs }).catch(function () {});
+          }
+        });
       }
 
       function escHtml(s) {
