@@ -3,6 +3,7 @@ import GhosttyTerminal
 
 extension Notification.Name {
     static let openLazygit = Notification.Name("kotty.openLazygit")
+    static let openNvim = Notification.Name("kotty.openNvim")
     static let focusShellPane = Notification.Name("kotty.focusShellPane")
     static let focusAgentPane = Notification.Name("kotty.focusAgentPane")
     static let selectNextWorktree = Notification.Name("kotty.selectNextWorktree")

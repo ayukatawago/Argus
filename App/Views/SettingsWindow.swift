@@ -117,6 +117,7 @@ struct KeyboardSettingsView: View {
                 bindingRow("Next worktree", key: $config.keyBindings.selectNextWorktree)
                 bindingRow("Previous worktree", key: $config.keyBindings.selectPreviousWorktree)
                 bindingRow("Open lazygit", key: $config.keyBindings.openLazygit)
+                bindingRow("Open nvim", key: $config.keyBindings.openNvim)
                 bindingRow("Refresh workspace", key: $config.keyBindings.refreshWorkspace)
                 bindingRow("Open markdown preview", key: $config.keyBindings.openMarkdownPreview)
                 bindingRow("Open settings", key: $config.keyBindings.openSettings)

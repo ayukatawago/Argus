@@ -12,6 +12,7 @@ struct KottyConfig: Codable, Equatable {
         var selectNextWorktree: String = "j"
         var selectPreviousWorktree: String = "k"
         var openLazygit: String = "g"
+        var openNvim: String = "n"
         var refreshWorkspace: String = "r"
         var openMarkdownPreview: String = "m"
         var openSettings: String = ","

@@ -52,6 +52,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return nil
             }
 
+            // ⌘⇧N as a direct shortcut for nvim (keeps the menu item working)
+            if modifiers == [.command, .shift] && char == "n" {
+                NotificationCenter.default.post(name: .openNvim, object: nil)
+                return nil
+            }
+
             NotificationCenter.default.post(name: .workspaceInteracted, object: nil)
             return event
         }
@@ -113,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             bindings.selectNextWorktree: .selectNextWorktree,
             bindings.selectPreviousWorktree: .selectPreviousWorktree,
             bindings.openLazygit: .openLazygit,
+            bindings.openNvim: .openNvim,
             bindings.refreshWorkspace: .refreshWorkspace,
             bindings.openMarkdownPreview: .openMarkdownPreview,
             bindings.openSettings: .openSettings,
@@ -137,6 +144,10 @@ struct KottyApp: App {
                     NotificationCenter.default.post(name: .openLazygit, object: nil)
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
+                Button("Open nvim") {
+                    NotificationCenter.default.post(name: .openNvim, object: nil)
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
             }
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") {
