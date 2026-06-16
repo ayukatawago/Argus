@@ -1,10 +1,10 @@
-# CLAUDE.md — kotty
+# CLAUDE.md — Argus
 
 ## Build
 
 ```sh
-xcodegen generate          # regenerate kotty.xcodeproj from project.yml
-xcodebuild -scheme kotty -configuration Debug build
+xcodegen generate          # regenerate Argus.xcodeproj from project.yml
+xcodebuild -scheme Argus -configuration Debug build
 ```
 
 SwiftLint runs as an Xcode build phase and as a pre-commit hook. Lint errors block the build; warnings do not. The relevant limits enforced as errors: line length ≤ 160 characters.
@@ -24,14 +24,14 @@ Sources/
   Workspaces/       Foundation only — git repo/worktree scanning and store
 App/
   Views/            SwiftUI + AppKit — all UI (sidebar, shell, main shell)
-  kottyApp.swift    NSApplicationDelegate, top-level wiring
+  ArgusApp.swift    NSApplicationDelegate, top-level wiring
 ```
 
 Cross-module import rule: only `App/` imports everything; source modules may only import siblings listed in CONVENTIONS.md.
 
 ## Agent state system
 
-Claude Code hooks write JSON payloads to a Unix socket; kotty reads them and updates per-worktree state.
+Claude Code hooks write JSON payloads to a Unix socket; Argus reads them and updates per-worktree state.
 
 ### States (`Sources/AgentState/AgentState.swift`)
 
@@ -59,15 +59,15 @@ Note: `Stop` does **not** fire when `/compact` finishes — `PostCompact` covers
 
 ### IPC path
 
-Scripts live in `~/Library/Application Support/kotty/hooks/` and are written once on first pane open. They append JSON lines to `/private/tmp/kotty-$UID-hook-events.jsonl` (`HookIPC.eventLogPath`) because sandboxed Codex hook processes cannot connect to kotty's Unix socket. Kotty still opens `/private/tmp/kotty-$UID-hook.sock` (`HookIPC.socketPath`) for best-effort direct IPC.
+Scripts live in `~/Library/Application Support/argus/hooks/` and are written once on first pane open. They append JSON lines to `/private/tmp/argus-$UID-hook-events.jsonl` (`HookIPC.eventLogPath`) because sandboxed Codex hook processes cannot connect to Argus's Unix socket. Argus still opens `/private/tmp/argus-$UID-hook.sock` (`HookIPC.socketPath`) for best-effort direct IPC.
 
-`WorktreeHookManager.install(worktreePath:)` is idempotent: it overwrites the scripts and upserts kotty's entries in `.claude/settings.local.json` without disturbing other hook entries. That file is gitignored.
+`WorktreeHookManager.install(worktreePath:)` is idempotent: it overwrites the scripts and upserts Argus's entries in `.claude/settings.local.json` without disturbing other hook entries. That file is gitignored.
 
 ## Key files
 
 | File | Role |
 |---|---|
-| `App/kottyApp.swift` | App entry, keyboard leader, canvas overlay |
+| `App/ArgusApp.swift` | App entry, keyboard leader, canvas overlay |
 | `App/Views/AppShellView.swift` | Main split layout, agent state border/tint |
 | `App/Views/SidebarView.swift` | Repo/worktree list, `AgentDot`, drag reorder |
 | `App/Views/WorktreeContentView.swift` | Per-worktree dual-pane (Claude + shell) |

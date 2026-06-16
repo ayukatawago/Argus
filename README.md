@@ -1,4 +1,4 @@
-# kotty
+# Argus
 
 A native macOS app for running AI agents in parallel across git worktrees.
 
@@ -31,10 +31,10 @@ Built with Swift + SwiftUI/AppKit, powered by [libghostty](https://github.com/gh
 xcodegen generate
 
 # 2. Open in Xcode
-open kotty.xcodeproj
+open Argus.xcodeproj
 
 # Or build from the command line
-xcodebuild -scheme kotty -configuration Debug build
+xcodebuild -scheme Argus -configuration Debug build
 ```
 
 ## Setup for contributors
