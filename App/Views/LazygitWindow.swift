@@ -2,17 +2,17 @@ import AppKit
 import GhosttyTerminal
 
 extension Notification.Name {
-    static let openLazygit = Notification.Name("kotty.openLazygit")
-    static let openNvim = Notification.Name("kotty.openNvim")
-    static let focusShellPane = Notification.Name("kotty.focusShellPane")
-    static let focusAgentPane = Notification.Name("kotty.focusAgentPane")
-    static let selectNextWorktree = Notification.Name("kotty.selectNextWorktree")
-    static let selectPreviousWorktree = Notification.Name("kotty.selectPreviousWorktree")
-    static let refreshWorkspace = Notification.Name("kotty.refreshWorkspace")
-    static let workspaceInteracted = Notification.Name("kotty.workspaceInteracted")
-    static let openMarkdownPreview = Notification.Name("kotty.openMarkdownPreview")
-    static let openSettings = Notification.Name("kotty.openSettings")
-    static let reloadAgentPane = Notification.Name("kotty.reloadAgentPane")
+    static let openLazygit = Notification.Name("argus.openLazygit")
+    static let openNvim = Notification.Name("argus.openNvim")
+    static let focusShellPane = Notification.Name("argus.focusShellPane")
+    static let focusAgentPane = Notification.Name("argus.focusAgentPane")
+    static let selectNextWorktree = Notification.Name("argus.selectNextWorktree")
+    static let selectPreviousWorktree = Notification.Name("argus.selectPreviousWorktree")
+    static let refreshWorkspace = Notification.Name("argus.refreshWorkspace")
+    static let workspaceInteracted = Notification.Name("argus.workspaceInteracted")
+    static let openMarkdownPreview = Notification.Name("argus.openMarkdownPreview")
+    static let openSettings = Notification.Name("argus.openSettings")
+    static let reloadAgentPane = Notification.Name("argus.reloadAgentPane")
 }
 
 /// Manages a floating NSWindow running lazygit in the active worktree directory.

@@ -37,7 +37,7 @@ final class WorktreePane {
     }
 
     /// Derives a stable tmux session name from a worktree path.
-    /// Example: "kotty-a-my-feature-a3f91c"
+    /// Example: "argus-a-my-feature-a3f91c"
     ///
     /// The 6-hex-char suffix is FNV-1a over the full path, which is deterministic
     /// across process launches (unlike Swift's randomised hashValue).
@@ -46,7 +46,7 @@ final class WorktreePane {
         let hash = String(format: "%06x", fnv1a(path) & 0x00FF_FFFF)
         let safe = last.prefix(20).replacingOccurrences(
             of: #"[^a-zA-Z0-9_-]"#, with: "-", options: .regularExpression)
-        return "kotty-\(type)-\(safe)-\(hash)"
+        return "argus-\(type)-\(safe)-\(hash)"
     }
 
     /// FNV-1a 32-bit hash — fast, deterministic, no seed randomisation.

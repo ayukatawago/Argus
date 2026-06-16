@@ -9,11 +9,11 @@ import Foundation
 @MainActor
 final class HookIPC: @unchecked Sendable {
     nonisolated static var socketPath: String {
-        "/private/tmp/kotty-\(getuid())-hook.sock"
+        "/private/tmp/argus-\(getuid())-hook.sock"
     }
 
     nonisolated static var eventLogPath: String {
-        "/private/tmp/kotty-\(getuid())-hook-events.jsonl"
+        "/private/tmp/argus-\(getuid())-hook-events.jsonl"
     }
 
     var onPayload: ((HookPayload) -> Void)?

@@ -119,7 +119,7 @@ final class WorkspaceStore: ObservableObject {
                 for: .applicationSupportDirectory, in: .userDomainMask
             ).first
         else { return }
-        let dir = appSupport.appendingPathComponent("kotty")
+        let dir = appSupport.appendingPathComponent("argus")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         struct Config: Encodable {
             let roots: [String]
@@ -152,7 +152,7 @@ final class WorkspaceStore: ObservableObject {
         else {
             return StoredConfig(roots: defaultRoots(), hiddenWorktreeIDs: [], excludedRepoPaths: [], repoOrder: [])
         }
-        let configURL = appSupport.appendingPathComponent("kotty/workspaces.json")
+        let configURL = appSupport.appendingPathComponent("argus/workspaces.json")
         struct Payload: Decodable {
             let roots: [String]
             let hiddenWorktreeIDs: [String]?
