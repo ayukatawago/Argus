@@ -1,7 +1,7 @@
-name: kotty
+name: Argus
 
 options:
-  bundleIdPrefix: com.kotty
+  bundleIdPrefix: com.argus
   deploymentTarget:
     macOS: "14.0"
   generateEmptyDirectories: true
@@ -26,7 +26,7 @@ settings:
     SWIFT_STRICT_CONCURRENCY: targeted
 
 targets:
-  kotty:
+  Argus:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
@@ -52,7 +52,7 @@ targets:
       - sdk: WebKit.framework
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.kotty.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.argus.app
         INFOPLIST_FILE: App/Info.plist
         SWIFT_VERSION: "6.0"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
@@ -62,7 +62,7 @@ targets:
         CODE_SIGNING_REQUIRED: "NO"
         ENABLE_HARDENED_RUNTIME: "NO"
         COMBINE_HIDPI_IMAGES: "YES"
-        SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/App/kotty-Bridging-Header.h"
+        SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/App/Argus-Bridging-Header.h"
       debug:
         SWIFT_OPTIMIZATION_LEVEL: "-Onone"
         DEBUG_INFORMATION_FORMAT: dwarf
@@ -81,16 +81,16 @@ targets:
             echo "warning: SwiftLint not installed — run: brew install swiftlint"
           fi
 
-  kottyTests:
+  ArgusTests:
     type: bundle.unit-test
     platform: macOS
     deploymentTarget: "14.0"
     sources: []
     dependencies:
-      - target: kotty
+      - target: Argus
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.kotty.app.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.argus.app.tests
         SWIFT_VERSION: "6.0"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         CODE_SIGN_IDENTITY: "-"
