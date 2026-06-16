@@ -91,13 +91,6 @@ struct SidebarView: View {
                 }
                 .padding(.bottom, 4)
             }
-            .focusable()
-            .onKeyPress(.upArrow) {
-                navigateSelection(forward: false); return .handled
-            }
-            .onKeyPress(.downArrow) {
-                navigateSelection(forward: true); return .handled
-            }
 
             Divider()
 
@@ -196,16 +189,6 @@ struct SidebarView: View {
                 .fill(Color.accentColor)
                 .frame(height: 2)
         }
-    }
-
-    private func navigateSelection(forward: Bool) {
-        let all = store.repos.flatMap(\.worktrees).filter { !store.hiddenWorktreeIDs.contains($0.id) }
-        guard !all.isEmpty else { return }
-        guard let current = selectedWorktreeID,
-            let idx = all.firstIndex(where: { $0.id == current })
-        else { selectedWorktreeID = all.first?.id; return }
-        let next = forward ? (idx + 1) % all.count : (idx - 1 + all.count) % all.count
-        selectedWorktreeID = all[next].id
     }
 
     private func deleteWorktree(_ worktree: GitWorktree, in repo: GitRepo) {
