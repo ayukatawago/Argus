@@ -3,7 +3,7 @@ name: commit
 description: This skill should be used when the user asks to "commit", "create a commit", "commit my changes", "commit staged changes", or wants to commit work following the project convention. Creates a Conventional Commits-formatted git commit.
 ---
 
-Create a git commit following the kotty project's Conventional Commits convention.
+Create a git commit following the Argus project's Conventional Commits convention.
 
 ## Convention
 
@@ -58,7 +58,7 @@ Co-authored-by: Claude Code <claude@anthropic.com>
    - First invoke the `code-format-check` skill and resolve all violations (zero output from both `swiftlint` and `swift-format lint`) before building.
    - Then build:
    ```
-   xcodebuild -scheme kotty -configuration Debug build 2>&1 \
+   xcodebuild -scheme Argus -configuration Debug build 2>&1 \
      | grep -E "warning:|error:" \
      | grep -v "appintentsmetadata"
    ```

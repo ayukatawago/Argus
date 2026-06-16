@@ -3,7 +3,7 @@ name: code-format-check
 description: This skill should be used when the user asks to "check swift-format", "check swiftlint", "run lint", "check formatting", "fix lint warnings", "fix swift-format warnings", "check for warnings before committing", or wants to verify the codebase has zero swift-format and SwiftLint warnings.
 ---
 
-Check and fix swift-format and SwiftLint issues in the kotty project.
+Check and fix swift-format and SwiftLint issues in the Argus project.
 
 ## Config
 

@@ -3,8 +3,8 @@
 ## Window hierarchy
 
 ```
-KottyApp (App)
-└── Window("kotty")  — kottyApp.swift
+ArgusApp (App)
+└── Window("Argus")  — ArgusApp.swift
     └── ContentView  — ContentView.swift  (thin wrapper)
         └── AppShellView  — AppShellView.swift  (root layout + state ownership)
             ├── NavigationSplitView
@@ -13,7 +13,7 @@ KottyApp (App)
             └── (overlay: LazygitWindow NSPanel)  — LazygitWindow.swift
 ```
 
-`AppDelegate` (also in `kottyApp.swift`) installs global `NSEvent` monitors for the keyboard leader and mouse clicks, and posts `NotificationCenter` events that views observe.
+`AppDelegate` (also in `ArgusApp.swift`) installs global `NSEvent` monitors for the keyboard leader and mouse clicks, and posts `NotificationCenter` events that views observe.
 
 ---
 
