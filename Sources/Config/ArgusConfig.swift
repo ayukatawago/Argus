@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-struct KottyConfig: Codable, Equatable {
+struct ArgusConfig: Codable, Equatable {
     var leaderKey = "ctrl+b"
     var leaderTimeoutSeconds = 1.5
     var keyBindings = KeyBindings()
@@ -21,14 +21,14 @@ struct KottyConfig: Codable, Equatable {
 }
 
 @MainActor
-final class KottyConfigStore: ObservableObject {
-    static let shared = KottyConfigStore()
+final class ArgusConfigStore: ObservableObject {
+    static let shared = ArgusConfigStore()
 
-    @Published var config = KottyConfig()
+    @Published var config = ArgusConfig()
 
     private static var configURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/kotty/kotty.json")
+            .appendingPathComponent(".config/argus/argus.json")
     }
 
     private init() {
@@ -37,7 +37,7 @@ final class KottyConfigStore: ObservableObject {
 
     func load() {
         guard let data = try? Data(contentsOf: Self.configURL),
-            let decoded = try? JSONDecoder().decode(KottyConfig.self, from: data)
+            let decoded = try? JSONDecoder().decode(ArgusConfig.self, from: data)
         else { return }
         config = decoded
     }

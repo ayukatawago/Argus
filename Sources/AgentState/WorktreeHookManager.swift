@@ -18,10 +18,10 @@ enum WorktreeHookManager {
         let postCompact: URL
     }
 
-    /// Idempotent: writes the shared hook scripts once and merges kotty's hook
+    /// Idempotent: writes the shared hook scripts once and merges argus's hook
     /// entries into the worktree's .claude/settings.local.json.
     static func install(worktreePath: String) throws {
-        let hooksDir = try kottyHooksDir()
+        let hooksDir = try argusHooksDir()
         let eventLogPath = HookIPC.eventLogPath
         let paths = HookPaths(
             running: hooksDir.appendingPathComponent("claude-running.sh"),
@@ -43,13 +43,13 @@ enum WorktreeHookManager {
         try patchLocalSettings(worktreePath: worktreePath, paths: paths)
     }
 
-    private static func kottyHooksDir() throws -> URL {
+    private static func argusHooksDir() throws -> URL {
         guard
             let support = FileManager.default.urls(
                 for: .applicationSupportDirectory, in: .userDomainMask
             ).first
         else { throw Failure.noAppSupport }
-        let dir = support.appendingPathComponent("kotty/hooks")
+        let dir = support.appendingPathComponent("argus/hooks")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -94,33 +94,33 @@ enum WorktreeHookManager {
 
     private static func mergedHooks(in settings: [String: Any], paths: HookPaths) -> [String: Any] {
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
-        hooks["PreToolUse"] = upsertKottyEntry(
+        hooks["PreToolUse"] = upsertArgusEntry(
             in: hooks["PreToolUse"] as? [[String: Any]] ?? [],
             entry: ["matcher": ".*", "hooks": [["type": "command", "command": quoted(paths.running.path)]]]
         )
         // Stop is a session-level event; "matcher": "" is required even though it's unused.
-        hooks["Stop"] = upsertKottyEntry(
+        hooks["Stop"] = upsertArgusEntry(
             in: hooks["Stop"] as? [[String: Any]] ?? [],
             entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.done.path)]]]
         )
         // PreCompact fires when /compact begins — show running indicator during compaction.
-        hooks["PreCompact"] = upsertKottyEntry(
+        hooks["PreCompact"] = upsertArgusEntry(
             in: hooks["PreCompact"] as? [[String: Any]] ?? [],
             entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.preCompact.path)]]]
         )
         // PostCompact fires after /compact finishes — Stop does not fire in this case.
-        hooks["PostCompact"] = upsertKottyEntry(
+        hooks["PostCompact"] = upsertArgusEntry(
             in: hooks["PostCompact"] as? [[String: Any]] ?? [],
             entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.postCompact.path)]]]
         )
         // PermissionRequest fires when Claude Code shows an approval dialog (blocking).
-        hooks["PermissionRequest"] = upsertKottyEntry(
+        hooks["PermissionRequest"] = upsertArgusEntry(
             in: hooks["PermissionRequest"] as? [[String: Any]] ?? [],
             entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.approval.path)]]]
         )
         // UserPromptSubmit fires when the user sends a message — transitions to running
         // before PreToolUse so the done/approval indicator clears immediately on reply.
-        hooks["UserPromptSubmit"] = upsertKottyEntry(
+        hooks["UserPromptSubmit"] = upsertArgusEntry(
             in: hooks["UserPromptSubmit"] as? [[String: Any]] ?? [],
             entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.userPrompt.path)]]]
         )
@@ -129,13 +129,13 @@ enum WorktreeHookManager {
 
     private static func quoted(_ path: String) -> String { "\"\(path)\"" }
 
-    private static func upsertKottyEntry(
+    private static func upsertArgusEntry(
         in existing: [[String: Any]],
         entry: [String: Any]
     ) -> [[String: Any]] {
         let filtered = existing.filter { item in
             guard let hooksList = item["hooks"] as? [[String: Any]] else { return true }
-            return !hooksList.contains { ($0["command"] as? String)?.contains("/kotty/hooks/") == true }
+            return !hooksList.contains { ($0["command"] as? String)?.contains("/argus/hooks/") == true }
         }
         return filtered + [entry]
     }

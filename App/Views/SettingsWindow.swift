@@ -15,7 +15,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 }
 
 struct SettingsRootView: View {
-    @EnvironmentObject private var configStore: KottyConfigStore
+    @EnvironmentObject private var configStore: ArgusConfigStore
     @State private var selected: SettingsCategory = .keyboard
 
     var body: some View {
@@ -73,7 +73,7 @@ struct SettingsRootView: View {
 // MARK: - Keyboard settings
 
 struct KeyboardSettingsView: View {
-    @Binding var config: KottyConfig
+    @Binding var config: ArgusConfig
 
     private let leaderOptions = ["ctrl+b", "ctrl+a", "ctrl+x", "ctrl+space"]
 

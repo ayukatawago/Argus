@@ -14,7 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
             let char = event.charactersIgnoringModifiers?.lowercased()
 
-            let config = KottyConfigStore.shared.config
+            let config = ArgusConfigStore.shared.config
 
             // Leader key: enter leader mode, or pass through on double press (e.g. for nested tmux).
             if let (leaderMods, leaderChar) = Self.parseLeaderKey(config.leaderKey),
@@ -112,7 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return (flags, char)
     }
 
-    private static func notificationMap(from bindings: KottyConfig.KeyBindings) -> [String: Notification.Name] {
+    private static func notificationMap(from bindings: ArgusConfig.KeyBindings) -> [String: Notification.Name] {
         [
             bindings.focusShellPane: .focusShellPane,
             bindings.focusAgentPane: .focusAgentPane,
@@ -129,11 +129,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct KottyApp: App {
+struct ArgusApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        Window("kotty", id: "main") {
+        Window("Argus", id: "main") {
             ContentView()
         }
         .defaultSize(width: 1200, height: 800)
@@ -159,7 +159,7 @@ struct KottyApp: App {
 
         Window("Settings", id: "settings") {
             SettingsRootView()
-                .environmentObject(KottyConfigStore.shared)
+                .environmentObject(ArgusConfigStore.shared)
         }
         .defaultSize(width: 540, height: 460)
         .windowResizability(.contentMinSize)
