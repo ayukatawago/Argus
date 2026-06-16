@@ -84,6 +84,7 @@ struct AppShellView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var selectedWorktreeID: String?
     @State private var isCanvasMode = false
+    @State private var lastFocusedHost: KeyPath<PanePool, TerminalHost> = \.shellHost
     @State private var detailSize: CGSize = .zero
     @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
 
@@ -173,10 +174,12 @@ struct AppShellView: View {
             pool.getOrCreate(id: id, workingDirectory: worktree.path)
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusShellPane)) { _ in
+            lastFocusedHost = \.shellHost
             pool.shellHost.focusActiveTerminal()
             dismissDoneIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusAgentPane)) { _ in
+            lastFocusedHost = \.agentHost
             pool.agentHost.focusActiveTerminal()
             dismissDoneIfNeeded()
         }
@@ -203,10 +206,12 @@ struct AppShellView: View {
             let idx = all.firstIndex(where: { $0.id == current })
         else {
             selectedWorktreeID = all.first?.id
+            DispatchQueue.main.async { pool[keyPath: lastFocusedHost].focusActiveTerminal() }
             return
         }
         let next = forward ? (idx + 1) % all.count : (idx - 1 + all.count) % all.count
         selectedWorktreeID = all[next].id
+        DispatchQueue.main.async { pool[keyPath: lastFocusedHost].focusActiveTerminal() }
     }
 
     private var currentAgentState: AgentState {
