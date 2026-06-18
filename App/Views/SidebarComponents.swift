@@ -94,6 +94,9 @@ struct AgentStateBackground: View {
             } else if agentState == .waitingForApproval {
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(Color.orange.opacity(0.7), lineWidth: 2)
+            } else if isSelected {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
             }
         }
         .onAppear { startPulseIfNeeded() }
@@ -108,9 +111,6 @@ struct AgentStateBackground: View {
         if agentState == .running {
             RoundedRectangle(cornerRadius: 6)
                 .fill(agentColor(agentType).opacity(runningOpacity))
-        } else if isSelected {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.accentColor.opacity(0.75))
         } else if isActive {
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color.accentColor.opacity(0.1))
