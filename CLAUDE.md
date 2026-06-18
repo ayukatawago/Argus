@@ -20,6 +20,7 @@ xcodegen generate
 ```
 Sources/
   AgentState/       Foundation only — agent state enum, IPC bus, hook manager
+  Config/           Foundation only — ArgusConfig struct, ArgusConfigStore, AgentSelection enum
   GhosttyBridge/    GhosttyKit (C lib) + Foundation — PTY and terminal surface
   Workspaces/       Foundation only — git repo/worktree scanning and store
 App/
@@ -70,10 +71,12 @@ Scripts live in `~/Library/Application Support/argus/hooks/` and are written onc
 | `App/ArgusApp.swift` | App entry, keyboard leader, canvas overlay |
 | `App/Views/AppShellView.swift` | Main split layout, agent state border/tint |
 | `App/Views/SidebarView.swift` | Repo/worktree list, `AgentDot`, drag reorder |
-| `App/Views/WorktreeContentView.swift` | Per-worktree dual-pane (Claude + shell) |
+| `App/Views/WorktreeContentView.swift` | Per-worktree dual-pane (agent + shell) |
 | `App/Views/LazygitWindow.swift` | Lazygit popup window (`⌘G`) |
+| `App/Views/SettingsWindow.swift` | Settings UI — Agent page (agent picker + commands) and Keyboard page |
 | `Sources/AgentState/AgentStateBus.swift` | `@MainActor` ObservableObject, socket reader |
 | `Sources/AgentState/WorktreeHookManager.swift` | Hook script writer + settings patcher |
+| `Sources/Config/ArgusConfig.swift` | `ArgusConfig` struct, `ArgusConfigStore` (`~/.config/argus/argus.json`), `AgentSelection` enum |
 | `Sources/Workspaces/WorkspaceStore.swift` | Repo/worktree scanning, persistence |
 | `Sources/GhosttyBridge/WorktreePane.swift` | ghostty surface lifecycle per pane |
 | `project.yml` | XcodeGen project definition — edit this, not the `.xcodeproj` |
