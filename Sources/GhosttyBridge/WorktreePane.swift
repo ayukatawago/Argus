@@ -1,8 +1,8 @@
 import AppKit
 import GhosttyTerminal
 
-/// Owns the terminal stack for one worktree — a shell pane on the left and a
-/// Claude Code pane on the right. Both sessions are backed by named tmux sessions so
+/// Owns the terminal stack for one worktree — a shell pane on the left and an
+/// agent pane on the right. Both sessions are backed by named tmux sessions so
 /// they persist across worktree release and can be shared with canvas card views.
 @MainActor
 final class WorktreePane {
@@ -21,9 +21,10 @@ final class WorktreePane {
             "tmux new-session -A -s \(shellSession)"
             + " \\; set -s extended-keys on"
             + " \\; set-option -t \(shellSession) status off"
-        let claudeCmd = "claude --continue || exec \(shell) -l"
+        let agentChoice = ArgusConfigStore.shared.config.agent
+        let agentCmd = "\(ArgusConfigStore.shared.config.launchCommand(for: agentChoice)) || exec \(shell) -l"
         let agentCommand =
-            "tmux new-session -A -s \(agentSession) \(shell) -l -c '\(claudeCmd)'"
+            "tmux new-session -A -s \(agentSession) \(shell) -l -c '\(agentCmd)'"
             + " \\; set -s extended-keys on"
             + " \\; set-option -t \(agentSession) status off"
 

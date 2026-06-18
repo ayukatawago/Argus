@@ -3,12 +3,14 @@ import SwiftUI
 // MARK: - Root layout
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
+    case agent = "Agent"
     case keyboard = "Keyboard"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
+        case .agent: "sparkles"
         case .keyboard: "keyboard"
         }
     }
@@ -16,7 +18,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
 struct SettingsRootView: View {
     @EnvironmentObject private var configStore: ArgusConfigStore
-    @State private var selected: SettingsCategory = .keyboard
+    @State private var selected: SettingsCategory = .agent
 
     var body: some View {
         HStack(spacing: 0) {
@@ -43,6 +45,10 @@ struct SettingsRootView: View {
         ScrollView {
             Group {
                 switch selected {
+                case .agent:
+                    AgentSettingsView(config: $configStore.config)
+                        .onChange(of: configStore.config) { _, _ in configStore.save() }
+
                 case .keyboard:
                     KeyboardSettingsView(config: $configStore.config)
                         .onChange(of: configStore.config) { _, _ in configStore.save() }
@@ -67,6 +73,60 @@ struct SettingsRootView: View {
             }
         )
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Agent settings
+
+struct AgentSettingsView: View {
+    @Binding var config: ArgusConfig
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            agentSection
+            Divider()
+            commandsSection
+        }
+    }
+
+    private var agentSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("AI Agent")
+                .font(.headline)
+            Picker("Agent", selection: $config.agent) {
+                ForEach(AgentSelection.allCases) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(width: 180)
+        }
+    }
+
+    private var commandsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Commands")
+                .font(.headline)
+            commandRow("Claude Code", command: $config.claudeCommand)
+            commandRow("Codex", command: $config.codexCommand)
+            Text(
+                "Reload existing panes with"
+                    + " \(config.leaderKey) then \(config.keyBindings.reloadAgentPane)."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func commandRow(_ label: String, command: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.subheadline)
+            TextField("", text: command)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+        }
     }
 }
 
