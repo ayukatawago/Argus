@@ -14,6 +14,7 @@ private final class PanePool: ObservableObject {
     private var panes: [String: WorktreePane] = [:]
     @Published private(set) var activeIDs: Set<String> = []
     @Published private(set) var canvasViews: [String: AppTerminalView] = [:]
+    var agentBus: AgentStateBus?
 
     func getOrCreate(id: String, workingDirectory: String) {
         guard panes[id] == nil else { return }
@@ -23,6 +24,9 @@ private final class PanePool: ObservableObject {
         shellHost.register(id: id, terminal: pane.shellView)
         agentHost.register(id: id, terminal: pane.agentView)
         activeIDs.insert(id)
+        if ArgusConfigStore.shared.config.agent == .codex {
+            agentBus?.setAgentType(.codex, for: workingDirectory)
+        }
     }
 
     func activate(id: String?) {
@@ -117,6 +121,9 @@ struct AppShellView: View {
                 else { return }
                 pool.reloadAgentPane(id: id, workingDirectory: worktree.path)
                 agentBus.reset(for: id)
+                if ArgusConfigStore.shared.config.agent == .codex {
+                    agentBus.setAgentType(.codex, for: worktree.path)
+                }
             }
     }
 
@@ -153,6 +160,7 @@ struct AppShellView: View {
             }
         }
         .onAppear {
+            pool.agentBus = agentBus
             store.load()
             agentBus.start()
         }

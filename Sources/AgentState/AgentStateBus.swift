@@ -31,6 +31,12 @@ final class AgentStateBus: ObservableObject {
         return agentTypes[canonicalPath(worktreePath)] ?? .claude
     }
 
+    func setAgentType(_ type: AgentType, for worktreePath: String) {
+        agentTypes[worktreePath] = type
+        let canonical = canonicalPath(worktreePath)
+        if canonical != worktreePath { agentTypes[canonical] = type }
+    }
+
     func reset(for worktreePath: String) {
         states[worktreePath] = .idle
         agentTypes.removeValue(forKey: worktreePath)

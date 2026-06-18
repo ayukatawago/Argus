@@ -1,10 +1,34 @@
 import Combine
 import Foundation
 
+enum AgentSelection: String, Codable, CaseIterable, Identifiable {
+    case claude
+    case codex
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .claude: "Claude Code"
+        case .codex: "Codex"
+        }
+    }
+}
+
 struct ArgusConfig: Codable, Equatable {
     var leaderKey = "ctrl+b"
     var leaderTimeoutSeconds = 1.5
     var keyBindings = KeyBindings()
+    var agent: AgentSelection = .claude
+    var claudeCommand: String = "claude --continue"
+    var codexCommand: String = "codex resume --last"
+
+    func launchCommand(for selection: AgentSelection) -> String {
+        switch selection {
+        case .claude: claudeCommand
+        case .codex: codexCommand
+        }
+    }
 
     struct KeyBindings: Codable, Equatable {
         var focusShellPane: String = "h"
