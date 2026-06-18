@@ -7,11 +7,13 @@ Built with Swift + SwiftUI/AppKit, powered by [libghostty](https://github.com/gh
 ## Features
 
 - Sidebar listing git repos and their worktrees
-- Split layout: Claude Code pane (left) + shell terminal (right) per worktree
+- Split layout: AI agent pane (Claude Code or Codex) + shell terminal per worktree
 - Visual agent status — idle / running / waitingForApproval / done — driven by Claude Code hooks
 - Sidebar dot and border color change to reflect agent state at a glance
+- Choose AI agent (Claude Code or Codex) with user-editable launch commands via Settings (⌘,)
 - Lazygit popup (`⌘G`) per worktree
-- Leader key shortcuts (`Ctrl+B` prefix): `j`/`k` to cycle worktrees, `n`/`d` to create/delete
+- Leader key shortcuts (default `Ctrl+B` prefix): `j`/`k` to cycle worktrees, `a` to reload agent pane
+- Configurable leader key and key bindings via Settings (⌘,); saved to `~/.config/argus/argus.json`
 - Drag-and-drop reordering of repos in the sidebar
 - Create and force-delete worktrees directly from the sidebar
 - Per-worktree terminal sessions with release button to free resources
