@@ -2,8 +2,8 @@ import AppKit
 import GhosttyTerminal
 
 /// Manages a floating NSWindow running nvim in the active worktree directory.
-/// The window is created fresh on each open and destroyed when nvim exits or
-/// the user closes the window manually.
+/// The nvim session is backed by a named tmux session (argus-n-*) so it persists
+/// when the popup is closed — reopening reattaches to the same session.
 @MainActor
 final class NvimWindow: NSObject, NSWindowDelegate, ObservableObject {
     private var window: NSWindow?
@@ -16,11 +16,16 @@ final class NvimWindow: NSObject, NSWindowDelegate, ObservableObject {
         }
 
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let session = WorktreePane.sessionName("n", path: workingDirectory)
+        let command =
+            "tmux new-session -A -s \(session) \(shell) -l -c 'nvim'"
+            + " \\; set -s extended-keys on"
+            + " \\; set-option -t \(session) status off"
         let state = TerminalViewState(
             terminalConfiguration: TerminalConfiguration {
                 $0.withFontSize(13)
                 $0.withCursorStyleBlink(true)
-                $0.withCustom("command", "\(shell) -l -c nvim")
+                $0.withCustom("command", command)
             }
         )
         state.configuration = TerminalSurfaceOptions(backend: .exec, workingDirectory: workingDirectory)
