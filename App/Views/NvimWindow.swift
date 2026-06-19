@@ -8,6 +8,7 @@ import GhosttyTerminal
 final class NvimWindow: NSObject, NSWindowDelegate, ObservableObject {
     private var window: NSWindow?
     private var viewState: TerminalViewState?
+    private var cmdQMonitor: Any?
 
     func open(workingDirectory: String) {
         if let existing = window {
@@ -60,8 +61,29 @@ final class NvimWindow: NSObject, NSWindowDelegate, ObservableObject {
         viewState = state
     }
 
+    func windowDidBecomeKey(_: Notification) {
+        cmdQMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            if modifiers == [.command], event.charactersIgnoringModifiers?.lowercased() == "h" {
+                self?.window?.close()
+                return nil
+            }
+            return event
+        }
+    }
+
+    func windowDidResignKey(_: Notification) {
+        removeCmdQMonitor()
+    }
+
     func windowWillClose(_: Notification) {
+        removeCmdQMonitor()
         window = nil
         viewState = nil
+    }
+
+    private func removeCmdQMonitor() {
+        if let monitor = cmdQMonitor { NSEvent.removeMonitor(monitor) }
+        cmdQMonitor = nil
     }
 }
