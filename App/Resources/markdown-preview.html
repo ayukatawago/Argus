@@ -380,10 +380,14 @@
 
       document.getElementById("sidebar").innerHTML = buildTree(FILE_TREE);
 
+      var savedScroll = localStorage.getItem("sidebarScrollTop");
+      if (savedScroll) document.getElementById("sidebar").scrollTop = parseInt(savedScroll, 10);
+
       document.addEventListener("click", function (e) {
         var a = e.target.closest("a");
         if (a && a.href) {
           e.preventDefault();
+          localStorage.setItem("sidebarScrollTop", document.getElementById("sidebar").scrollTop);
           window.webkit.messageHandlers.linkClicked.postMessage(a.href);
         }
       });
