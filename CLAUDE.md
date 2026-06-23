@@ -50,13 +50,18 @@ Claude Code hooks write JSON payloads to a Unix socket; Argus reads them and upd
 | Claude Code hook | State sent | Script |
 |---|---|---|
 | `PreToolUse` | `running` | `claude-running.sh` |
+| `PostToolUse` | `running` | `claude-post-tool-use.sh` |
 | `Stop` | `done` | `claude-done.sh` |
+| `StopFailure` | `done` | `claude-done.sh` |
 | `PermissionRequest` | `waitingForApproval` | `claude-waiting-approval.sh` |
 | `UserPromptSubmit` | `running` | `claude-user-prompt.sh` |
 | `PreCompact` | `running` | `claude-pre-compact.sh` |
 | `PostCompact` | `done` | `claude-post-compact.sh` |
+| `SessionEnd` | `idle` | `claude-session-end.sh` |
 
 Note: `Stop` does **not** fire when `/compact` finishes — `PostCompact` covers that case.
+
+Note: There is **no hook for Escape/interrupt**. When the user interrupts Claude mid-thinking, `Stop` does not fire and the indicator stays `running` until the user next interacts (sends a message → `UserPromptSubmit`) or exits the session (`SessionEnd`). `PostToolUse` keeps the `running` state alive during long-running tool calls.
 
 ### IPC path
 
