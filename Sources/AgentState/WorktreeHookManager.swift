@@ -16,6 +16,8 @@ enum WorktreeHookManager {
         let userPrompt: URL
         let preCompact: URL
         let postCompact: URL
+        let postToolUse: URL
+        let sessionEnd: URL
     }
 
     /// Idempotent: writes the shared hook scripts once and merges argus's hook
@@ -29,7 +31,9 @@ enum WorktreeHookManager {
             approval: hooksDir.appendingPathComponent("claude-waiting-approval.sh"),
             userPrompt: hooksDir.appendingPathComponent("claude-user-prompt.sh"),
             preCompact: hooksDir.appendingPathComponent("claude-pre-compact.sh"),
-            postCompact: hooksDir.appendingPathComponent("claude-post-compact.sh")
+            postCompact: hooksDir.appendingPathComponent("claude-post-compact.sh"),
+            postToolUse: hooksDir.appendingPathComponent("claude-post-tool-use.sh"),
+            sessionEnd: hooksDir.appendingPathComponent("claude-session-end.sh")
         )
         try writeExecutable(at: paths.running, content: hookScript(state: "running", eventLogPath: eventLogPath))
         try writeExecutable(at: paths.done, content: hookScript(state: "done", eventLogPath: eventLogPath))
@@ -40,6 +44,10 @@ enum WorktreeHookManager {
         try writeExecutable(at: paths.userPrompt, content: hookScript(state: "running", eventLogPath: eventLogPath))
         try writeExecutable(at: paths.preCompact, content: hookScript(state: "running", eventLogPath: eventLogPath))
         try writeExecutable(at: paths.postCompact, content: hookScript(state: "done", eventLogPath: eventLogPath))
+        // PostToolUse keeps the timestamp fresh so long-running tools don't trip the staleness monitor.
+        try writeExecutable(at: paths.postToolUse, content: hookScript(state: "running", eventLogPath: eventLogPath))
+        // SessionEnd fires when the session terminates (e.g. /exit, window close).
+        try writeExecutable(at: paths.sessionEnd, content: hookScript(state: "idle", eventLogPath: eventLogPath))
         try patchLocalSettings(worktreePath: worktreePath, paths: paths)
     }
 
@@ -103,6 +111,11 @@ enum WorktreeHookManager {
             in: hooks["Stop"] as? [[String: Any]] ?? [],
             entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.done.path)]]]
         )
+        // StopFailure fires when the turn ends due to an API error — Stop does not fire in this case.
+        hooks["StopFailure"] = upsertArgusEntry(
+            in: hooks["StopFailure"] as? [[String: Any]] ?? [],
+            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.done.path)]]]
+        )
         // PreCompact fires when /compact begins — show running indicator during compaction.
         hooks["PreCompact"] = upsertArgusEntry(
             in: hooks["PreCompact"] as? [[String: Any]] ?? [],
@@ -123,6 +136,17 @@ enum WorktreeHookManager {
         hooks["UserPromptSubmit"] = upsertArgusEntry(
             in: hooks["UserPromptSubmit"] as? [[String: Any]] ?? [],
             entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.userPrompt.path)]]]
+        )
+        // PostToolUse refreshes the "running" timestamp so tools that take > 3 min don't
+        // trip the staleness monitor that handles missing Stop events on Escape interrupt.
+        hooks["PostToolUse"] = upsertArgusEntry(
+            in: hooks["PostToolUse"] as? [[String: Any]] ?? [],
+            entry: ["matcher": ".*", "hooks": [["type": "command", "command": quoted(paths.postToolUse.path)]]]
+        )
+        // SessionEnd fires when the claude session terminates (/exit, window close, etc.).
+        hooks["SessionEnd"] = upsertArgusEntry(
+            in: hooks["SessionEnd"] as? [[String: Any]] ?? [],
+            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.sessionEnd.path)]]]
         )
         return hooks
     }
