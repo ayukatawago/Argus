@@ -249,6 +249,86 @@
         }
       }
 
+      /* ── Search bar ──────────────────────────────────────── */
+      #main-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-width: 0;
+      }
+
+      #search-bar {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        background: #f7f7f7;
+        border-bottom: 1px solid #e5e5ea;
+        flex-shrink: 0;
+      }
+
+      #search-bar.visible {
+        display: flex;
+      }
+
+      #search-input {
+        flex: 1;
+        max-width: 280px;
+        height: 26px;
+        padding: 0 8px;
+        border: 1px solid #d1d1d6;
+        border-radius: 5px;
+        font-size: 13px;
+        font-family: inherit;
+        background: #ffffff;
+        color: #1c1c1e;
+        outline: none;
+      }
+
+      #search-input:focus {
+        border-color: #0066cc;
+        box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+      }
+
+      #search-input.no-match {
+        background: #ffeaea;
+        border-color: #ff3b30;
+      }
+
+      #search-count {
+        font-size: 12px;
+        color: #6c6c70;
+        min-width: 60px;
+      }
+
+      #search-bar button {
+        height: 26px;
+        padding: 0 8px;
+        border: 1px solid #d1d1d6;
+        border-radius: 5px;
+        background: #ffffff;
+        color: #1c1c1e;
+        font-size: 11px;
+        cursor: pointer;
+      }
+
+      #search-bar button:hover {
+        background: #e8e8e8;
+      }
+
+      mark.search-highlight {
+        background: #ffeb3b;
+        color: inherit;
+        border-radius: 2px;
+        padding: 0 1px;
+      }
+
+      mark.search-highlight.current {
+        background: #ff9800;
+        color: #fff;
+      }
+
       /* Dark mode — must be last so it overrides the base styles above */
       @media (prefers-color-scheme: dark) {
         body {
@@ -310,13 +390,58 @@
         hr {
           border-top-color: #3a3a3c;
         }
+        #search-bar {
+          background: #1e1e20;
+          border-bottom-color: #2c2c2e;
+        }
+        #search-input {
+          background: #2c2c2e;
+          border-color: #48484a;
+          color: #f0f0f0;
+        }
+        #search-input:focus {
+          border-color: #4da3ff;
+          box-shadow: 0 0 0 2px rgba(77, 163, 255, 0.2);
+        }
+        #search-input.no-match {
+          background: #3a1515;
+          border-color: #ff453a;
+        }
+        #search-bar button {
+          background: #2c2c2e;
+          border-color: #48484a;
+          color: #f0f0f0;
+        }
+        #search-bar button:hover {
+          background: #3a3a3c;
+        }
+        #search-count {
+          color: #8e8e93;
+        }
+        mark.search-highlight {
+          background: #7a6000;
+          color: #f0f0f0;
+        }
+        mark.search-highlight.current {
+          background: #c87800;
+          color: #fff;
+        }
       }
     </style>
   </head>
   <body>
     <div id="sidebar"></div>
-    <div id="main">
-      <div id="content"></div>
+    <div id="main-area">
+      <div id="search-bar">
+        <input id="search-input" type="text" placeholder="Find…" autocomplete="off" spellcheck="false" />
+        <span id="search-count"></span>
+        <button id="search-prev" title="Previous (Shift+Enter)">▲</button>
+        <button id="search-next" title="Next (Enter)">▼</button>
+        <button id="search-close" title="Close (Esc)">✕</button>
+      </div>
+      <div id="main">
+        <div id="content"></div>
+      </div>
     </div>
     <script>
       var MARKDOWN_CONTENT = {{MARKDOWN_JSON}};
@@ -391,6 +516,145 @@
           window.webkit.messageHandlers.linkClicked.postMessage(a.href);
         }
       });
+
+      // ── Text search ─────────────────────────────────────────
+      (function () {
+        var searchActive = false;
+        var currentMarks = [];
+        var currentIndex = -1;
+
+        function openSearch() {
+          document.getElementById("search-bar").classList.add("visible");
+          var input = document.getElementById("search-input");
+          input.focus();
+          input.select();
+          searchActive = true;
+        }
+
+        function closeSearch() {
+          document.getElementById("search-bar").classList.remove("visible");
+          clearHighlights();
+          document.getElementById("search-input").value = "";
+          document.getElementById("search-input").classList.remove("no-match");
+          document.getElementById("search-count").textContent = "";
+          searchActive = false;
+        }
+
+        function clearHighlights() {
+          currentMarks.forEach(function (m) {
+            var parent = m.parentNode;
+            if (!parent) return;
+            parent.replaceChild(document.createTextNode(m.textContent), m);
+            parent.normalize();
+          });
+          currentMarks = [];
+          currentIndex = -1;
+        }
+
+        function walkAndHighlight(node, query, results) {
+          if (node.nodeType === 3) {
+            var text = node.nodeValue;
+            var lq = query.toLowerCase();
+            if (text.toLowerCase().indexOf(lq) < 0) return;
+            var parent = node.parentNode;
+            var frag = document.createDocumentFragment();
+            var remaining = text;
+            while (remaining.toLowerCase().indexOf(lq) >= 0) {
+              var pos = remaining.toLowerCase().indexOf(lq);
+              if (pos > 0) frag.appendChild(document.createTextNode(remaining.slice(0, pos)));
+              var mark = document.createElement("mark");
+              mark.className = "search-highlight";
+              mark.textContent = remaining.slice(pos, pos + query.length);
+              frag.appendChild(mark);
+              results.push(mark);
+              remaining = remaining.slice(pos + query.length);
+            }
+            if (remaining) frag.appendChild(document.createTextNode(remaining));
+            parent.replaceChild(frag, node);
+            return;
+          }
+          if (["SCRIPT", "STYLE", "MARK", "INPUT", "TEXTAREA"].indexOf(node.nodeName) >= 0) return;
+          Array.from(node.childNodes).forEach(function (child) {
+            walkAndHighlight(child, query, results);
+          });
+        }
+
+        function applySearch(query) {
+          clearHighlights();
+          var input = document.getElementById("search-input");
+          if (!query) {
+            input.classList.remove("no-match");
+            document.getElementById("search-count").textContent = "";
+            return;
+          }
+          var results = [];
+          walkAndHighlight(document.getElementById("content"), query, results);
+          currentMarks = results;
+          if (results.length > 0) {
+            input.classList.remove("no-match");
+            currentIndex = 0;
+            scrollToMark(0);
+          } else {
+            input.classList.add("no-match");
+          }
+          updateCount();
+        }
+
+        function scrollToMark(idx) {
+          currentMarks.forEach(function (m, i) {
+            m.className = i === idx ? "search-highlight current" : "search-highlight";
+          });
+          if (currentMarks[idx]) {
+            currentMarks[idx].scrollIntoView({ block: "center", behavior: "smooth" });
+          }
+        }
+
+        function updateCount() {
+          var el = document.getElementById("search-count");
+          if (currentMarks.length === 0) {
+            el.textContent = document.getElementById("search-input").value ? "No results" : "";
+          } else {
+            el.textContent = (currentIndex + 1) + " / " + currentMarks.length;
+          }
+        }
+
+        function nextMatch() {
+          if (!currentMarks.length) return;
+          currentIndex = (currentIndex + 1) % currentMarks.length;
+          scrollToMark(currentIndex);
+          updateCount();
+        }
+
+        function prevMatch() {
+          if (!currentMarks.length) return;
+          currentIndex = (currentIndex - 1 + currentMarks.length) % currentMarks.length;
+          scrollToMark(currentIndex);
+          updateCount();
+        }
+
+        document.addEventListener("keydown", function (e) {
+          if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+            e.preventDefault();
+            openSearch();
+          } else if (e.key === "Escape" && searchActive) {
+            e.preventDefault();
+            closeSearch();
+          } else if (e.key === "Enter" && searchActive) {
+            e.preventDefault();
+            if (e.shiftKey) prevMatch(); else nextMatch();
+          } else if ((e.metaKey || e.ctrlKey) && e.key === "g" && searchActive) {
+            e.preventDefault();
+            if (e.shiftKey) prevMatch(); else nextMatch();
+          }
+        });
+
+        document.getElementById("search-input").addEventListener("input", function () {
+          applySearch(this.value);
+        });
+        document.getElementById("search-next").addEventListener("click", nextMatch);
+        document.getElementById("search-prev").addEventListener("click", prevMatch);
+        document.getElementById("search-close").addEventListener("click", closeSearch);
+      })();
     </script>
   </body>
 </html>
