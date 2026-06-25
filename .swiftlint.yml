@@ -16,6 +16,7 @@ excluded:
   - Vendor/
   - .build/
   - DerivedData/
+  - build/
 
 line_length:
   warning: 120
