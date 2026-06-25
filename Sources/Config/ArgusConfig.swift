@@ -22,6 +22,7 @@ struct ArgusConfig: Codable, Equatable {
     var agent: AgentSelection = .claude
     var claudeCommand: String = "claude --continue"
     var codexCommand: String = "codex resume --last"
+    var diskMonitor = DiskMonitor()
 
     func launchCommand(for selection: AgentSelection) -> String {
         switch selection {
@@ -41,6 +42,13 @@ struct ArgusConfig: Codable, Equatable {
         var openMarkdownPreview: String = "m"
         var openSettings: String = ","
         var reloadAgentPane: String = "a"
+        var openDiskStatus: String = "d"
+    }
+
+    struct DiskMonitor: Codable, Equatable {
+        var checkIntervalSeconds: Double = 60
+        var alertThresholdPercent: Double = 5.0
+        var sizeCheckIntervalSeconds: Double = 300
     }
 }
 
