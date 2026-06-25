@@ -85,6 +85,9 @@ struct AppShellView: View {
     @StateObject private var nvim = NvimWindow()
     @StateObject private var markdownPreview = MarkdownPreviewWindow()
     @StateObject private var agentBus = AgentStateBus()
+    @StateObject private var diskMonitor = DiskMonitorStore()
+    @StateObject private var diskScanner = DiskCleanupScanner()
+    @StateObject private var diskStatusWindow = DiskStatusWindow()
     @Environment(\.openWindow) private var openWindow
     @State private var selectedWorktreeID: String?
     @State private var isCanvasMode = false
@@ -125,21 +128,31 @@ struct AppShellView: View {
                     agentBus.setAgentType(.codex, for: worktree.path)
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openDiskStatus)) { _ in
+                diskStatusWindow.open(store: diskMonitor, scanner: diskScanner)
+            }
     }
 
     private var coreView: some View {
         NavigationSplitView {
-            SidebarView(
-                store: store,
-                selectedWorktreeID: $selectedWorktreeID,
-                activeTerminalIDs: pool.activeIDs,
-                agentBus: agentBus,
-                onRelease: { id in
-                    if selectedWorktreeID == id { selectedWorktreeID = nil }
-                    pool.release(id: id)
-                    agentBus.reset(for: id)
+            VStack(spacing: 0) {
+                if diskMonitor.isLow {
+                    DiskLowBanner {
+                        diskStatusWindow.open(store: diskMonitor, scanner: diskScanner)
+                    }
                 }
-            )
+                SidebarView(
+                    store: store,
+                    selectedWorktreeID: $selectedWorktreeID,
+                    activeTerminalIDs: pool.activeIDs,
+                    agentBus: agentBus,
+                    onRelease: { id in
+                        if selectedWorktreeID == id { selectedWorktreeID = nil }
+                        pool.release(id: id)
+                        agentBus.reset(for: id)
+                    }
+                )
+            }
         } detail: {
             terminalDetail
                 .background(
@@ -163,6 +176,12 @@ struct AppShellView: View {
             pool.agentBus = agentBus
             store.load()
             agentBus.start()
+            diskMonitor.start()
+            diskScanner.start()
+        }
+        .onDisappear {
+            diskMonitor.stop()
+            diskScanner.stop()
         }
         .onChange(of: store.repos) { _, newRepos in
             guard selectedWorktreeID == nil else { return }
