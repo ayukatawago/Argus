@@ -58,7 +58,7 @@ private final class PanePool: ObservableObject {
                 }
             )
             state.configuration = TerminalSurfaceOptions(backend: .exec, workingDirectory: path)
-            canvasViews[id] = WorktreePane.makeView(state: state)
+            canvasViews[id] = WorktreePane.makeView(state: state, sessionName: session)
         }
     }
 

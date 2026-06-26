@@ -30,11 +30,11 @@ final class WorktreePane {
 
         shellState = Self.makeState(command: shellCommand)
         shellState.configuration = surfaceOptions
-        shellView = Self.makeView(state: shellState)
+        shellView = Self.makeView(state: shellState, sessionName: shellSession)
 
         agentState = Self.makeState(command: agentCommand)
         agentState.configuration = surfaceOptions
-        agentView = Self.makeView(state: agentState)
+        agentView = Self.makeView(state: agentState, sessionName: agentSession)
     }
 
     /// Derives a stable tmux session name from a worktree path.
@@ -69,8 +69,9 @@ final class WorktreePane {
         return state
     }
 
-    static func makeView(state: TerminalViewState) -> AppTerminalView {
-        let view = AppTerminalView(frame: .zero)
+    static func makeView(state: TerminalViewState, sessionName: String) -> AppTerminalView {
+        let view = ArgusTerminalView(frame: .zero)
+        view.sessionName = sessionName
         view.delegate = state
         view.configuration = state.configuration
         view.controller = state.controller
