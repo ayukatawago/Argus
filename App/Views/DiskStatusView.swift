@@ -149,10 +149,17 @@ struct DiskStatusView: View {
                     .lineLimit(1)
             }
             Spacer()
-            sizeLabel(for: candidate)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .frame(width: 70, alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 2) {
+                sizeLabel(for: candidate)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(width: 70, alignment: .trailing)
+                if let date = candidate.lastModifiedDate {
+                    Text(date.formatted(.relative(presentation: .named)))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
