@@ -6,6 +6,7 @@ struct CleanupCandidate: Identifiable {
     let displayName: String
     let path: URL
     var sizeBytes: Int64?
+    var lastModifiedDate: Date?
     var isSelected: Bool
     let isTrash: Bool
 }
@@ -65,16 +66,19 @@ final class DiskCleanupScanner: ObservableObject {
         var result = Self.catalogEntries.compactMap { entry -> CleanupCandidate? in
             let url = home.appendingPathComponent(entry.relativePath)
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            let modDate = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
             return CleanupCandidate(
                 id: UUID(),
                 displayName: entry.name,
                 path: url,
                 sizeBytes: nil,
+                lastModifiedDate: modDate,
                 isSelected: false,
                 isTrash: entry.isTrash
             )
         }
         result += Self.gradleVersionCandidates(home: home)
+        result += Self.workspaceRepoCandidates(home: home)
         candidates = result
     }
 
@@ -83,7 +87,7 @@ final class DiskCleanupScanner: ObservableObject {
         guard
             let contents = try? FileManager.default.contentsOfDirectory(
                 at: cachesURL,
-                includingPropertiesForKeys: [.isDirectoryKey],
+                includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
                 options: [.skipsHiddenFiles]
             )
         else { return [] }
@@ -97,15 +101,56 @@ final class DiskCleanupScanner: ObservableObject {
             }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
             .map { url in
-                CleanupCandidate(
+                let modDate = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+                return CleanupCandidate(
                     id: UUID(),
                     displayName: "Gradle \(url.lastPathComponent)",
                     path: url,
                     sizeBytes: nil,
+                    lastModifiedDate: modDate,
                     isSelected: false,
                     isTrash: false
                 )
             }
+    }
+
+    private static func workspaceRepoCandidates(home: URL) -> [CleanupCandidate] {
+        let workspaceURL = home.appendingPathComponent("workspace")
+        guard FileManager.default.fileExists(atPath: workspaceURL.path) else { return [] }
+        var results: [CleanupCandidate] = []
+
+        func scan(in dir: URL, depth: Int) {
+            guard depth > 0 else { return }
+            guard
+                let contents = try? FileManager.default.contentsOfDirectory(
+                    at: dir,
+                    includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+                    options: [.skipsHiddenFiles]
+                )
+            else { return }
+            for url in contents {
+                let vals = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey])
+                guard vals?.isDirectory == true else { continue }
+                if FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) {
+                    let relName = String(url.path.dropFirst(workspaceURL.path.count + 1))
+                    results.append(
+                        CleanupCandidate(
+                            id: UUID(),
+                            displayName: relName,
+                            path: url,
+                            sizeBytes: nil,
+                            lastModifiedDate: vals?.contentModificationDate,
+                            isSelected: false,
+                            isTrash: false
+                        ))
+                } else {
+                    scan(in: url, depth: depth - 1)
+                }
+            }
+        }
+
+        scan(in: workspaceURL, depth: 2)
+        return results.sorted { $0.displayName < $1.displayName }
     }
 
     func scanSizes() async {
