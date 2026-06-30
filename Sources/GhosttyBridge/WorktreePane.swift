@@ -17,14 +17,15 @@ final class WorktreePane {
         let shellSession = Self.sessionName("s", path: workingDirectory)
         let agentSession = Self.sessionName("a", path: workingDirectory)
 
+        let tmux = Self.tmuxExecutable
         let shellCommand =
-            "tmux new-session -A -s \(shellSession)"
+            "\(tmux) new-session -A -s \(shellSession)"
             + " \\; set -s extended-keys on"
             + " \\; set-option -t \(shellSession) status off"
         let agentChoice = ArgusConfigStore.shared.config.agent
         let agentCmd = "\(ArgusConfigStore.shared.config.launchCommand(for: agentChoice)) || exec \(shell) -l"
         let agentCommand =
-            "tmux new-session -A -s \(agentSession) \(shell) -l -c '\(agentCmd)'"
+            "\(tmux) new-session -A -s \(agentSession) \(shell) -l -c '\(agentCmd)'"
             + " \\; set -s extended-keys on"
             + " \\; set-option -t \(agentSession) status off"
 
@@ -48,6 +49,16 @@ final class WorktreePane {
         let safe = last.prefix(20).replacingOccurrences(
             of: #"[^a-zA-Z0-9_-]"#, with: "-", options: .regularExpression)
         return "argus-\(type)-\(safe)-\(hash)"
+    }
+
+    static var tmuxExecutable: String {
+        let candidates = [
+            ProcessInfo.processInfo.environment["ARGUS_TMUX"],
+            "/opt/homebrew/bin/tmux",
+            "/usr/local/bin/tmux",
+            "/usr/bin/tmux",
+        ].compactMap { $0 }
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) } ?? "tmux"
     }
 
     /// FNV-1a 32-bit hash — fast, deterministic, no seed randomisation.
