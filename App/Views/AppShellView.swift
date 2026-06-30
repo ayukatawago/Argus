@@ -46,8 +46,9 @@ private final class PanePool: ObservableObject {
     func openCanvas(worktrees: [(id: String, path: String)], fontSize: Int) {
         for (id, path) in worktrees where canvasViews[id] == nil {
             let session = WorktreePane.sessionName("a", path: path)
+            let tmux = WorktreePane.tmuxExecutable
             let attachCmd =
-                "tmux attach-session -t \(session)"
+                "\(tmux) attach-session -t \(session)"
                 + " \\; set -s extended-keys on"
                 + " \\; set-option -t \(session) status off"
             let state = TerminalViewState(
@@ -69,8 +70,8 @@ private final class PanePool: ObservableObject {
     func reloadAgentPane(id: String, workingDirectory: String) {
         let session = WorktreePane.sessionName("a", path: workingDirectory)
         let task = Process()
-        task.launchPath = "/usr/bin/env"
-        task.arguments = ["tmux", "kill-session", "-t", session]
+        task.launchPath = WorktreePane.tmuxExecutable
+        task.arguments = ["kill-session", "-t", session]
         try? task.run()
         release(id: id)
         getOrCreate(id: id, workingDirectory: workingDirectory)

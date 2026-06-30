@@ -18,8 +18,9 @@ final class NvimWindow: NSObject, NSWindowDelegate, ObservableObject {
 
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let session = WorktreePane.sessionName("n", path: workingDirectory)
+        let tmux = WorktreePane.tmuxExecutable
         let command =
-            "tmux new-session -A -s \(session) \(shell) -l -c 'nvim'"
+            "\(tmux) new-session -A -s \(session) \(shell) -l -c 'nvim'"
             + " \\; set -s extended-keys on"
             + " \\; set-option -t \(session) status off"
         let state = TerminalViewState(
