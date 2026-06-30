@@ -168,7 +168,7 @@ struct DiskStatusView: View {
 
     @ViewBuilder
     private func sizeLabel(for candidate: CleanupCandidate) -> some View {
-        if scanner.scanningCandidateID == candidate.id {
+        if scanner.scanningCandidateID == candidate.id, candidate.sizeBytes == nil {
             ProgressView()
                 .scaleEffect(0.55)
                 .frame(width: 16, height: 16)

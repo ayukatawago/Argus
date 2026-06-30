@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 struct CleanupCandidate: Identifiable {
-    let id: UUID
+    var id: URL { path }
     let displayName: String
     let path: URL
     var sizeBytes: Int64?
@@ -16,7 +16,7 @@ final class DiskCleanupScanner: ObservableObject {
     @Published private(set) var candidates: [CleanupCandidate] = []
     @Published private(set) var isScanning = false
     @Published private(set) var isRemoving = false
-    @Published private(set) var scanningCandidateID: UUID?
+    @Published private(set) var scanningCandidateID: URL?
 
     private var backgroundTask: Task<Void, Never>?
 
@@ -62,13 +62,19 @@ final class DiskCleanupScanner: ObservableObject {
     ]
 
     func loadCandidates() {
+        let existingSizes = Dictionary(
+            candidates.compactMap { candidate -> (URL, Int64)? in
+                guard let size = candidate.sizeBytes else { return nil }
+                return (candidate.path, size)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
         let home = FileManager.default.homeDirectoryForCurrentUser
         var result = Self.catalogEntries.compactMap { entry -> CleanupCandidate? in
             let url = home.appendingPathComponent(entry.relativePath)
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
             let modDate = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
             return CleanupCandidate(
-                id: UUID(),
                 displayName: entry.name,
                 path: url,
                 sizeBytes: nil,
@@ -80,6 +86,9 @@ final class DiskCleanupScanner: ObservableObject {
         result += Self.gradleVersionCandidates(home: home)
         result += Self.workspaceRepoCandidates(home: home)
         candidates = result
+        for idx in candidates.indices {
+            candidates[idx].sizeBytes = existingSizes[candidates[idx].path]
+        }
     }
 
     private static func gradleVersionCandidates(home: URL) -> [CleanupCandidate] {
@@ -103,7 +112,6 @@ final class DiskCleanupScanner: ObservableObject {
             .map { url in
                 let modDate = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
                 return CleanupCandidate(
-                    id: UUID(),
                     displayName: "Gradle \(url.lastPathComponent)",
                     path: url,
                     sizeBytes: nil,
@@ -135,7 +143,6 @@ final class DiskCleanupScanner: ObservableObject {
                     let relName = String(url.path.dropFirst(workspaceURL.path.count + 1))
                     results.append(
                         CleanupCandidate(
-                            id: UUID(),
                             displayName: relName,
                             path: url,
                             sizeBytes: nil,
@@ -173,7 +180,7 @@ final class DiskCleanupScanner: ObservableObject {
         }
     }
 
-    func toggleSelection(id: UUID) {
+    func toggleSelection(id: URL) {
         guard let idx = candidates.firstIndex(where: { $0.id == id }) else { return }
         candidates[idx].isSelected.toggle()
     }
