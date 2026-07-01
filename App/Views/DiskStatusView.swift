@@ -152,7 +152,7 @@ struct DiskStatusView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 sizeLabel(for: candidate)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(candidate.sizeBytes.map(sizeColor) ?? .secondary)
                     .frame(width: 70, alignment: .trailing)
                 if let date = candidate.lastModifiedDate {
                     Text(date.formatted(.relative(presentation: .named)))
@@ -177,6 +177,14 @@ struct DiskStatusView: View {
         } else {
             Text("—")
         }
+    }
+
+    private func sizeColor(_ bytes: Int64) -> Color {
+        let gib: Int64 = 1_073_741_824
+        if bytes >= 10 * gib { return .red }
+        if bytes >= 3 * gib { return .orange }
+        if bytes >= gib { return .yellow }
+        return .secondary
     }
 
     private func formatBytes(_ bytes: Int64) -> String {
