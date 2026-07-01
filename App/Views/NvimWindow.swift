@@ -60,6 +60,15 @@ final class NvimWindow: NSObject, NSWindowDelegate, ObservableObject {
 
         window = win
         viewState = state
+
+        // viewDidMoveToWindow fires when contentView is set, before makeKeyAndOrderFront,
+        // so the window's effectiveAppearance may not yet match the system appearance.
+        // Re-sync the color scheme on the next run loop tick once the window is settled.
+        DispatchQueue.main.async { [weak self] in
+            guard let win = self?.window, let state = self?.viewState else { return }
+            let isDark = win.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            state.adopt(terminalColorScheme: isDark ? .dark : .light)
+        }
     }
 
     func windowDidBecomeKey(_: Notification) {
