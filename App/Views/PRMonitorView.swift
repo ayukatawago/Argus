@@ -119,6 +119,15 @@ private struct PRRow: View {
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
+                    if pr.approvedBy.isEmpty {
+                        Text("waiting for review")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        Text("✓ \(pr.approvedBy.joined(separator: ", "))")
+                            .font(.caption2)
+                            .foregroundStyle(.green.opacity(0.75))
+                    }
                 }
                 Spacer()
                 Image(systemName: "arrow.up.right")
