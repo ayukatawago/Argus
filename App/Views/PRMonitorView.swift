@@ -3,6 +3,7 @@ import SwiftUI
 
 struct PRMonitorView: View {
     @ObservedObject var store: PRMonitorStore
+    @State private var isDNMExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -24,6 +25,7 @@ struct PRMonitorView: View {
                 prSection(title: "My Open PRs", prs: store.myOpenPRs, showAuthor: false)
                 prSection(title: "My Drafts", prs: store.myDraftPRs, showAuthor: false)
                 prSection(title: "Assigned", prs: store.reviewRequestedPRs, showAuthor: true)
+                doNotMergeSection
                 if !store.hasAnyPRs {
                     Text("No open pull requests")
                         .font(.caption)
@@ -49,6 +51,39 @@ struct PRMonitorView: View {
                     PRRow(pr: pullRequest, showAuthor: showAuthor)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 1)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var doNotMergeSection: some View {
+        if !store.doNotMergePRs.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    isDNMExpanded.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: isDNMExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 10)
+                        Text("Do Not Merge (\(store.doNotMergePRs.count))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.leading, 16)
+                    .padding(.top, 6)
+                    .padding(.bottom, 2)
+                }
+                .buttonStyle(.plain)
+                if isDNMExpanded {
+                    ForEach(store.doNotMergePRs) { pullRequest in
+                        PRRow(pr: pullRequest, showAuthor: false)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 1)
+                    }
                 }
             }
         }
