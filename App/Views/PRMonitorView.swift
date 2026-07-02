@@ -21,9 +21,9 @@ struct PRMonitorView: View {
                     .padding(.bottom, 4)
                     .lineLimit(3)
             } else {
-                prSection(title: "My Open PRs", prs: store.myOpenPRs)
-                prSection(title: "My Drafts", prs: store.myDraftPRs)
-                prSection(title: "Review Requested", prs: store.reviewRequestedPRs)
+                prSection(title: "My Open PRs", prs: store.myOpenPRs, showAuthor: false)
+                prSection(title: "My Drafts", prs: store.myDraftPRs, showAuthor: false)
+                prSection(title: "Assigned", prs: store.reviewRequestedPRs, showAuthor: true)
                 if !store.hasAnyPRs {
                     Text("No open pull requests")
                         .font(.caption)
@@ -36,7 +36,7 @@ struct PRMonitorView: View {
     }
 
     @ViewBuilder
-    private func prSection(title: String, prs: [GitHubPR]) -> some View {
+    private func prSection(title: String, prs: [GitHubPR], showAuthor: Bool) -> some View {
         if !prs.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
@@ -46,7 +46,7 @@ struct PRMonitorView: View {
                     .padding(.top, 6)
                     .padding(.bottom, 2)
                 ForEach(prs) { pullRequest in
-                    PRRow(pr: pullRequest)
+                    PRRow(pr: pullRequest, showAuthor: showAuthor)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 1)
                 }
@@ -84,6 +84,7 @@ struct PRMonitorView: View {
 
 private struct PRRow: View {
     let pr: GitHubPR  // swiftlint:disable:this identifier_name
+    let showAuthor: Bool
     @State private var isHovered = false
 
     var body: some View {
@@ -107,6 +108,16 @@ private struct PRRow: View {
                         Text("#\(pr.number)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                        if let branch = pr.baseBranch {
+                            Text("→ \(branch)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    if showAuthor {
+                        Text("by \(pr.authorLogin)")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
                 }
                 Spacer()
