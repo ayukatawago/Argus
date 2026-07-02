@@ -5,6 +5,7 @@ import SwiftUI
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case agent = "Agent"
     case keyboard = "Keyboard"
+    case github = "GitHub"
 
     var id: String { rawValue }
 
@@ -12,6 +13,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .agent: "sparkles"
         case .keyboard: "keyboard"
+        case .github: "network"
         }
     }
 }
@@ -51,6 +53,10 @@ struct SettingsRootView: View {
 
                 case .keyboard:
                     KeyboardSettingsView(config: $configStore.config)
+                        .onChange(of: configStore.config) { _, _ in configStore.save() }
+
+                case .github:
+                    GitHubSettingsView(config: $configStore.config)
                         .onChange(of: configStore.config) { _, _ in configStore.save() }
                 }
             }
@@ -202,6 +208,74 @@ struct KeyboardSettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             SingleCharField(value: key)
         }
+    }
+}
+
+// MARK: - GitHub settings
+
+struct GitHubSettingsView: View {
+    @Binding var config: ArgusConfig
+    @State private var isDetecting = false
+    @State private var detectError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            connectionSection
+            Divider()
+            refreshSection
+        }
+    }
+
+    private var connectionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("GitHub Connection")
+                .font(.headline)
+            settingRow("API Base URL") {
+                TextField("https://api.github.com", text: $config.github.apiBaseURL)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(minWidth: 240)
+            }
+            Text("For github.com use https://api.github.com. For GHE use https://{host}/api/v3.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            settingRow("Token") {
+                SecureField("ghp_…", text: $config.github.token)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(minWidth: 240)
+            }
+            if let error = detectError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private var refreshSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Refresh")
+                .font(.headline)
+            settingRow("Interval") {
+                Slider(value: $config.github.refreshIntervalSeconds, in: 60...1800, step: 60)
+                    .frame(width: 160)
+                Text(formatInterval(config.github.refreshIntervalSeconds))
+                    .monospacedDigit()
+                    .frame(width: 55, alignment: .leading)
+            }
+        }
+    }
+
+    private func settingRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .center) {
+            Text(label)
+                .frame(width: 100, alignment: .leading)
+            content()
+        }
+    }
+
+    private func formatInterval(_ seconds: Double) -> String {
+        let minutes = Int(seconds) / 60
+        return minutes == 1 ? "1 min" : "\(minutes) min"
     }
 }
 

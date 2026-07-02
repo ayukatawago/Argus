@@ -11,6 +11,7 @@ struct SidebarView: View {
     @Binding var selectedWorktreeID: String?
     let activeTerminalIDs: Set<String>
     @ObservedObject var agentBus: AgentStateBus
+    @ObservedObject var prMonitor: PRMonitorStore
     let onRelease: (String) -> Void
     @State private var dropTargetRepoID: String?
     @State private var showPickFolder = false
@@ -90,6 +91,11 @@ struct SidebarView: View {
                     }
                 }
                 .padding(.bottom, 4)
+            }
+
+            if !ArgusConfigStore.shared.config.github.token.isEmpty {
+                Divider()
+                PRMonitorView(store: prMonitor)
             }
 
             Divider()

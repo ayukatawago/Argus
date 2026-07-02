@@ -23,6 +23,7 @@ struct ArgusConfig: Codable, Equatable {
     var claudeCommand: String = "claude --continue"
     var codexCommand: String = "codex resume --last"
     var diskMonitor = DiskMonitor()
+    var github = GitHub()
 
     func launchCommand(for selection: AgentSelection) -> String {
         switch selection {
@@ -49,6 +50,12 @@ struct ArgusConfig: Codable, Equatable {
         var checkIntervalSeconds: Double = 60
         var alertThresholdPercent: Double = 5.0
         var sizeCheckIntervalSeconds: Double = 300
+    }
+
+    struct GitHub: Codable, Equatable {
+        var apiBaseURL: String = "https://api.github.com"
+        var token: String = ""
+        var refreshIntervalSeconds: Double = 300
     }
 }
 
