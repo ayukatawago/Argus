@@ -17,6 +17,7 @@ struct GitHubPR: Decodable, Identifiable {
     let labelNames: [String]
     var baseBranch: String?
     var approvedBy: [String] = []
+    var approvedByMe: Bool = false
 
     private struct UserField: Decodable {
         let login: String
@@ -176,20 +177,20 @@ final class PRMonitorStore: ObservableObject {
                 var copy = pullRequest
                 copy.baseBranch = enrichments[pullRequest.id]?.baseBranch
                 copy.approvedBy = enrichments[pullRequest.id]?.approvedBy ?? []
+                copy.approvedByMe = copy.approvedBy.contains(username)
                 return copy
             }
         }
 
         let enrichedAuthored = enrich(authoredPRs)
         let enrichedAssigned = enrich(assignedPRs)
-        let notApprovedByMe = { (pullRequest: GitHubPR) in !pullRequest.approvedBy.contains(username) }
         let notDNM = { (pullRequest: GitHubPR) in !pullRequest.labelNames.contains(dontMerge) }
 
-        myOpenPRs = enrichedAuthored.filter { !$0.draft && notApprovedByMe($0) && notDNM($0) }
-        myDraftPRs = enrichedAuthored.filter { $0.draft && notApprovedByMe($0) && notDNM($0) }
+        myOpenPRs = enrichedAuthored.filter { !$0.draft && notDNM($0) }
+        myDraftPRs = enrichedAuthored.filter { $0.draft && notDNM($0) }
         let authoredIDs = Set(enrichedAuthored.map(\.id))
         reviewRequestedPRs = enrichedAssigned.filter {
-            !authoredIDs.contains($0.id) && notApprovedByMe($0) && notDNM($0)
+            !authoredIDs.contains($0.id) && notDNM($0)
         }
         var dnmSeen = Set<Int>()
         doNotMergePRs = enrich(allPRs)
