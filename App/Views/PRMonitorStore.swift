@@ -16,6 +16,7 @@ struct GitHubPR: Decodable, Identifiable {
     let authorLogin: String
     let labelNames: [String]
     var baseBranch: String?
+    var approvedBy: [String] = []
 
     private struct UserField: Decodable {
         let login: String
@@ -42,6 +43,7 @@ struct GitHubPR: Decodable, Identifiable {
         authorLogin = try container.decode(UserField.self, forKey: .user).login
         labelNames = try container.decode([LabelField].self, forKey: .labels).map(\.name)
         baseBranch = nil
+        approvedBy = []
     }
 
     var repoName: String { repositoryURL.lastPathComponent }
@@ -57,6 +59,26 @@ private struct GitHubPRDetail: Decodable {
     }
 
     let base: Base
+}
+
+private struct GitHubReview: Decodable {
+    struct Reviewer: Decodable {
+        let login: String
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case user, state
+        case submittedAt = "submitted_at"
+    }
+
+    let user: Reviewer
+    let state: String
+    let submittedAt: String
+}
+
+private struct PREnrichment: Sendable {
+    var baseBranch: String?
+    var approvedBy: [String] = []
 }
 
 enum PRMonitorError: Error, LocalizedError {
@@ -140,32 +162,35 @@ final class PRMonitorStore: ObservableObject {
         async let authored = searchPRs(query: "is:pr+is:open+author:\(username)", config: config)
         async let assigned = searchPRs(query: "is:pr+is:open+assignee:\(username)", config: config)
         var (authoredPRs, assignedPRs) = try await (authored, assigned)
-        authoredPRs = authoredPRs.filter { !$0.labelNames.contains("!!! DONT' MERGE !!!") }
-        assignedPRs = assignedPRs.filter { !$0.labelNames.contains("!!! DONT' MERGE !!!") }
+        let dontMerge = "!!! DONT' MERGE !!!"
+        authoredPRs = authoredPRs.filter { !$0.labelNames.contains(dontMerge) }
+        assignedPRs = assignedPRs.filter { !$0.labelNames.contains(dontMerge) }
 
-        let allPRs = Array(Set(authoredPRs.map(\.id)).union(Set(assignedPRs.map(\.id))))
-            .compactMap { id in (authoredPRs + assignedPRs).first(where: { $0.id == id }) }
-        let branches = await fetchBranches(for: allPRs, config: config)
+        var seen = Set<Int>()
+        let allPRs = (authoredPRs + assignedPRs).filter { seen.insert($0.id).inserted }
+        let enrichments = await enrichDetails(for: allPRs, config: config)
 
         func enrich(_ prs: [GitHubPR]) -> [GitHubPR] {
             prs.map { pullRequest in
                 var copy = pullRequest
-                copy.baseBranch = branches[pullRequest.id]
+                copy.baseBranch = enrichments[pullRequest.id]?.baseBranch
+                copy.approvedBy = enrichments[pullRequest.id]?.approvedBy ?? []
                 return copy
             }
         }
 
-        authoredPRs = enrich(authoredPRs)
-        assignedPRs = enrich(assignedPRs)
+        let enrichedAuthored = enrich(authoredPRs)
+        let enrichedAssigned = enrich(assignedPRs)
+        let notApprovedByMe = { (pullRequest: GitHubPR) in !pullRequest.approvedBy.contains(username) }
 
-        myOpenPRs = authoredPRs.filter { !$0.draft }
-        myDraftPRs = authoredPRs.filter { $0.draft }
-        let authoredIDs = Set(authoredPRs.map(\.id))
-        reviewRequestedPRs = assignedPRs.filter { !authoredIDs.contains($0.id) }
+        myOpenPRs = enrichedAuthored.filter { !$0.draft && notApprovedByMe($0) }
+        myDraftPRs = enrichedAuthored.filter { $0.draft && notApprovedByMe($0) }
+        let authoredIDs = Set(enrichedAuthored.map(\.id))
+        reviewRequestedPRs = enrichedAssigned.filter { !authoredIDs.contains($0.id) && notApprovedByMe($0) }
     }
 
-    private func fetchBranches(for prs: [GitHubPR], config: ArgusConfig.GitHub) async -> [Int: String] {
-        await withTaskGroup(of: (Int, String?).self) { group in
+    private func enrichDetails(for prs: [GitHubPR], config: ArgusConfig.GitHub) async -> [Int: PREnrichment] {
+        await withTaskGroup(of: (Int, PREnrichment).self) { group in
             for pullRequest in prs {
                 let apiBase = config.apiBaseURL
                 let token = config.token
@@ -177,18 +202,26 @@ final class PRMonitorStore: ObservableObject {
                 else { continue }
                 let repoPath = "\(components[reposIdx + 1])/\(components[reposIdx + 2])"
                 group.addTask {
-                    guard let url = URL(string: "\(apiBase)/repos/\(repoPath)/pulls/\(prNumber)") else {
-                        return (prID, nil)
+                    guard let detailURL = URL(string: "\(apiBase)/repos/\(repoPath)/pulls/\(prNumber)"),
+                        let reviewsURL = URL(string: "\(apiBase)/repos/\(repoPath)/pulls/\(prNumber)/reviews")
+                    else {
+                        return (prID, PREnrichment())
                     }
-                    let detail: GitHubPRDetail? = try? await PRMonitorStore.githubFetch(url: url, token: token)
-                    return (prID, detail?.base.ref)
+                    let detail: GitHubPRDetail? = try? await PRMonitorStore.githubFetch(url: detailURL, token: token)
+                    let reviews: [GitHubReview] =
+                        (try? await PRMonitorStore.githubFetch(url: reviewsURL, token: token)) ?? []
+                    return (
+                        prID,
+                        PREnrichment(
+                            baseBranch: detail?.base.ref,
+                            approvedBy: PRMonitorStore.approvedLogins(from: reviews)
+                        )
+                    )
                 }
             }
-            var result: [Int: String] = [:]
-            for await (prID, branch) in group {
-                if let branch {
-                    result[prID] = branch
-                }
+            var result: [Int: PREnrichment] = [:]
+            for await (prID, enrichment) in group {
+                result[prID] = enrichment
             }
             return result
         }
@@ -200,6 +233,20 @@ final class PRMonitorStore: ObservableObject {
         }
         let result: GitHubSearchResult = try await Self.githubFetch(url: url, token: config.token)
         return result.items
+    }
+
+    private nonisolated static func approvedLogins(from reviews: [GitHubReview]) -> [String] {
+        var latestByLogin: [String: (date: String, state: String)] = [:]
+        for review in reviews {
+            let login = review.user.login
+            if let existing = latestByLogin[login], existing.date >= review.submittedAt {
+                continue
+            }
+            latestByLogin[login] = (review.submittedAt, review.state)
+        }
+        return latestByLogin.compactMap { login, pair in
+            pair.state == "APPROVED" ? login : nil
+        }.sorted()
     }
 
     private nonisolated static func githubFetch<T: Decodable>(url: URL, token: String) async throws -> T {
