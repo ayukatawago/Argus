@@ -42,17 +42,26 @@ struct PRMonitorView: View {
         if !prs.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
-                    .font(.caption2)
+                    .font(.caption)
+                    .fontWeight(.semibold)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 16)
-                    .padding(.top, 6)
-                    .padding(.bottom, 2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.primary.opacity(0.05))
                 ForEach(prs) { pullRequest in
                     PRRow(pr: pullRequest, showAuthor: showAuthor)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 1)
                 }
             }
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.primary.opacity(0.03))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .padding(.horizontal, 6)
+            .padding(.top, 4)
         }
     }
 
@@ -69,13 +78,15 @@ struct PRMonitorView: View {
                             .foregroundStyle(.secondary)
                             .frame(width: 10)
                         Text("Do Not Merge (\(store.doNotMergePRs.count))")
-                            .font(.caption2)
+                            .font(.caption)
+                            .fontWeight(.semibold)
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
-                    .padding(.leading, 16)
-                    .padding(.top, 6)
-                    .padding(.bottom, 2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.primary.opacity(0.05))
                 }
                 .buttonStyle(.plain)
                 if isDNMExpanded {
@@ -86,6 +97,13 @@ struct PRMonitorView: View {
                     }
                 }
             }
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.primary.opacity(0.03))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .padding(.horizontal, 6)
+            .padding(.top, 4)
         }
     }
 

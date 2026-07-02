@@ -146,6 +146,9 @@ struct SidebarView: View {
             }
             worktreeRows(for: repo, visible: visible)
         }
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
         .dropDestination(for: String.self) { items, _ in
             guard let draggedID = items.first,
                 draggedID != repo.id,
