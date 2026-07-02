@@ -105,13 +105,16 @@ final class PRMonitorStore: ObservableObject {
     @Published private(set) var myOpenPRs: [GitHubPR] = []
     @Published private(set) var myDraftPRs: [GitHubPR] = []
     @Published private(set) var reviewRequestedPRs: [GitHubPR] = []
+    @Published private(set) var doNotMergePRs: [GitHubPR] = []
     @Published private(set) var isLoading = false
     @Published private(set) var lastError: String?
 
     private var pollTask: Task<Void, Never>?
     private var resolvedUsername: String?
 
-    var hasAnyPRs: Bool { !myOpenPRs.isEmpty || !myDraftPRs.isEmpty || !reviewRequestedPRs.isEmpty }
+    var hasAnyPRs: Bool {
+        !myOpenPRs.isEmpty || !myDraftPRs.isEmpty || !reviewRequestedPRs.isEmpty || !doNotMergePRs.isEmpty
+    }
 
     func start() {
         guard pollTask == nil else { return }
@@ -161,10 +164,8 @@ final class PRMonitorStore: ObservableObject {
     private func fetchAndCategorize(username: String, config: ArgusConfig.GitHub) async throws {
         async let authored = searchPRs(query: "is:pr+is:open+author:\(username)", config: config)
         async let assigned = searchPRs(query: "is:pr+is:open+assignee:\(username)", config: config)
-        var (authoredPRs, assignedPRs) = try await (authored, assigned)
+        let (authoredPRs, assignedPRs) = try await (authored, assigned)
         let dontMerge = "!!! DONT' MERGE !!!"
-        authoredPRs = authoredPRs.filter { !$0.labelNames.contains(dontMerge) }
-        assignedPRs = assignedPRs.filter { !$0.labelNames.contains(dontMerge) }
 
         var seen = Set<Int>()
         let allPRs = (authoredPRs + assignedPRs).filter { seen.insert($0.id).inserted }
@@ -182,11 +183,17 @@ final class PRMonitorStore: ObservableObject {
         let enrichedAuthored = enrich(authoredPRs)
         let enrichedAssigned = enrich(assignedPRs)
         let notApprovedByMe = { (pullRequest: GitHubPR) in !pullRequest.approvedBy.contains(username) }
+        let notDNM = { (pullRequest: GitHubPR) in !pullRequest.labelNames.contains(dontMerge) }
 
-        myOpenPRs = enrichedAuthored.filter { !$0.draft && notApprovedByMe($0) }
-        myDraftPRs = enrichedAuthored.filter { $0.draft && notApprovedByMe($0) }
+        myOpenPRs = enrichedAuthored.filter { !$0.draft && notApprovedByMe($0) && notDNM($0) }
+        myDraftPRs = enrichedAuthored.filter { $0.draft && notApprovedByMe($0) && notDNM($0) }
         let authoredIDs = Set(enrichedAuthored.map(\.id))
-        reviewRequestedPRs = enrichedAssigned.filter { !authoredIDs.contains($0.id) && notApprovedByMe($0) }
+        reviewRequestedPRs = enrichedAssigned.filter {
+            !authoredIDs.contains($0.id) && notApprovedByMe($0) && notDNM($0)
+        }
+        var dnmSeen = Set<Int>()
+        doNotMergePRs = enrich(allPRs)
+            .filter { $0.labelNames.contains(dontMerge) && dnmSeen.insert($0.id).inserted }
     }
 
     private func enrichDetails(for prs: [GitHubPR], config: ArgusConfig.GitHub) async -> [Int: PREnrichment] {
