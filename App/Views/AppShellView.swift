@@ -88,6 +88,7 @@ struct AppShellView: View {
     @StateObject private var agentBus = AgentStateBus()
     @StateObject private var diskMonitor = DiskMonitorStore()
     @StateObject private var diskScanner = DiskCleanupScanner()
+    @StateObject private var prMonitor = PRMonitorStore()
     @StateObject private var diskStatusWindow = DiskStatusWindow()
     @Environment(\.openWindow) private var openWindow
     @State private var selectedWorktreeID: String?
@@ -147,6 +148,7 @@ struct AppShellView: View {
                     selectedWorktreeID: $selectedWorktreeID,
                     activeTerminalIDs: pool.activeIDs,
                     agentBus: agentBus,
+                    prMonitor: prMonitor,
                     onRelease: { id in
                         if selectedWorktreeID == id { selectedWorktreeID = nil }
                         pool.release(id: id)
@@ -179,10 +181,12 @@ struct AppShellView: View {
             agentBus.start()
             diskMonitor.start()
             diskScanner.start()
+            prMonitor.start()
         }
         .onDisappear {
             diskMonitor.stop()
             diskScanner.stop()
+            prMonitor.stop()
         }
         .onChange(of: store.repos) { _, newRepos in
             guard selectedWorktreeID == nil else { return }
