@@ -197,6 +197,7 @@ private struct PRRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .opacity(pr.approvedByMe ? 0.45 : 1.0)
         .help("\(pr.title) — \(pr.repoName) #\(pr.number)")
     }
 }
