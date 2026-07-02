@@ -14,14 +14,19 @@ struct GitHubPR: Decodable, Identifiable {
     let repositoryURL: URL
     let draft: Bool
     let authorLogin: String
+    let labelNames: [String]
     var baseBranch: String?
 
     private struct UserField: Decodable {
         let login: String
     }
 
+    private struct LabelField: Decodable {
+        let name: String
+    }
+
     enum CodingKeys: String, CodingKey {
-        case id, number, title, draft, user
+        case id, number, title, draft, user, labels
         case htmlURL = "html_url"
         case repositoryURL = "repository_url"
     }
@@ -35,6 +40,7 @@ struct GitHubPR: Decodable, Identifiable {
         htmlURL = try container.decode(URL.self, forKey: .htmlURL)
         repositoryURL = try container.decode(URL.self, forKey: .repositoryURL)
         authorLogin = try container.decode(UserField.self, forKey: .user).login
+        labelNames = try container.decode([LabelField].self, forKey: .labels).map(\.name)
         baseBranch = nil
     }
 
@@ -134,6 +140,8 @@ final class PRMonitorStore: ObservableObject {
         async let authored = searchPRs(query: "is:pr+is:open+author:\(username)", config: config)
         async let assigned = searchPRs(query: "is:pr+is:open+assignee:\(username)", config: config)
         var (authoredPRs, assignedPRs) = try await (authored, assigned)
+        authoredPRs = authoredPRs.filter { !$0.labelNames.contains("!!! DONT' MERGE !!!") }
+        assignedPRs = assignedPRs.filter { !$0.labelNames.contains("!!! DONT' MERGE !!!") }
 
         let allPRs = Array(Set(authoredPRs.map(\.id)).union(Set(assignedPRs.map(\.id))))
             .compactMap { id in (authoredPRs + assignedPRs).first(where: { $0.id == id }) }
