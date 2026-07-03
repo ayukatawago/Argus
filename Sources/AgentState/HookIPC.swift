@@ -16,6 +16,10 @@ final class HookIPC: @unchecked Sendable {
         "/private/tmp/argus-\(getuid())-hook-events.jsonl"
     }
 
+    nonisolated static var shellEventLogPath: String {
+        "/private/tmp/argus-\(getuid())-shell-events.jsonl"
+    }
+
     var onPayload: ((HookPayload) -> Void)?
     private var serverTask: Task<Void, Never>?
     private var fileTask: Task<Void, Never>?
