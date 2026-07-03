@@ -83,12 +83,31 @@ struct AgentStateBackground: View {
     let isActive: Bool
     let isSelected: Bool
     var agentType: AgentType = .claude
+    var isShellBusy: Bool = false
     @State private var pulse = false
 
     var body: some View {
         ZStack {
             baseLayer
-            if agentState == .done {
+            if isShellBusy {
+                TimelineView(.periodic(from: .now, by: 1.0 / 30)) { ctx in
+                    let elapsed = ctx.date.timeIntervalSinceReferenceDate
+                    let angle = elapsed.truncatingRemainder(dividingBy: 2.0) / 2.0 * 360.0
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(
+                            AngularGradient(
+                                colors: [
+                                    .clear, .clear, Color.primary.opacity(0.7),
+                                    Color.primary, .clear,
+                                ],
+                                center: .center,
+                                startAngle: .degrees(angle),
+                                endAngle: .degrees(angle + 360)
+                            ),
+                            lineWidth: 2
+                        )
+                }
+            } else if agentState == .done {
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(Color.green.opacity(0.55), lineWidth: 1.5)
             } else if agentState == .waitingForApproval {
