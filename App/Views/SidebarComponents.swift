@@ -93,12 +93,13 @@ struct AgentStateBackground: View {
                 TimelineView(.periodic(from: .now, by: 1.0 / 30)) { ctx in
                     let elapsed = ctx.date.timeIntervalSinceReferenceDate
                     let angle = elapsed.truncatingRemainder(dividingBy: 2.0) / 2.0 * 360.0
+                    let shellBorderColor: Color = isSelected ? .accentColor : .primary
                     RoundedRectangle(cornerRadius: 6)
                         .strokeBorder(
                             AngularGradient(
                                 colors: [
-                                    .clear, .clear, Color.primary.opacity(0.7),
-                                    Color.primary, .clear,
+                                    .clear, .clear, shellBorderColor.opacity(0.7),
+                                    shellBorderColor, .clear,
                                 ],
                                 center: .center,
                                 startAngle: .degrees(angle),
