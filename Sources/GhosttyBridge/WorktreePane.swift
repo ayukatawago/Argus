@@ -13,13 +13,13 @@ final class WorktreePane {
 
     init(workingDirectory: String) {
         let surfaceOptions = TerminalSurfaceOptions(backend: .exec, workingDirectory: workingDirectory)
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let shell = Self.userLoginShell
         let shellSession = Self.sessionName("s", path: workingDirectory)
         let agentSession = Self.sessionName("a", path: workingDirectory)
 
         let tmux = Self.tmuxExecutable
         let shellCommand =
-            "\(tmux) new-session -A -s \(shellSession)"
+            "\(tmux) new-session -A -s \(shellSession) 'exec \(shell) -l'"
             + " \\; set -s extended-keys on"
             + " \\; set-option -t \(shellSession) status off"
         let agentChoice = ArgusConfigStore.shared.config.agent
@@ -49,6 +49,26 @@ final class WorktreePane {
         let safe = last.prefix(20).replacingOccurrences(
             of: #"[^a-zA-Z0-9_-]"#, with: "-", options: .regularExpression)
         return "argus-\(type)-\(safe)-\(hash)"
+    }
+
+    /// The user's configured login shell, read from directory services so it is
+    /// correct regardless of what $SHELL the Argus process inherited.
+    static var userLoginShell: String {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/dscl")
+        proc.arguments = [".", "-read", "/Users/\(NSUserName())", "UserShell"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+        guard (try? proc.run()) != nil else {
+            return ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        }
+        proc.waitUntilExit()
+        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let shell =
+            out.components(separatedBy: ": ").last?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return shell.isEmpty ? (ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh") : shell
     }
 
     static var tmuxExecutable: String {

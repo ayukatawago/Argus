@@ -21,7 +21,26 @@ enum WorktreeHookManager {
     }
 
     static var isFishShell: Bool {
-        (ProcessInfo.processInfo.environment["SHELL"] ?? "").hasSuffix("/fish")
+        loginShell().hasSuffix("/fish")
+    }
+
+    /// Returns the user's configured login shell. Queries directory services
+    /// first — more reliable than $SHELL, which may be inherited from a parent
+    /// process running a different shell (e.g. a terminal with zsh active).
+    private static func loginShell() -> String {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/dscl")
+        proc.arguments = [".", "-read", "/Users/\(NSUserName())", "UserShell"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+        guard (try? proc.run()) != nil else {
+            return ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        }
+        proc.waitUntilExit()
+        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let shell = out.components(separatedBy: ": ").last?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return shell.isEmpty ? (ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh") : shell
     }
 
     /// Idempotent: writes the shared hook scripts once and merges argus's hook
