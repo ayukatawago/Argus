@@ -14,24 +14,25 @@ struct PRMonitorView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 4)
-            } else if let error = store.lastError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red.opacity(0.8))
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 4)
-                    .lineLimit(3)
             } else {
                 prSection(title: "My Open PRs", prs: store.myOpenPRs, showAuthor: false)
                 prSection(title: "My Drafts", prs: store.myDraftPRs, showAuthor: false)
                 prSection(title: "Assigned", prs: store.reviewRequestedPRs, showAuthor: true)
                 doNotMergeSection
-                if !store.hasAnyPRs {
+                if !store.hasAnyPRs && store.lastError == nil {
                     Text("No open pull requests")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 16)
                         .padding(.bottom, 4)
+                }
+                if let error = store.lastError {
+                    Text("⚠ \(error)")
+                        .font(.caption2)
+                        .foregroundStyle(.red.opacity(0.75))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 4)
+                        .lineLimit(2)
                 }
             }
         }
