@@ -20,9 +20,14 @@ enum WorktreeHookManager {
         let sessionEnd: URL
     }
 
+    static var isFishShell: Bool {
+        (ProcessInfo.processInfo.environment["SHELL"] ?? "").hasSuffix("/fish")
+    }
+
     /// Idempotent: writes the shared hook scripts once and merges argus's hook
     /// entries into the worktree's .claude/settings.local.json.
     static func install(worktreePath: String) throws {
+        installFishHooksIfNeeded()
         let hooksDir = try argusHooksDir()
         let eventLogPath = HookIPC.eventLogPath
         let paths = HookPaths(
@@ -170,5 +175,54 @@ enum WorktreeHookManager {
             options: [.prettyPrinted, .sortedKeys]
         )
         try data.write(to: url, options: .atomic)
+    }
+
+    // MARK: - Fish shell integration
+
+    nonisolated(unsafe) private static var fishHooksInstalled = false
+
+    private static func installFishHooksIfNeeded() {
+        guard !fishHooksInstalled, isFishShell else { return }
+        guard let confDir = fishConfDir() else { return }
+        try? FileManager.default.createDirectory(at: confDir, withIntermediateDirectories: true)
+        let hookFile = confDir.appendingPathComponent("argus.fish")
+        let content = fishHookScript(eventLogPath: HookIPC.shellEventLogPath)
+        try? content.write(to: hookFile, atomically: true, encoding: .utf8)
+        fishHooksInstalled = true
+    }
+
+    private static func fishConfDir() -> URL? {
+        let base: URL
+        if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"], !xdg.isEmpty {
+            base = URL(fileURLWithPath: xdg)
+        } else {
+            base = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".config")
+        }
+        return base.appendingPathComponent("fish/conf.d")
+    }
+
+    private static func fishHookScript(eventLogPath: String) -> String {
+        """
+        # Argus shell integration — auto-generated, do not edit.
+        set -g __argus_log '\(eventLogPath)'
+
+        function __argus_preexec --on-event fish_preexec
+            set -q TMUX; or return 0
+            string match -q 'argus-s-*' (tmux display-message -p '#S' 2>/dev/null); or return 0
+            set -l worktree (git rev-parse --show-toplevel 2>/dev/null)
+            test -n "$worktree"; or return 0
+            printf '{"worktreePath":"%s","state":"running","agent":"shell"}\\n' \\
+                "$worktree" >> $__argus_log 2>/dev/null; or true
+        end
+
+        function __argus_postexec --on-event fish_postexec
+            set -q TMUX; or return 0
+            string match -q 'argus-s-*' (tmux display-message -p '#S' 2>/dev/null); or return 0
+            set -l worktree (git rev-parse --show-toplevel 2>/dev/null)
+            test -n "$worktree"; or return 0
+            printf '{"worktreePath":"%s","state":"idle","agent":"shell"}\\n' \\
+                "$worktree" >> $__argus_log 2>/dev/null; or true
+        end
+        """
     }
 }
