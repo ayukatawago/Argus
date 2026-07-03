@@ -86,6 +86,7 @@ struct AppShellView: View {
     @StateObject private var nvim = NvimWindow()
     @StateObject private var markdownPreview = MarkdownPreviewWindow()
     @StateObject private var agentBus = AgentStateBus()
+    @StateObject private var shellStateBus = ShellStateBus()
     @StateObject private var diskMonitor = DiskMonitorStore()
     @StateObject private var diskScanner = DiskCleanupScanner()
     @StateObject private var prMonitor = PRMonitorStore()
@@ -148,6 +149,7 @@ struct AppShellView: View {
                     selectedWorktreeID: $selectedWorktreeID,
                     activeTerminalIDs: pool.activeIDs,
                     agentBus: agentBus,
+                    shellStateBus: shellStateBus,
                     prMonitor: prMonitor,
                     onRelease: { id in
                         if selectedWorktreeID == id { selectedWorktreeID = nil }
@@ -179,14 +181,20 @@ struct AppShellView: View {
             pool.agentBus = agentBus
             store.load()
             agentBus.start()
+            shellStateBus.updateActivePaths(pool.activeIDs)
+            shellStateBus.start()
             diskMonitor.start()
             diskScanner.start()
             prMonitor.start()
         }
         .onDisappear {
+            shellStateBus.stop()
             diskMonitor.stop()
             diskScanner.stop()
             prMonitor.stop()
+        }
+        .onChange(of: pool.activeIDs) { _, ids in
+            shellStateBus.updateActivePaths(ids)
         }
         .onChange(of: store.repos) { _, newRepos in
             guard selectedWorktreeID == nil else { return }

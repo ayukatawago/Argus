@@ -11,6 +11,7 @@ struct SidebarView: View {
     @Binding var selectedWorktreeID: String?
     let activeTerminalIDs: Set<String>
     @ObservedObject var agentBus: AgentStateBus
+    @ObservedObject var shellStateBus: ShellStateBus
     @ObservedObject var prMonitor: PRMonitorStore
     let onRelease: (String) -> Void
     @State private var dropTargetRepoID: String?
@@ -177,6 +178,7 @@ struct SidebarView: View {
                 isSelected: selectedWorktreeID == worktree.id,
                 agentState: agentBus.state(for: worktree.id),
                 agentType: agentBus.agentType(for: worktree.id),
+                isShellBusy: shellStateBus.busyPaths.contains(worktree.id),
                 onRelease: isActive ? { onRelease(worktree.id) } : nil,
                 onDelete: worktree.isMain ? nil : { deleteWorktree(worktree, in: repo) },
                 onHide: {
@@ -259,6 +261,7 @@ private struct WorktreeRow: View {
     let isSelected: Bool
     let agentState: AgentState
     let agentType: AgentType
+    let isShellBusy: Bool
     let onRelease: (() -> Void)?
     let onDelete: (() -> Void)?
     let onHide: () -> Void
@@ -270,6 +273,7 @@ private struct WorktreeRow: View {
         isSelected: Bool = false,
         agentState: AgentState = .idle,
         agentType: AgentType = .claude,
+        isShellBusy: Bool = false,
         onRelease: (() -> Void)? = nil,
         onDelete: (() -> Void)? = nil,
         onHide: @escaping () -> Void
@@ -279,6 +283,7 @@ private struct WorktreeRow: View {
         self.isSelected = isSelected
         self.agentState = agentState
         self.agentType = agentType
+        self.isShellBusy = isShellBusy
         self.onRelease = onRelease
         self.onDelete = onDelete
         self.onHide = onHide
@@ -334,7 +339,8 @@ private struct WorktreeRow: View {
                 agentState: agentState,
                 isActive: isActive,
                 isSelected: isSelected,
-                agentType: agentType
+                agentType: agentType,
+                isShellBusy: isShellBusy
             )
         )
         .onHover { isHovered = $0 }
