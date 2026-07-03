@@ -50,9 +50,14 @@ struct PRMonitorView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.primary.opacity(0.05))
                 ForEach(prs) { pullRequest in
-                    PRRow(pr: pullRequest, showAuthor: showAuthor)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 1)
+                    PRRow(
+                        pr: pullRequest,
+                        showAuthor: showAuthor,
+                        isHighlighted: store.highlightedPRIDs.contains(pullRequest.id),
+                        onOpen: { store.dismissHighlight(prID: pullRequest.id) }
+                    )
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 1)
                 }
             }
             .background(
@@ -91,7 +96,7 @@ struct PRMonitorView: View {
                 .buttonStyle(.plain)
                 if isDNMExpanded {
                     ForEach(store.doNotMergePRs) { pullRequest in
-                        PRRow(pr: pullRequest, showAuthor: false)
+                        PRRow(pr: pullRequest, showAuthor: false, isHighlighted: false, onOpen: {})
                             .padding(.horizontal, 8)
                             .padding(.vertical, 1)
                     }
@@ -138,10 +143,13 @@ struct PRMonitorView: View {
 private struct PRRow: View {
     let pr: GitHubPR  // swiftlint:disable:this identifier_name
     let showAuthor: Bool
+    let isHighlighted: Bool
+    let onOpen: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button {
+            onOpen()
             NSWorkspace.shared.open(pr.htmlURL)
         } label: {
             HStack(spacing: 6) {
@@ -197,6 +205,10 @@ private struct PRRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isHighlighted ? Color.accentColor.opacity(0.7) : Color.clear, lineWidth: 1.5)
+        )
         .opacity(pr.approvedByMe ? 0.45 : 1.0)
         .help("\(pr.title) — \(pr.repoName) #\(pr.number)")
     }
