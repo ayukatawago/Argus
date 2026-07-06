@@ -311,8 +311,8 @@ struct EnvironmentSettingsView: View {
                 .font(.headline)
             Text(
                 "Exported in every terminal and agent pane when a new session starts."
-                + " Reload existing panes with \(config.leaderKey)"
-                + " then \(config.keyBindings.reloadAgentPane)."
+                    + " Reload existing panes with \(config.leaderKey)"
+                    + " then \(config.keyBindings.reloadAgentPane)."
             )
             .font(.caption)
             .foregroundStyle(.secondary)
