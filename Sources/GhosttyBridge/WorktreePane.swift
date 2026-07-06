@@ -1,41 +1,78 @@
 import AppKit
 import GhosttyTerminal
 
-/// Owns the terminal stack for one worktree — a shell pane on the left and an
-/// agent pane on the right. Both sessions are backed by named tmux sessions so
-/// they persist across worktree release and can be shared with canvas card views.
+/// The terminal role a pane serves within a worktree.
+enum PaneRole {
+    case shell
+    case claude
+    case codex
+}
+
+/// Owns the terminal stack for one worktree — a shell pane (always eager) and
+/// optional agent panes (created lazily on first request). All sessions are
+/// backed by named tmux sessions so they persist across worktree release and
+/// can be shared with canvas card views.
 @MainActor
 final class WorktreePane {
-    let shellView: AppTerminalView
-    let agentView: AppTerminalView
-    private let shellState: TerminalViewState
-    private let agentState: TerminalViewState
+    let workingDirectory: String
+    private var views: [PaneRole: AppTerminalView] = [:]
+    private var states: [PaneRole: TerminalViewState] = [:]
+
+    /// Convenience accessor for the shell terminal (always pre-built).
+    var shellView: AppTerminalView { view(for: .shell) }
 
     init(workingDirectory: String) {
+        self.workingDirectory = workingDirectory
+        // Eagerly create the shell pane so it is ready immediately.
+        _ = view(for: .shell)
+    }
+
+    /// Returns the terminal view for `role`, creating it lazily on first call.
+    func view(for role: PaneRole) -> AppTerminalView {
+        if let existing = views[role] { return existing }
         let surfaceOptions = TerminalSurfaceOptions(backend: .exec, workingDirectory: workingDirectory)
         let shell = Self.userLoginShell
-        let shellSession = Self.sessionName("s", path: workingDirectory)
-        let agentSession = Self.sessionName("a", path: workingDirectory)
-
+        let session = sessionName(for: role)
         let tmux = Self.tmuxExecutable
-        let shellCommand =
-            "\(tmux) new-session -A -s \(shellSession) 'exec \(shell) -l'"
-            + " \\; set -s extended-keys on"
-            + " \\; set-option -t \(shellSession) status off"
-        let agentChoice = ArgusConfigStore.shared.config.agent
-        let agentCmd = "\(ArgusConfigStore.shared.config.launchCommand(for: agentChoice)) || exec \(shell) -l"
-        let agentCommand =
-            "\(tmux) new-session -A -s \(agentSession) \(shell) -l -c '\(agentCmd)'"
-            + " \\; set -s extended-keys on"
-            + " \\; set-option -t \(agentSession) status off"
+        let command: String
+        switch role {
+        case .shell:
+            command =
+                "\(tmux) new-session -A -s \(session) 'exec \(shell) -l'"
+                + " \\; set -s extended-keys on"
+                + " \\; set-option -t \(session) status off"
 
-        shellState = Self.makeState(command: shellCommand)
-        shellState.configuration = surfaceOptions
-        shellView = Self.makeView(state: shellState, sessionName: shellSession)
+        case .claude:
+            let cmd = "\(ArgusConfigStore.shared.config.claudeCommand) || exec \(shell) -l"
+            command =
+                "\(tmux) new-session -A -s \(session) \(shell) -l -c '\(cmd)'"
+                + " \\; set -s extended-keys on"
+                + " \\; set-option -t \(session) status off"
 
-        agentState = Self.makeState(command: agentCommand)
-        agentState.configuration = surfaceOptions
-        agentView = Self.makeView(state: agentState, sessionName: agentSession)
+        case .codex:
+            let cmd = "\(ArgusConfigStore.shared.config.codexCommand) || exec \(shell) -l"
+            command =
+                "\(tmux) new-session -A -s \(session) \(shell) -l -c '\(cmd)'"
+                + " \\; set -s extended-keys on"
+                + " \\; set-option -t \(session) status off"
+        }
+        let state = Self.makeState(command: command)
+        state.configuration = surfaceOptions
+        let terminalView = Self.makeView(state: state, sessionName: session)
+        states[role] = state
+        views[role] = terminalView
+        return terminalView
+    }
+
+    /// Returns the stable tmux session name for `role` in this worktree.
+    func sessionName(for role: PaneRole) -> String {
+        let type: String
+        switch role {
+        case .shell: type = "s"
+        case .claude: type = "a"
+        case .codex: type = "x"
+        }
+        return Self.sessionName(type, path: workingDirectory)
     }
 
     /// Derives a stable tmux session name from a worktree path.

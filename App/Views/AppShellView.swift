@@ -1,83 +1,4 @@
-import GhosttyTerminal
 import SwiftUI
-
-struct WorktreeCard {
-    let id: String
-    let name: String
-    let branch: String?
-}
-
-@MainActor
-private final class PanePool: ObservableObject {
-    let shellHost = TerminalHost(frame: .zero)
-    let agentHost = TerminalHost(frame: .zero)
-    private var panes: [String: WorktreePane] = [:]
-    @Published private(set) var activeIDs: Set<String> = []
-    @Published private(set) var canvasViews: [String: AppTerminalView] = [:]
-    var agentBus: AgentStateBus?
-
-    func getOrCreate(id: String, workingDirectory: String) {
-        guard panes[id] == nil else { return }
-        try? WorktreeHookManager.install(worktreePath: workingDirectory)
-        let pane = WorktreePane(workingDirectory: workingDirectory)
-        panes[id] = pane
-        shellHost.register(id: id, terminal: pane.shellView)
-        agentHost.register(id: id, terminal: pane.agentView)
-        activeIDs.insert(id)
-        if ArgusConfigStore.shared.config.agent == .codex {
-            agentBus?.setAgentType(.codex, for: workingDirectory)
-        }
-    }
-
-    func activate(id: String?) {
-        shellHost.activate(id: id)
-        agentHost.activate(id: id)
-    }
-
-    func release(id: String) {
-        guard panes[id] != nil else { return }
-        panes.removeValue(forKey: id)
-        shellHost.unregister(id: id)
-        agentHost.unregister(id: id)
-        activeIDs.remove(id)
-        canvasViews.removeValue(forKey: id)
-    }
-
-    func openCanvas(worktrees: [(id: String, path: String)], fontSize: Int) {
-        for (id, path) in worktrees where canvasViews[id] == nil {
-            let session = WorktreePane.sessionName("a", path: path)
-            let tmux = WorktreePane.tmuxExecutable
-            let attachCmd =
-                "\(tmux) attach-session -t \(session)"
-                + " \\; set -s extended-keys on"
-                + " \\; set-option -t \(session) status off"
-            let state = TerminalViewState(
-                terminalConfiguration: TerminalConfiguration {
-                    $0.withFontSize(Float(fontSize))
-                    $0.withCursorStyleBlink(false)
-                    $0.withCustom("command", attachCmd)
-                }
-            )
-            state.configuration = TerminalSurfaceOptions(backend: .exec, workingDirectory: path)
-            canvasViews[id] = WorktreePane.makeView(state: state, sessionName: session)
-        }
-    }
-
-    func closeCanvas() {
-        canvasViews.removeAll()
-    }
-
-    func reloadAgentPane(id: String, workingDirectory: String) {
-        let session = WorktreePane.sessionName("a", path: workingDirectory)
-        let task = Process()
-        task.launchPath = WorktreePane.tmuxExecutable
-        task.arguments = ["kill-session", "-t", session]
-        try? task.run()
-        release(id: id)
-        getOrCreate(id: id, workingDirectory: workingDirectory)
-        activate(id: id)
-    }
-}
 
 struct AppShellView: View {
     @StateObject private var store = WorkspaceStore()
@@ -91,10 +12,11 @@ struct AppShellView: View {
     @StateObject private var diskScanner = DiskCleanupScanner()
     @StateObject private var prMonitor = PRMonitorStore()
     @StateObject private var diskStatusWindow = DiskStatusWindow()
+    @EnvironmentObject private var configStore: ArgusConfigStore
     @Environment(\.openWindow) private var openWindow
     @State private var selectedWorktreeID: String?
     @State private var isCanvasMode = false
-    @State private var lastFocusedHost: KeyPath<PanePool, TerminalHost> = \.shellHost
+    @State private var focusedRole: PaneRole = .shell
     @State private var detailSize: CGSize = .zero
     @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
 
@@ -127,7 +49,9 @@ struct AppShellView: View {
                 else { return }
                 pool.reloadAgentPane(id: id, workingDirectory: worktree.path)
                 agentBus.reset(for: id)
-                if ArgusConfigStore.shared.config.agent == .codex {
+                let config = ArgusConfigStore.shared.config
+                let primaryRole = PanePool.primaryAgentRole(layout: config.layout, agent: config.agent)
+                if primaryRole == .codex {
                     agentBus.setAgentType(.codex, for: worktree.path)
                 }
             }
@@ -176,6 +100,9 @@ struct AppShellView: View {
                 .help(isCanvasMode ? "Exit canvas (⌘⇧C)" : "Canvas view (⌘⇧C)")
                 .keyboardShortcut("c", modifiers: [.command, .shift])
             }
+            ToolbarItem(placement: .automatic) {
+                layoutPicker
+            }
         }
         .onAppear {
             pool.agentBus = agentBus
@@ -213,14 +140,12 @@ struct AppShellView: View {
             else { return }
             pool.getOrCreate(id: id, workingDirectory: worktree.path)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .focusShellPane)) { _ in
-            lastFocusedHost = \.shellHost
-            pool.shellHost.focusActiveTerminal()
+        .onReceive(NotificationCenter.default.publisher(for: .focusPaneLeft)) { _ in
+            stepFocus(direction: -1)
             dismissDoneIfNeeded()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .focusAgentPane)) { _ in
-            lastFocusedHost = \.agentHost
-            pool.agentHost.focusActiveTerminal()
+        .onReceive(NotificationCenter.default.publisher(for: .focusPaneRight)) { _ in
+            stepFocus(direction: +1)
             dismissDoneIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .workspaceInteracted)) { _ in
@@ -237,6 +162,54 @@ struct AppShellView: View {
         }
     }
 
+    // MARK: - Layout picker
+
+    private var layoutPicker: some View {
+        let config = configStore.config
+        return Menu {
+            ForEach(WindowLayout.allCases) { layout in
+                Button {
+                    selectLayout(layout)
+                } label: {
+                    Label(layout.displayName, systemImage: layout.toolbarIcon)
+                }
+            }
+        } label: {
+            Image(systemName: config.layout.toolbarIcon)
+        }
+        .help("Window layout")
+    }
+
+    private func selectLayout(_ layout: WindowLayout) {
+        configStore.config.layout = layout
+        configStore.save()
+        // Register any newly-required roles for the current worktree.
+        if let id = selectedWorktreeID,
+            let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
+        {
+            pool.applyLayout(id: id, workingDirectory: worktree.path)
+        }
+        // Clamp focused role to those visible in the new layout.
+        let ordered = PanePool.orderedRoles(layout: layout, agent: configStore.config.agent)
+        if !ordered.contains(focusedRole) {
+            focusedRole = ordered.first ?? .shell
+        }
+    }
+
+    // MARK: - Directional focus
+
+    private func stepFocus(direction: Int) {
+        let config = configStore.config
+        let ordered = PanePool.orderedRoles(layout: config.layout, agent: config.agent)
+        guard !ordered.isEmpty else { return }
+        let currentIndex = ordered.firstIndex(of: focusedRole) ?? 0
+        let newIndex = max(0, min(ordered.count - 1, currentIndex + direction))
+        focusedRole = ordered[newIndex]
+        pool.host(for: focusedRole).focusActiveTerminal()
+    }
+
+    // MARK: - Worktree navigation
+
     private func navigateWorktrees(forward: Bool) {
         let all = store.repos.flatMap(\.worktrees).filter {
             !store.hiddenWorktreeIDs.contains($0.id) && pool.activeIDs.contains($0.id)
@@ -246,13 +219,15 @@ struct AppShellView: View {
             let idx = all.firstIndex(where: { $0.id == current })
         else {
             selectedWorktreeID = all.first?.id
-            DispatchQueue.main.async { pool[keyPath: lastFocusedHost].focusActiveTerminal() }
+            DispatchQueue.main.async { self.pool.host(for: self.focusedRole).focusActiveTerminal() }
             return
         }
         let next = forward ? (idx + 1) % all.count : (idx - 1 + all.count) % all.count
         selectedWorktreeID = all[next].id
-        DispatchQueue.main.async { pool[keyPath: lastFocusedHost].focusActiveTerminal() }
+        DispatchQueue.main.async { self.pool.host(for: self.focusedRole).focusActiveTerminal() }
     }
+
+    // MARK: - Terminal detail
 
     private var currentAgentState: AgentState {
         guard let id = selectedWorktreeID else { return .idle }
@@ -261,6 +236,7 @@ struct AppShellView: View {
 
     @ViewBuilder
     private var terminalDetail: some View {
+        let config = configStore.config
         if isCanvasMode {
             CanvasView(
                 worktrees: activeWorktrees,
@@ -274,9 +250,16 @@ struct AppShellView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            WorktreeContentView(shellHost: pool.shellHost, agentHost: pool.agentHost, agentState: currentAgentState)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(terminalBackground)
+            WorktreeContentView(
+                layout: config.layout,
+                agent: config.agent,
+                shellHost: pool.shellHost,
+                claudeHost: pool.claudeHost,
+                codexHost: pool.codexHost,
+                agentState: currentAgentState
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(terminalBackground)
         }
     }
 

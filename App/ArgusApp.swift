@@ -114,8 +114,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static func notificationMap(from bindings: ArgusConfig.KeyBindings) -> [String: Notification.Name] {
         [
-            bindings.focusShellPane: .focusShellPane,
-            bindings.focusAgentPane: .focusAgentPane,
+            bindings.focusPaneLeft: .focusPaneLeft,
+            bindings.focusPaneRight: .focusPaneRight,
             bindings.selectNextWorktree: .selectNextWorktree,
             bindings.selectPreviousWorktree: .selectPreviousWorktree,
             bindings.openLazygit: .openLazygit,
@@ -136,6 +136,7 @@ struct ArgusApp: App {
     var body: some Scene {
         Window("Argus", id: "main") {
             ContentView()
+                .environmentObject(ArgusConfigStore.shared)
         }
         .defaultSize(width: 1200, height: 800)
         .windowStyle(.titleBar)
