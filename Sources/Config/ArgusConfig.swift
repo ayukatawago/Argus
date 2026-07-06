@@ -1,6 +1,15 @@
 import Combine
 import Foundation
 
+// Flexible string-keyed CodingKey for reading arbitrary JSON keys in custom decoders.
+private struct RawStringKey: CodingKey {
+    let stringValue: String
+    init(_ string: String) { self.stringValue = string }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    var intValue: Int? { nil }
+    init?(intValue: Int) { nil }
+}
+
 enum AgentSelection: String, Codable, CaseIterable, Identifiable {
     case claude
     case codex
@@ -69,6 +78,37 @@ struct ArgusConfig: Codable, Equatable {
         var openSettings: String = ","
         var reloadAgentPane: String = "a"
         var openDiskStatus: String = "d"
+
+        // Memberwise init needed because we declare a custom init(from:).
+        init() {}
+
+        // Decode using decodeIfPresent so that missing or renamed keys use Swift defaults
+        // rather than failing the entire config load. Legacy key names are tried as fallbacks.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: RawStringKey.self)
+            func read(_ key: String, legacy: String? = nil, default dflt: String) -> String {
+                if let value = try? container.decodeIfPresent(String.self, forKey: RawStringKey(key)) {
+                    return value
+                }
+                if let alt = legacy,
+                    let value = try? container.decodeIfPresent(String.self, forKey: RawStringKey(alt))
+                {
+                    return value
+                }
+                return dflt
+            }
+            focusPaneLeft = read("focusPaneLeft", legacy: "focusShellPane", default: "h")
+            focusPaneRight = read("focusPaneRight", legacy: "focusAgentPane", default: "l")
+            selectNextWorktree = read("selectNextWorktree", default: "j")
+            selectPreviousWorktree = read("selectPreviousWorktree", default: "k")
+            openLazygit = read("openLazygit", default: "g")
+            openNvim = read("openNvim", default: "n")
+            refreshWorkspace = read("refreshWorkspace", default: "r")
+            openMarkdownPreview = read("openMarkdownPreview", default: "m")
+            openSettings = read("openSettings", default: ",")
+            reloadAgentPane = read("reloadAgentPane", default: "a")
+            openDiskStatus = read("openDiskStatus", default: "d")
+        }
     }
 
     struct DiskMonitor: Codable, Equatable {
