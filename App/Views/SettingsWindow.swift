@@ -178,8 +178,8 @@ struct KeyboardSettingsView: View {
             Text("Key Bindings")
                 .font(.headline)
             VStack(spacing: 4) {
-                bindingRow("Focus shell pane", key: $config.keyBindings.focusShellPane)
-                bindingRow("Focus agent pane", key: $config.keyBindings.focusAgentPane)
+                bindingRow("Focus pane left", key: $config.keyBindings.focusPaneLeft)
+                bindingRow("Focus pane right", key: $config.keyBindings.focusPaneRight)
                 bindingRow("Next worktree", key: $config.keyBindings.selectNextWorktree)
                 bindingRow("Previous worktree", key: $config.keyBindings.selectPreviousWorktree)
                 bindingRow("Open lazygit", key: $config.keyBindings.openLazygit)

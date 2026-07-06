@@ -15,11 +15,36 @@ enum AgentSelection: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum WindowLayout: String, Codable, CaseIterable, Identifiable {
+    case terminalAgent
+    case agentsOverTerminal
+    case terminalClaudeCodex
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .terminalAgent: "Terminal + Agent"
+        case .agentsOverTerminal: "Agents / Terminal"
+        case .terminalClaudeCodex: "Terminal + Claude + Codex"
+        }
+    }
+
+    var toolbarIcon: String {
+        switch self {
+        case .terminalAgent: "rectangle.split.2x1"
+        case .agentsOverTerminal: "rectangle.split.1x2"
+        case .terminalClaudeCodex: "rectangle.split.3x1"
+        }
+    }
+}
+
 struct ArgusConfig: Codable, Equatable {
     var leaderKey = "ctrl+b"
     var leaderTimeoutSeconds = 1.5
     var keyBindings = KeyBindings()
     var agent: AgentSelection = .claude
+    var layout: WindowLayout = .terminalAgent
     var claudeCommand: String = "claude --continue"
     var codexCommand: String = "codex resume --last"
     var diskMonitor = DiskMonitor()
@@ -33,8 +58,8 @@ struct ArgusConfig: Codable, Equatable {
     }
 
     struct KeyBindings: Codable, Equatable {
-        var focusShellPane: String = "h"
-        var focusAgentPane: String = "l"
+        var focusPaneLeft: String = "h"
+        var focusPaneRight: String = "l"
         var selectNextWorktree: String = "j"
         var selectPreviousWorktree: String = "k"
         var openLazygit: String = "g"

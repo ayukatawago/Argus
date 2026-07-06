@@ -4,8 +4,8 @@ import GhosttyTerminal
 extension Notification.Name {
     static let openLazygit = Notification.Name("argus.openLazygit")
     static let openNvim = Notification.Name("argus.openNvim")
-    static let focusShellPane = Notification.Name("argus.focusShellPane")
-    static let focusAgentPane = Notification.Name("argus.focusAgentPane")
+    static let focusPaneLeft = Notification.Name("argus.focusPaneLeft")
+    static let focusPaneRight = Notification.Name("argus.focusPaneRight")
     static let selectNextWorktree = Notification.Name("argus.selectNextWorktree")
     static let selectPreviousWorktree = Notification.Name("argus.selectPreviousWorktree")
     static let refreshWorkspace = Notification.Name("argus.refreshWorkspace")
