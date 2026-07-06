@@ -35,22 +35,23 @@ final class WorktreePane {
         let session = sessionName(for: role)
         let tmux = Self.tmuxExecutable
         let command: String
+        let envPreamble = Self.envExportPreamble()
         switch role {
         case .shell:
             command =
-                "\(tmux) new-session -A -s \(session) 'exec \(shell) -l'"
+                "\(tmux) new-session -A -s \(session) '\(envPreamble)exec \(shell) -l'"
                 + " \\; set -s extended-keys on"
                 + " \\; set-option -t \(session) status off"
 
         case .claude:
-            let cmd = "\(ArgusConfigStore.shared.config.claudeCommand) || exec \(shell) -l"
+            let cmd = "\(envPreamble)\(ArgusConfigStore.shared.config.claudeCommand) || exec \(shell) -l"
             command =
                 "\(tmux) new-session -A -s \(session) \(shell) -l -c '\(cmd)'"
                 + " \\; set -s extended-keys on"
                 + " \\; set-option -t \(session) status off"
 
         case .codex:
-            let cmd = "\(ArgusConfigStore.shared.config.codexCommand) || exec \(shell) -l"
+            let cmd = "\(envPreamble)\(ArgusConfigStore.shared.config.codexCommand) || exec \(shell) -l"
             command =
                 "\(tmux) new-session -A -s \(session) \(shell) -l -c '\(cmd)'"
                 + " \\; set -s extended-keys on"
@@ -106,6 +107,22 @@ final class WorktreePane {
             out.components(separatedBy: ": ").last?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return shell.isEmpty ? (ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh") : shell
+    }
+
+    // Produces "export KEY="value"; " for each configured env var.
+    // Values are double-quote escaped so they survive the shell layer tmux invokes.
+    // Changes take effect only when new tmux sessions are created (reload with leader+a).
+    static func envExportPreamble() -> String {
+        let vars = ArgusConfigStore.shared.config.environmentVariables
+        guard !vars.isEmpty else { return "" }
+        return vars.sorted(by: { $0.key < $1.key }).map { key, value in
+            let escaped = value
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "$", with: "\\$")
+                .replacingOccurrences(of: "`", with: "\\`")
+            return "export \(key)=\"\(escaped)\""
+        }.joined(separator: "; ") + "; "
     }
 
     static var tmuxExecutable: String {
