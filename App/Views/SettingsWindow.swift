@@ -6,6 +6,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case agent = "Agent"
     case keyboard = "Keyboard"
     case github = "GitHub"
+    case environment = "Environment"
 
     var id: String { rawValue }
 
@@ -14,6 +15,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .agent: "sparkles"
         case .keyboard: "keyboard"
         case .github: "network"
+        case .environment: "terminal"
         }
     }
 }
@@ -57,6 +59,10 @@ struct SettingsRootView: View {
 
                 case .github:
                     GitHubSettingsView(config: $configStore.config)
+                        .onChange(of: configStore.config) { _, _ in configStore.save() }
+
+                case .environment:
+                    EnvironmentSettingsView(config: $configStore.config)
                         .onChange(of: configStore.config) { _, _ in configStore.save() }
                 }
             }
@@ -276,6 +282,100 @@ struct GitHubSettingsView: View {
     private func formatInterval(_ seconds: Double) -> String {
         let minutes = Int(seconds) / 60
         return minutes == 1 ? "1 min" : "\(minutes) min"
+    }
+}
+
+// MARK: - Environment settings
+
+struct EnvironmentSettingsView: View {
+    @Binding var config: ArgusConfig
+    @State private var newKey = ""
+    @State private var newValue = ""
+
+    private var sortedKeys: [String] { config.environmentVariables.keys.sorted() }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            headerSection
+            if !sortedKeys.isEmpty {
+                variableList
+                Divider()
+            }
+            addRow
+        }
+    }
+
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Environment Variables")
+                .font(.headline)
+            Text(
+                "Exported in every terminal and agent pane when a new session starts."
+                + " Reload existing panes with \(config.leaderKey)"
+                + " then \(config.keyBindings.reloadAgentPane)."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private var variableList: some View {
+        VStack(spacing: 4) {
+            HStack {
+                Text("Key")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 150, alignment: .leading)
+                Text("Value")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            Divider()
+            ForEach(sortedKeys, id: \.self) { key in
+                HStack(spacing: 8) {
+                    Text(key)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(width: 150, alignment: .leading)
+                    TextField(
+                        "",
+                        text: Binding(
+                            get: { config.environmentVariables[key] ?? "" },
+                            set: { config.environmentVariables[key] = $0 }
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+                    Button {
+                        config.environmentVariables.removeValue(forKey: key)
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .foregroundStyle(.red.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var addRow: some View {
+        HStack(spacing: 8) {
+            TextField("KEY", text: $newKey)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+                .frame(width: 150)
+            TextField("value", text: $newValue)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+            Button("Add") {
+                let key = newKey.trimmingCharacters(in: .whitespaces)
+                guard !key.isEmpty else { return }
+                config.environmentVariables[key] = newValue
+                newKey = ""
+                newValue = ""
+            }
+            .disabled(newKey.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
     }
 }
 

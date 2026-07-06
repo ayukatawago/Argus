@@ -58,6 +58,32 @@ struct ArgusConfig: Codable, Equatable {
     var codexCommand: String = "codex resume --last"
     var diskMonitor = DiskMonitor()
     var github = GitHub()
+    var environmentVariables: [String: String] = [:]
+
+    // Needed because we declare a custom init(from:).
+    init() {}
+
+    // Use decodeIfPresent for every field so that keys added or renamed in future
+    // versions never cause the whole config to silently fall back to defaults.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        leaderKey = (try? container.decodeIfPresent(String.self, forKey: .leaderKey)) ?? "ctrl+b"
+        leaderTimeoutSeconds = (try? container.decodeIfPresent(Double.self, forKey: .leaderTimeoutSeconds)) ?? 1.5
+        keyBindings = (try? container.decodeIfPresent(KeyBindings.self, forKey: .keyBindings)) ?? KeyBindings()
+        agent = (try? container.decodeIfPresent(AgentSelection.self, forKey: .agent)) ?? .claude
+        layout = (try? container.decodeIfPresent(WindowLayout.self, forKey: .layout)) ?? .terminalAgent
+        claudeCommand = (try? container.decodeIfPresent(String.self, forKey: .claudeCommand)) ?? "claude --continue"
+        codexCommand = (try? container.decodeIfPresent(String.self, forKey: .codexCommand)) ?? "codex resume --last"
+        diskMonitor = (try? container.decodeIfPresent(DiskMonitor.self, forKey: .diskMonitor)) ?? DiskMonitor()
+        github = (try? container.decodeIfPresent(GitHub.self, forKey: .github)) ?? GitHub()
+        environmentVariables =
+            (try? container.decodeIfPresent([String: String].self, forKey: .environmentVariables)) ?? [:]
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case leaderKey, leaderTimeoutSeconds, keyBindings, agent, layout
+        case claudeCommand, codexCommand, diskMonitor, github, environmentVariables
+    }
 
     func launchCommand(for selection: AgentSelection) -> String {
         switch selection {
