@@ -116,7 +116,8 @@ final class WorktreePane {
         let vars = ArgusConfigStore.shared.config.environmentVariables
         guard !vars.isEmpty else { return "" }
         return vars.sorted(by: { $0.key < $1.key }).map { key, value in
-            let escaped = value
+            let escaped =
+                value
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\"", with: "\\\"")
                 .replacingOccurrences(of: "$", with: "\\$")
