@@ -4,6 +4,34 @@ struct DiskStatusView: View {
     @ObservedObject var store: DiskMonitorStore
     @ObservedObject var scanner: DiskCleanupScanner
     @State private var showingConfirmation = false
+    @State private var hideSmall = false
+    @State private var sortOrder = SortOrder.name
+
+    enum SortOrder: String, CaseIterable {
+        case name = "Name"
+        case size = "Size"
+    }
+
+    private static let oneGiB: Int64 = 1_073_741_824
+
+    private var visibleCandidates: [CleanupCandidate] {
+        var list = scanner.candidates
+        if hideSmall {
+            list = list.filter { candidate in
+                guard let size = candidate.sizeBytes else { return true }
+                return size >= Self.oneGiB
+            }
+        }
+        switch sortOrder {
+        case .name:
+            return list.sorted { $0.displayName < $1.displayName }
+
+        case .size:
+            return list.sorted {
+                ($0.sizeBytes ?? -1) > ($1.sizeBytes ?? -1)
+            }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -94,6 +122,18 @@ struct DiskStatusView: View {
                 Text("Cleanup Candidates")
                     .font(.headline)
                 Spacer()
+                Toggle("Hide < 1 GB", isOn: $hideSmall)
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Picker("Sort", selection: $sortOrder) {
+                    ForEach(SortOrder.allCases, id: \.self) { order in
+                        Text(order.rawValue).tag(order)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 110)
+                .font(.caption)
                 if scanner.isScanning {
                     ProgressView()
                         .scaleEffect(0.7)
@@ -107,7 +147,7 @@ struct DiskStatusView: View {
             }
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(scanner.candidates) { candidate in
+                    ForEach(visibleCandidates) { candidate in
                         candidateRow(candidate)
                         Divider()
                     }
@@ -123,7 +163,7 @@ struct DiskStatusView: View {
                 Button("Remove Selected") {
                     showingConfirmation = true
                 }
-                .disabled(!scanner.candidates.contains(where: \.isSelected) || scanner.isRemoving || scanner.isScanning)
+                .disabled(!visibleCandidates.contains(where: \.isSelected) || scanner.isRemoving || scanner.isScanning)
             }
         }
     }

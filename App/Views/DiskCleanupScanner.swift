@@ -52,12 +52,12 @@ final class DiskCleanupScanner: ObservableObject {
         CatalogEntry(
             name: "Simulator Runtimes",
             relativePath: "Library/Developer/CoreSimulator/Profiles/Runtimes", isTrash: false),
-        CatalogEntry(name: "Homebrew Cache", relativePath: "Library/Caches/Homebrew", isTrash: false),
         CatalogEntry(name: "npm Cache", relativePath: ".npm/_cacache", isTrash: false),
-        CatalogEntry(name: "CocoaPods Cache", relativePath: "Library/Caches/CocoaPods", isTrash: false),
-        CatalogEntry(name: "Yarn Cache", relativePath: "Library/Caches/Yarn", isTrash: false),
         CatalogEntry(name: "pnpm Store", relativePath: ".pnpm-store", isTrash: false),
-        CatalogEntry(name: "IntelliJ Caches", relativePath: "Library/Caches/JetBrains/analyzer", isTrash: false),
+        CatalogEntry(name: "Android SDK", relativePath: ".android", isTrash: false),
+        CatalogEntry(name: "Claude Cache", relativePath: ".claude", isTrash: false),
+        CatalogEntry(name: "Codex Cache", relativePath: ".codex", isTrash: false),
+        CatalogEntry(name: "Webview Workspace", relativePath: "workspace/webview", isTrash: false),
         CatalogEntry(name: "Trash", relativePath: ".Trash", isTrash: true),
     ]
 
@@ -84,6 +84,7 @@ final class DiskCleanupScanner: ObservableObject {
             )
         }
         result += Self.gradleVersionCandidates(home: home)
+        result += Self.libraryCandidates(home: home)
         result += Self.workspaceRepoCandidates(home: home)
         candidates = result
         for idx in candidates.indices {
@@ -120,6 +121,56 @@ final class DiskCleanupScanner: ObservableObject {
                     isTrash: false
                 )
             }
+    }
+
+    private static func libraryCandidates(home: URL) -> [CleanupCandidate] {
+        let libraryURL = home.appendingPathComponent("Library")
+        guard
+            let topLevel = try? FileManager.default.contentsOfDirectory(
+                at: libraryURL,
+                includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )
+        else { return [] }
+        var results: [CleanupCandidate] = []
+        for url in topLevel.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+            if url.lastPathComponent == "Caches",
+                let cachesContents = try? FileManager.default.contentsOfDirectory(
+                    at: url,
+                    includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
+                    options: [.skipsHiddenFiles]
+                )
+            {
+                for child in cachesContents.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                    guard (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+                    let modDate =
+                        try? child.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+                    results.append(
+                        CleanupCandidate(
+                            displayName: "Library/Caches/\(child.lastPathComponent)",
+                            path: child,
+                            sizeBytes: nil,
+                            lastModifiedDate: modDate,
+                            isSelected: false,
+                            isTrash: false
+                        ))
+                }
+            } else {
+                let modDate =
+                    try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+                results.append(
+                    CleanupCandidate(
+                        displayName: "Library/\(url.lastPathComponent)",
+                        path: url,
+                        sizeBytes: nil,
+                        lastModifiedDate: modDate,
+                        isSelected: false,
+                        isTrash: false
+                    ))
+            }
+        }
+        return results
     }
 
     private static func workspaceRepoCandidates(home: URL) -> [CleanupCandidate] {
