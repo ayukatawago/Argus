@@ -16,7 +16,7 @@ final class DiskCleanupScanner: ObservableObject {
     @Published private(set) var candidates: [CleanupCandidate] = []
     @Published private(set) var isScanning = false
     @Published private(set) var isRemoving = false
-    @Published private(set) var scanningCandidateID: URL?
+    @Published private(set) var scanningCandidateIDs: Set<URL> = []
 
     private var backgroundTask: Task<Void, Never>?
 
@@ -216,17 +216,26 @@ final class DiskCleanupScanner: ObservableObject {
         isScanning = true
         defer {
             isScanning = false
-            scanningCandidateID = nil
+            scanningCandidateIDs = []
         }
-        let ids = candidates.map(\.id)
-        for candidateID in ids {
-            guard !Task.isCancelled else { break }
-            guard let idx = candidates.firstIndex(where: { $0.id == candidateID }) else { continue }
-            scanningCandidateID = candidateID
-            let url = candidates[idx].path
-            let bytes = await measureDiskUsage(at: url)
-            if let idx = candidates.firstIndex(where: { $0.id == candidateID }) {
-                candidates[idx].sizeBytes = bytes
+        let items = candidates.map { ($0.id, $0.path) }
+        await withTaskGroup(of: (URL, Int64).self) { group in
+            var iterator = items.makeIterator()
+            for _ in 0..<4 {
+                guard let (id, url) = iterator.next() else { break }
+                scanningCandidateIDs.insert(id)
+                group.addTask { (id, await Self.measureDiskUsage(at: url)) }
+            }
+            for await (id, bytes) in group {
+                guard !Task.isCancelled else { break }
+                scanningCandidateIDs.remove(id)
+                if let idx = candidates.firstIndex(where: { $0.id == id }) {
+                    candidates[idx].sizeBytes = bytes
+                }
+                if let (nextID, nextURL) = iterator.next() {
+                    scanningCandidateIDs.insert(nextID)
+                    group.addTask { (nextID, await Self.measureDiskUsage(at: nextURL)) }
+                }
             }
         }
     }
@@ -258,7 +267,7 @@ final class DiskCleanupScanner: ObservableObject {
         }
     }
 
-    private func measureDiskUsage(at url: URL) async -> Int64 {
+    private static nonisolated func measureDiskUsage(at url: URL) async -> Int64 {
         await withCheckedContinuation { continuation in
             let task = Process()
             let pipe = Pipe()
