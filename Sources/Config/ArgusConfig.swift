@@ -140,7 +140,7 @@ struct ArgusConfig: Codable, Equatable {
     struct DiskMonitor: Codable, Equatable {
         var checkIntervalSeconds: Double = 60
         var alertThresholdPercent: Double = 5.0
-        var sizeCheckIntervalSeconds: Double = 300
+        var sizeCheckIntervalSeconds: Double = 1800
     }
 
     struct GitHub: Codable, Equatable {
