@@ -7,6 +7,7 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, WKScriptMessageHa
     private var window: NSWindow?
     private var currentFilePath: String?
     private var currentWorktreePath: String?
+    private var previewHTMLURL: URL?
 
     func open(worktreePath: String) {
         currentWorktreePath = worktreePath
@@ -31,11 +32,12 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, WKScriptMessageHa
             return
         }
 
-        guard let html = buildHTML(for: fileURL) else { return }
+        guard let html = buildHTML(for: fileURL), let htmlURL = writePreviewHTML(html, next: fileURL) else { return }
+        let directoryURL = fileURL.deletingLastPathComponent()
 
         if let win = window, let webView = win.contentView as? WKWebView {
             win.title = fileURL.lastPathComponent
-            webView.loadHTMLString(html, baseURL: fileURL.deletingLastPathComponent())
+            webView.loadFileURL(htmlURL, allowingReadAccessTo: directoryURL)
             win.makeKeyAndOrderFront(nil)
         } else {
             let controller = WKUserContentController()
@@ -44,7 +46,7 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, WKScriptMessageHa
             config.userContentController = controller
 
             let webView = WKWebView(frame: .zero, configuration: config)
-            webView.loadHTMLString(html, baseURL: fileURL.deletingLastPathComponent())
+            webView.loadFileURL(htmlURL, allowingReadAccessTo: directoryURL)
 
             let screen = NSApp.keyWindow?.screen ?? NSApp.mainWindow?.screen ?? NSScreen.main ?? NSScreen.screens[0]
             let screenFrame = screen.visibleFrame
@@ -96,6 +98,20 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, WKScriptMessageHa
             with: "<script>\(markedJS)</script>")
     }
 
+    // WKWebView only allows loading local subresources (e.g. relative image paths) when the
+    // page itself was loaded via loadFileURL(_:allowingReadAccessTo:) — loadHTMLString(_:baseURL:)
+    // cannot read files from disk even with a file:// base URL. So the composed HTML is written
+    // next to the source markdown file and loaded from there.
+    private func writePreviewHTML(_ html: String, next fileURL: URL) -> URL? {
+        let htmlURL = fileURL.deletingLastPathComponent().appendingPathComponent(".argus-markdown-preview.html")
+        guard (try? html.write(to: htmlURL, atomically: true, encoding: .utf8)) != nil else { return nil }
+        if let previous = previewHTMLURL, previous != htmlURL {
+            try? FileManager.default.removeItem(at: previous)
+        }
+        previewHTMLURL = htmlURL
+        return htmlURL
+    }
+
     private struct TreeNode: Encodable {
         let type: String
         let name: String
@@ -129,6 +145,10 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, WKScriptMessageHa
         if let webView = window?.contentView as? WKWebView {
             webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkClicked")
         }
+        if let previewHTMLURL {
+            try? FileManager.default.removeItem(at: previewHTMLURL)
+        }
+        previewHTMLURL = nil
         window = nil
         currentFilePath = nil
     }
