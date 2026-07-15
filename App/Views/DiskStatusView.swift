@@ -4,8 +4,8 @@ struct DiskStatusView: View {
     @ObservedObject var store: DiskMonitorStore
     @ObservedObject var scanner: DiskCleanupScanner
     @State private var showingConfirmation = false
-    @State private var hideSmall = false
-    @State private var sortOrder = SortOrder.name
+    @State private var hideSmall = true
+    @State private var sortOrder = SortOrder.size
 
     enum SortOrder: String, CaseIterable {
         case name = "Name"
