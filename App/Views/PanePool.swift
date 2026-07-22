@@ -132,12 +132,18 @@ final class PanePool: ObservableObject {
     func reloadAgentPane(id: String, workingDirectory: String) {
         let config = ArgusConfigStore.shared.config
         let primaryRole = Self.primaryAgentRole(layout: config.layout, agent: config.agent)
-        let typeChar = primaryRole == .codex ? "x" : "a"
-        let session = WorktreePane.sessionName(typeChar, path: workingDirectory)
-        let task = Process()
-        task.launchPath = WorktreePane.tmuxExecutable
-        task.arguments = ["kill-session", "-t", session]
-        try? task.run()
+        var rolesToReload: Set<PaneRole> = [primaryRole]
+        if Self.requiredRoles(layout: config.layout, agent: config.agent).contains(.codex) {
+            rolesToReload.insert(.codex)
+        }
+        for role in rolesToReload {
+            let typeChar = role == .codex ? "x" : "a"
+            let session = WorktreePane.sessionName(typeChar, path: workingDirectory)
+            let task = Process()
+            task.launchPath = WorktreePane.tmuxExecutable
+            task.arguments = ["kill-session", "-t", session]
+            try? task.run()
+        }
         release(id: id)
         getOrCreate(id: id, workingDirectory: workingDirectory)
         activate(id: id)
