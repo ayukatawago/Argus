@@ -15,7 +15,6 @@ final class PanePool: ObservableObject {
     private var panes: [String: WorktreePane] = [:]
     @Published private(set) var activeIDs: Set<String> = []
     @Published private(set) var canvasViews: [String: AppTerminalView] = [:]
-    var agentBus: AgentStateBus?
 
     func host(for role: PaneRole) -> TerminalHost {
         switch role {
@@ -75,9 +74,6 @@ final class PanePool: ObservableObject {
         guard let pane = panes[id] else { return }
         for role in roles {
             host(for: role).register(id: id, terminal: pane.view(for: role))
-        }
-        if roles.contains(.codex) {
-            agentBus?.setAgentType(.codex, for: workingDirectory)
         }
     }
 

@@ -105,7 +105,6 @@ struct AppShellView: View {
             }
         }
         .onAppear {
-            pool.agentBus = agentBus
             store.load()
             agentBus.start()
             shellStateBus.updateActivePaths(pool.activeIDs)
