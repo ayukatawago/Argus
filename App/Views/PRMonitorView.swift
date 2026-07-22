@@ -181,7 +181,11 @@ private struct PRRow: View {
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
-                    if pr.approvedBy.isEmpty {
+                    if pr.draft {
+                        Text("draft")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    } else if pr.approvedBy.isEmpty {
                         Text("waiting for review")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
@@ -210,7 +214,7 @@ private struct PRRow: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(isHighlighted ? Color.accentColor.opacity(0.7) : Color.clear, lineWidth: 1.5)
         )
-        .opacity(pr.approvedByMe ? 0.45 : 1.0)
+        .opacity(pr.approvedByMe || pr.draft ? 0.45 : 1.0)
         .help("\(pr.title) — \(pr.repoName) #\(pr.number)")
     }
 }
