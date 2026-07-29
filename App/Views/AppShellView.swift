@@ -3,7 +3,7 @@ import SwiftUI
 struct AppShellView: View {
     @StateObject private var store = WorkspaceStore()
     @StateObject private var pool = PanePool()
-    @StateObject private var lazygit = LazygitWindow()
+    @StateObject private var popups = PopupTerminalManager()
     @StateObject private var nvim = NvimWindow()
     @StateObject private var markdownPreview = MarkdownPreviewWindow()
     @StateObject private var agentBus = AgentStateBus()
@@ -22,11 +22,13 @@ struct AppShellView: View {
 
     var body: some View {
         coreView
-            .onReceive(NotificationCenter.default.publisher(for: .openLazygit)) { _ in
-                guard let id = selectedWorktreeID,
+            .onReceive(NotificationCenter.default.publisher(for: .openPopupTerminal)) { notification in
+                guard let shortcutID = notification.object as? String,
+                    let shortcut = configStore.config.popupShortcuts.first(where: { $0.id == shortcutID }),
+                    let id = selectedWorktreeID,
                     let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
                 else { return }
-                lazygit.open(workingDirectory: worktree.path)
+                popups.open(shortcut, workingDirectory: worktree.path)
             }
             .onReceive(NotificationCenter.default.publisher(for: .openNvim)) { _ in
                 guard let id = selectedWorktreeID,

@@ -10,7 +10,7 @@ ArgusApp (App)
             ├── NavigationSplitView
             │   ├── sidebar: SidebarView  — SidebarView.swift
             │   └── detail:  WorktreeContentView  — WorktreeContentView.swift
-            └── (overlay: LazygitWindow NSPanel)  — LazygitWindow.swift
+            └── (overlay: popup terminal windows)  — PopupTerminalWindow.swift
 ```
 
 `AppDelegate` (also in `ArgusApp.swift`) installs global `NSEvent` monitors for the keyboard leader and mouse clicks, and posts `NotificationCenter` events that views observe.
@@ -25,7 +25,7 @@ ArgusApp (App)
 |---|---|---|
 | `store` | `WorkspaceStore` | Git repo/worktree list, persistence |
 | `pool` | `PanePool` | Creates and holds all `WorktreePane` instances |
-| `lazygit` | `LazygitWindow` | Lazygit `NSPanel` |
+| `popups` | `PopupTerminalManager` | User-configured popup terminal windows (default: lazygit) |
 | `agentBus` | `AgentStateBus` | Per-worktree agent state from hook IPC |
 | `selectedWorktreeID` | `String?` | Which worktree row is active |
 
@@ -85,9 +85,9 @@ so that `claude` is found via the user's login-shell PATH (Homebrew, nvm, etc.),
 
 ---
 
-## Lazygit popup
+## Popup terminals
 
-`LazygitWindow` is a separate `NSPanel` (floating window) that launches `lazygit` in a ghostty terminal at the current worktree's path. It is opened by `⌘⇧G` or the leader sequence `Ctrl+B → g`.
+`PopupTerminalManager` (in `PopupTerminalWindow.swift`) owns one `PopupTerminalWindow` — a floating `NSWindow` running a shell command in a ghostty terminal at the current worktree's path — per configured `ArgusConfig.PopupShortcut`. Shortcuts (name, leader key, command, window size) are user-defined in Settings → Keyboard; `lazygit` ships as the default entry (leader sequence `Ctrl+B → g`). Unlike the nvim popup (`NvimWindow.swift`), these run the command fresh each open with no persistent session.
 
 ---
 
@@ -98,7 +98,7 @@ Components communicate through `NotificationCenter` rather than direct reference
 | Notification | Posted by | Handled by |
 |---|---|---|
 | `.workspaceInteracted` | `AppDelegate` (any keypress or click) | `AppShellView` — dismisses `done`/`waitingForApproval` indicator |
-| `.openLazygit` | `AppDelegate`, menu item | `AppShellView` — opens `LazygitWindow` |
+| `.openPopupTerminal` | `AppDelegate` (leader key, dynamic per `popupShortcuts`) | `AppShellView` — opens `PopupTerminalManager` window for the matched shortcut |
 | `.focusShellPane` | `AppDelegate` (leader `h`) | `AppShellView` — focuses shell `TerminalHost` |
 | `.focusAgentPane` | `AppDelegate` (leader `l`) | `AppShellView` — focuses agent `TerminalHost` |
 | `.selectNextWorktree` | `AppDelegate` (leader `n`) | `AppShellView` — advances `selectedWorktreeID` |
