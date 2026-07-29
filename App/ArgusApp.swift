@@ -44,12 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     NotificationCenter.default.post(name: name, object: nil)
                     return nil
                 }
-            }
-
-            // ⌘⇧G as a direct shortcut for lazygit (keeps the menu item working)
-            if modifiers == [.command, .shift] && char == "g" {
-                NotificationCenter.default.post(name: .openLazygit, object: nil)
-                return nil
+                if let char, let shortcut = config.popupShortcuts.first(where: { $0.key == char }) {
+                    NotificationCenter.default.post(name: .openPopupTerminal, object: shortcut.id)
+                    return nil
+                }
             }
 
             // ⌘⇧N as a direct shortcut for nvim (keeps the menu item working)
@@ -118,7 +116,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             bindings.focusPaneRight: .focusPaneRight,
             bindings.selectNextWorktree: .selectNextWorktree,
             bindings.selectPreviousWorktree: .selectPreviousWorktree,
-            bindings.openLazygit: .openLazygit,
             bindings.openNvim: .openNvim,
             bindings.refreshWorkspace: .refreshWorkspace,
             bindings.openMarkdownPreview: .openMarkdownPreview,
@@ -142,10 +139,6 @@ struct ArgusApp: App {
         .windowStyle(.titleBar)
         .commands {
             CommandGroup(after: .windowArrangement) {
-                Button("Open lazygit") {
-                    NotificationCenter.default.post(name: .openLazygit, object: nil)
-                }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
                 Button("Open nvim") {
                     NotificationCenter.default.post(name: .openNvim, object: nil)
                 }

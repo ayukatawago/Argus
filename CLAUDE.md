@@ -77,8 +77,9 @@ Scripts live in `~/Library/Application Support/argus/hooks/` and are written onc
 | `App/Views/AppShellView.swift` | Main split layout, agent state border/tint |
 | `App/Views/SidebarView.swift` | Repo/worktree list, `AgentDot`, drag reorder |
 | `App/Views/WorktreeContentView.swift` | Per-worktree dual-pane (agent + shell) |
-| `App/Views/LazygitWindow.swift` | Lazygit popup window (`⌘G`) |
-| `App/Views/SettingsWindow.swift` | Settings UI — Agent page (agent picker + commands) and Keyboard page |
+| `App/Views/PopupTerminalWindow.swift` | User-defined popup terminal windows (key/command/size), incl. lazygit default |
+| `App/Views/SettingsWindow.swift` | Settings UI — Agent page (agent picker + commands) and GitHub/Environment pages |
+| `App/Views/KeyboardSettingsView.swift` | Settings UI — Keyboard page (key bindings + popup terminal shortcuts editor) |
 | `Sources/AgentState/AgentStateBus.swift` | `@MainActor` ObservableObject, socket reader |
 | `Sources/AgentState/WorktreeHookManager.swift` | Hook script writer + settings patcher |
 | `Sources/Config/ArgusConfig.swift` | `ArgusConfig` struct, `ArgusConfigStore` (`~/.config/argus/argus.json`), `AgentSelection` enum |

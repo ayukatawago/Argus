@@ -59,6 +59,7 @@ struct ArgusConfig: Codable, Equatable {
     var diskMonitor = DiskMonitor()
     var github = GitHub()
     var environmentVariables: [String: String] = [:]
+    var popupShortcuts: [PopupShortcut] = [.lazygitDefault]
 
     // Needed because we declare a custom init(from:).
     init() {}
@@ -78,11 +79,13 @@ struct ArgusConfig: Codable, Equatable {
         github = (try? container.decodeIfPresent(GitHub.self, forKey: .github)) ?? GitHub()
         environmentVariables =
             (try? container.decodeIfPresent([String: String].self, forKey: .environmentVariables)) ?? [:]
+        popupShortcuts =
+            (try? container.decodeIfPresent([PopupShortcut].self, forKey: .popupShortcuts)) ?? [.lazygitDefault]
     }
 
     private enum CodingKeys: String, CodingKey {
         case leaderKey, leaderTimeoutSeconds, keyBindings, agent, layout
-        case claudeCommand, codexCommand, diskMonitor, github, environmentVariables
+        case claudeCommand, codexCommand, diskMonitor, github, environmentVariables, popupShortcuts
     }
 
     func launchCommand(for selection: AgentSelection) -> String {
@@ -97,7 +100,6 @@ struct ArgusConfig: Codable, Equatable {
         var focusPaneRight: String = "l"
         var selectNextWorktree: String = "n"
         var selectPreviousWorktree: String = "p"
-        var openLazygit: String = "g"
         var openNvim: String = "v"
         var refreshWorkspace: String = "r"
         var openMarkdownPreview: String = "m"
@@ -127,7 +129,6 @@ struct ArgusConfig: Codable, Equatable {
             focusPaneRight = read("focusPaneRight", legacy: "focusAgentPane", default: "l")
             selectNextWorktree = read("selectNextWorktree", default: "n")
             selectPreviousWorktree = read("selectPreviousWorktree", default: "p")
-            openLazygit = read("openLazygit", default: "g")
             openNvim = read("openNvim", default: "v")
             refreshWorkspace = read("refreshWorkspace", default: "r")
             openMarkdownPreview = read("openMarkdownPreview", default: "m")
@@ -135,6 +136,22 @@ struct ArgusConfig: Codable, Equatable {
             reloadAgentPane = read("reloadAgentPane", default: "a")
             openDiskStatus = read("openDiskStatus", default: "d")
         }
+    }
+
+    struct PopupShortcut: Codable, Equatable, Identifiable {
+        var id: String
+        var name: String
+        var key: String
+        var command: String
+        var sizePercent: Int
+
+        static let lazygitDefault = PopupShortcut(
+            id: "lazygit",
+            name: "lazygit",
+            key: "g",
+            command: "lazygit",
+            sizePercent: 80
+        )
     }
 
     struct DiskMonitor: Codable, Equatable {

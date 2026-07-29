@@ -2,7 +2,7 @@ import AppKit
 import GhosttyTerminal
 
 extension Notification.Name {
-    static let openLazygit = Notification.Name("argus.openLazygit")
+    static let openPopupTerminal = Notification.Name("argus.openPopupTerminal")
     static let openNvim = Notification.Name("argus.openNvim")
     static let focusPaneLeft = Notification.Name("argus.focusPaneLeft")
     static let focusPaneRight = Notification.Name("argus.focusPaneRight")
@@ -15,27 +15,27 @@ extension Notification.Name {
     static let reloadAgentPane = Notification.Name("argus.reloadAgentPane")
 }
 
-/// Manages a floating NSWindow running lazygit in the active worktree directory.
-/// The window is created fresh on each open and destroyed when lazygit exits or
-/// the user closes the window manually.
+/// Manages a single floating NSWindow running a user-defined command in the active
+/// worktree directory. The window is created fresh on each open and destroyed when
+/// the command exits or the user closes the window manually.
 @MainActor
-final class LazygitWindow: NSObject, NSWindowDelegate, ObservableObject {
+final class PopupTerminalWindow: NSObject, NSWindowDelegate, ObservableObject {
     private var window: NSWindow?
     private var viewState: TerminalViewState?
 
-    func open(workingDirectory: String) {
+    func open(workingDirectory: String, command: String, title: String, sizePercent: Int) {
         if let existing = window {
             existing.makeKeyAndOrderFront(nil)
             return
         }
 
-        // Run lazygit via the user's login shell so Homebrew/nvm/etc. PATH entries are available.
+        // Run the command via the user's login shell so Homebrew/nvm/etc. PATH entries are available.
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let state = TerminalViewState(
             terminalConfiguration: TerminalConfiguration {
                 $0.withFontSize(13)
                 $0.withCursorStyleBlink(true)
-                $0.withCustom("command", "\(shell) -l -c lazygit")
+                $0.withCustom("command", "\(shell) -l -c '\(command)'")
             }
         )
         state.configuration = TerminalSurfaceOptions(backend: .exec, workingDirectory: workingDirectory)
@@ -50,7 +50,8 @@ final class LazygitWindow: NSObject, NSWindowDelegate, ObservableObject {
 
         let screen = NSApp.keyWindow?.screen ?? NSApp.mainWindow?.screen ?? NSScreen.main ?? NSScreen.screens[0]
         let screenFrame = screen.visibleFrame
-        let size = CGSize(width: screenFrame.width * 0.8, height: screenFrame.height * 0.8)
+        let ratio = Double(min(max(sizePercent, 30), 100)) / 100
+        let size = CGSize(width: screenFrame.width * ratio, height: screenFrame.height * ratio)
         let origin = NSPoint(x: screenFrame.midX - size.width / 2, y: screenFrame.midY - size.height / 2)
 
         let win = NSWindow(
@@ -59,7 +60,7 @@ final class LazygitWindow: NSObject, NSWindowDelegate, ObservableObject {
             backing: .buffered,
             defer: false
         )
-        win.title = "lazygit"
+        win.title = title
         win.level = .floating
         win.isReleasedWhenClosed = false
         win.contentView = termView
@@ -82,5 +83,23 @@ final class LazygitWindow: NSObject, NSWindowDelegate, ObservableObject {
     func windowWillClose(_: Notification) {
         window = nil
         viewState = nil
+    }
+}
+
+/// Owns one PopupTerminalWindow per configured shortcut so multiple popups can be
+/// open at the same time without stomping on each other.
+@MainActor
+final class PopupTerminalManager: ObservableObject {
+    private var windows: [String: PopupTerminalWindow] = [:]
+
+    func open(_ shortcut: ArgusConfig.PopupShortcut, workingDirectory: String) {
+        let window = windows[shortcut.id] ?? PopupTerminalWindow()
+        windows[shortcut.id] = window
+        window.open(
+            workingDirectory: workingDirectory,
+            command: shortcut.command,
+            title: shortcut.name,
+            sizePercent: shortcut.sizePercent
+        )
     }
 }
