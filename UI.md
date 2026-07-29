@@ -101,8 +101,8 @@ Components communicate through `NotificationCenter` rather than direct reference
 | `.openLazygit` | `AppDelegate`, menu item | `AppShellView` — opens `LazygitWindow` |
 | `.focusShellPane` | `AppDelegate` (leader `h`) | `AppShellView` — focuses shell `TerminalHost` |
 | `.focusAgentPane` | `AppDelegate` (leader `l`) | `AppShellView` — focuses agent `TerminalHost` |
-| `.selectNextWorktree` | `AppDelegate` (leader `j`) | `AppShellView` — advances `selectedWorktreeID` |
-| `.selectPreviousWorktree` | `AppDelegate` (leader `k`) | `AppShellView` — retreats `selectedWorktreeID` |
+| `.selectNextWorktree` | `AppDelegate` (leader `n`) | `AppShellView` — advances `selectedWorktreeID` |
+| `.selectPreviousWorktree` | `AppDelegate` (leader `p`) | `AppShellView` — retreats `selectedWorktreeID` |
 | `.refreshWorkspace` | `AppDelegate` (leader `r`) | `AppShellView` — calls `store.refresh()` |
 
 ---

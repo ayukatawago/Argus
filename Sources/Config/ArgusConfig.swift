@@ -95,10 +95,10 @@ struct ArgusConfig: Codable, Equatable {
     struct KeyBindings: Codable, Equatable {
         var focusPaneLeft: String = "h"
         var focusPaneRight: String = "l"
-        var selectNextWorktree: String = "j"
-        var selectPreviousWorktree: String = "k"
+        var selectNextWorktree: String = "n"
+        var selectPreviousWorktree: String = "p"
         var openLazygit: String = "g"
-        var openNvim: String = "n"
+        var openNvim: String = "v"
         var refreshWorkspace: String = "r"
         var openMarkdownPreview: String = "m"
         var openSettings: String = ","
@@ -125,10 +125,10 @@ struct ArgusConfig: Codable, Equatable {
             }
             focusPaneLeft = read("focusPaneLeft", legacy: "focusShellPane", default: "h")
             focusPaneRight = read("focusPaneRight", legacy: "focusAgentPane", default: "l")
-            selectNextWorktree = read("selectNextWorktree", default: "j")
-            selectPreviousWorktree = read("selectPreviousWorktree", default: "k")
+            selectNextWorktree = read("selectNextWorktree", default: "n")
+            selectPreviousWorktree = read("selectPreviousWorktree", default: "p")
             openLazygit = read("openLazygit", default: "g")
-            openNvim = read("openNvim", default: "n")
+            openNvim = read("openNvim", default: "v")
             refreshWorkspace = read("refreshWorkspace", default: "r")
             openMarkdownPreview = read("openMarkdownPreview", default: "m")
             openSettings = read("openSettings", default: ",")
