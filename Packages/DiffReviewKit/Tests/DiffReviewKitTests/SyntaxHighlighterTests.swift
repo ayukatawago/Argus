@@ -97,4 +97,26 @@ struct SyntaxHighlighterTests {
         let highlighted = highlightedSubstrings("echo \"$FOO\"", language: .shell)
         #expect(highlighted.contains("\"$FOO\""))
     }
+
+    @Test(
+        "javadoc/kdoc-style continuation lines are one plain comment span, not tokenized as code",
+        arguments: [
+            "/**",
+            " * This function will return a new class instance for the given static value.",
+            " */",
+        ]
+    )
+    func docCommentContinuationLineIsNotTokenized(line: String) {
+        let attributed = SyntaxHighlighter.highlight(line, language: .kotlin)
+        #expect(attributed.runs.count == 1)
+        #expect(String(attributed.characters) == line)
+    }
+
+    @Test("a doc comment continuation line is not treated specially for languages without block comments")
+    func docCommentHeuristicDoesNotApplyToJSON() {
+        // A line that happens to start with `*` in JSON (unusual, but shouldn't be special-cased)
+        // still goes through normal tokenization rather than being forced into one comment span.
+        let attributed = SyntaxHighlighter.highlight("* not actually a doc comment", language: .json)
+        #expect(attributed.runs.allSatisfy { $0.foregroundColor == nil })
+    }
 }
