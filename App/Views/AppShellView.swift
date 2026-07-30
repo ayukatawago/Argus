@@ -12,6 +12,7 @@ struct AppShellView: View {
     @StateObject private var diskScanner = DiskCleanupScanner()
     @StateObject private var prMonitor = PRMonitorStore()
     @StateObject private var diskStatusWindow = DiskStatusWindow()
+    @StateObject private var diffReview = DiffReviewWindow()
     @EnvironmentObject private var configStore: ArgusConfigStore
     @Environment(\.openWindow) private var openWindow
     @State private var selectedWorktreeID: String?
@@ -60,6 +61,12 @@ struct AppShellView: View {
             .onReceive(NotificationCenter.default.publisher(for: .openDiskStatus)) { _ in
                 diskStatusWindow.open(store: diskMonitor, scanner: diskScanner)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openDiffReview)) { _ in
+                guard let id = selectedWorktreeID,
+                    let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
+                else { return }
+                diffReview.open(worktreePath: worktree.path, agent: configStore.config.agent)
+            }
     }
 
     private var coreView: some View {
@@ -101,6 +108,15 @@ struct AppShellView: View {
                 }
                 .help(isCanvasMode ? "Exit canvas (⌘⇧C)" : "Canvas view (⌘⇧C)")
                 .keyboardShortcut("c", modifiers: [.command, .shift])
+            }
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    NotificationCenter.default.post(name: .openDiffReview, object: nil)
+                } label: {
+                    Image(systemName: "square.split.2x1")
+                }
+                .help("Review diff")
+                .disabled(selectedWorktreeID == nil)
             }
             ToolbarItem(placement: .automatic) {
                 layoutPicker
@@ -304,7 +320,10 @@ struct AppShellView: View {
         }
     }
 
-    private func dismissDoneIfNeeded() {
+}
+
+extension AppShellView {
+    fileprivate func dismissDoneIfNeeded() {
         guard let id = selectedWorktreeID else { return }
         let state = agentBus.state(for: id)
         guard state == .done || state == .waitingForApproval else { return }

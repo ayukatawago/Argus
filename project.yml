@@ -16,6 +16,8 @@ packages:
   libghostty-spm:
     url: https://github.com/Lakr233/libghostty-spm.git
     branch: main
+  DiffReviewKit:
+    path: Packages/DiffReviewKit
 
 settings:
   base:
@@ -49,6 +51,8 @@ targets:
     dependencies:
       - package: libghostty-spm
         product: GhosttyTerminal
+      - package: DiffReviewKit
+        product: DiffReviewKit
       - sdk: WebKit.framework
     settings:
       base:

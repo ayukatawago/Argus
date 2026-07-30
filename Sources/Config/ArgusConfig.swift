@@ -106,6 +106,7 @@ struct ArgusConfig: Codable, Equatable {
         var openSettings: String = ","
         var reloadAgentPane: String = "a"
         var openDiskStatus: String = "d"
+        var openDiffReview: String = "w"
 
         // Memberwise init needed because we declare a custom init(from:).
         init() {}
@@ -135,6 +136,7 @@ struct ArgusConfig: Codable, Equatable {
             openSettings = read("openSettings", default: ",")
             reloadAgentPane = read("reloadAgentPane", default: "a")
             openDiskStatus = read("openDiskStatus", default: "d")
+            openDiffReview = read("openDiffReview", default: "w")
         }
     }
 
