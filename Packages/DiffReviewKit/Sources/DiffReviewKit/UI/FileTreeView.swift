@@ -1,46 +1,95 @@
 import SwiftUI
 
-/// Sidebar file tree: directories expand/collapse, changed files show per-file stats and a
-/// comment-thread indicator. Selecting a file updates `model.selectedFilePath`; selecting a
-/// directory only expands/collapses it.
+/// Sidebar file tree: all directories start expanded (SwiftUI's built-in `List(_:children:)`
+/// always starts collapsed with no way to override that, so this is hand-rolled with
+/// `DisclosureGroup`). Selecting a file updates `model.selectedFilePath`; directories only
+/// expand/collapse.
 struct FileTreeView: View {
     let model: DiffReviewModel
 
-    @State private var treeSelection: String?
+    @State private var expandedIDs: Set<String> = []
 
     private var tree: [FileTreeNode] {
         FileTreeBuilder.build(from: model.files)
     }
 
     var body: some View {
-        List(tree, children: \.children, selection: $treeSelection) { node in
-            FileTreeRow(node: node, commentCount: node.file.map { model.comments(for: $0.path).count } ?? 0)
+        List {
+            ForEach(tree) { node in
+                FileTreeRowRecursive(node: node, model: model, expandedIDs: $expandedIDs)
+            }
         }
         .listStyle(.sidebar)
-        .onChange(of: treeSelection) { _, newValue in
-            guard let newValue, let file = findNode(id: newValue, in: tree)?.file else { return }
-            model.selectedFilePath = file.path
-        }
-        .onChange(of: model.selectedFilePath) { _, newValue in
-            treeSelection = newValue
-        }
-        .onAppear {
-            treeSelection = model.selectedFilePath
+        .onAppear { expandAll(tree) }
+        .onChange(of: model.files) { _, newFiles in
+            expandAll(FileTreeBuilder.build(from: newFiles))
         }
     }
 
-    private func findNode(id: String, in nodes: [FileTreeNode]) -> FileTreeNode? {
+    private func expandAll(_ nodes: [FileTreeNode]) {
+        var ids = expandedIDs
+        collectDirectoryIDs(nodes, into: &ids)
+        expandedIDs = ids
+    }
+
+    private func collectDirectoryIDs(_ nodes: [FileTreeNode], into set: inout Set<String>) {
         for node in nodes {
-            if node.id == id { return node }
-            if let children = node.children, let found = findNode(id: id, in: children) {
-                return found
-            }
+            guard let children = node.children else { continue }
+            set.insert(node.id)
+            collectDirectoryIDs(children, into: &set)
         }
-        return nil
     }
 }
 
-private struct FileTreeRow: View {
+private struct FileTreeRowRecursive: View {
+    let node: FileTreeNode
+    let model: DiffReviewModel
+    @Binding var expandedIDs: Set<String>
+
+    var body: some View {
+        if let children = node.children {
+            DisclosureGroup(isExpanded: isExpandedBinding) {
+                ForEach(children) { child in
+                    FileTreeRowRecursive(node: child, model: model, expandedIDs: $expandedIDs)
+                }
+            } label: {
+                FileTreeRowLabel(node: node, commentCount: 0)
+            }
+        } else {
+            FileTreeRowLabel(node: node, commentCount: commentCount)
+                .contentShape(Rectangle())
+                .listRowBackground(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
+                .onTapGesture {
+                    if let file = node.file {
+                        model.selectedFilePath = file.path
+                    }
+                }
+        }
+    }
+
+    private var commentCount: Int {
+        node.file.map { model.comments(for: $0.path).count } ?? 0
+    }
+
+    private var isSelected: Bool {
+        node.file != nil && node.file?.path == model.selectedFilePath
+    }
+
+    private var isExpandedBinding: Binding<Bool> {
+        Binding(
+            get: { expandedIDs.contains(node.id) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedIDs.insert(node.id)
+                } else {
+                    expandedIDs.remove(node.id)
+                }
+            }
+        )
+    }
+}
+
+private struct FileTreeRowLabel: View {
     let node: FileTreeNode
     let commentCount: Int
 
