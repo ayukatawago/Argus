@@ -17,6 +17,7 @@ excluded:
   - .build/
   - DerivedData/
   - build/
+  - Packages/*/.build/
 
 line_length:
   warning: 120

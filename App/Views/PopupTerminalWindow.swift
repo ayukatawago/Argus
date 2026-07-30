@@ -13,6 +13,7 @@ extension Notification.Name {
     static let openMarkdownPreview = Notification.Name("argus.openMarkdownPreview")
     static let openSettings = Notification.Name("argus.openSettings")
     static let reloadAgentPane = Notification.Name("argus.reloadAgentPane")
+    static let openDiffReview = Notification.Name("argus.openDiffReview")
 }
 
 /// Manages a single floating NSWindow running a user-defined command in the active

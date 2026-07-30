@@ -122,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             bindings.openSettings: .openSettings,
             bindings.reloadAgentPane: .reloadAgentPane,
             bindings.openDiskStatus: .openDiskStatus,
+            bindings.openDiffReview: .openDiffReview,
         ]
     }
 }
