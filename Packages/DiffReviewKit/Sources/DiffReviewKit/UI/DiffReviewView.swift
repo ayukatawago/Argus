@@ -29,7 +29,7 @@ public struct DiffReviewView: View {
 
     public var body: some View {
         NavigationSplitView {
-            FileListView(model: model)
+            FileTreeView(model: model)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260)
         } detail: {
             VStack(spacing: 0) {
