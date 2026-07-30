@@ -7,7 +7,15 @@ import SwiftUI
 /// dependency-free.
 public enum SyntaxHighlighter {
     public static func highlight(_ text: String, language: SyntaxLanguage) -> AttributedString {
-        guard !text.isEmpty, let regex = regex(for: language) else {
+        guard !text.isEmpty else { return AttributedString(text) }
+
+        if isDocCommentContinuation(text, language: language) {
+            var attributed = AttributedString(text)
+            attributed.foregroundColor = DiffReviewTheme.syntaxComment
+            return attributed
+        }
+
+        guard let regex = regex(for: language) else {
             return AttributedString(text)
         }
 
@@ -50,6 +58,17 @@ public enum SyntaxHighlighter {
             }
         }
         return nil
+    }
+
+    /// Detects a line that's part of a multi-line `/* ... */` doc comment (javadoc/kdoc/JSDoc
+    /// style: an opening `/**`, a closing `*/`, or a continuation line conventionally prefixed
+    /// with `*`) but doesn't contain a self-contained `/* ... */` span the per-line token regex
+    /// could otherwise recognize. Without this, such lines are indistinguishable from code and
+    /// any word inside that happens to match a keyword gets mis-highlighted.
+    private static func isDocCommentContinuation(_ text: String, language: SyntaxLanguage) -> Bool {
+        guard [.swift, .kotlin, .java, .javascript, .typescript].contains(language) else { return false }
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("*") || trimmed.hasPrefix("/*")
     }
 
     // MARK: - Compiled regex cache
