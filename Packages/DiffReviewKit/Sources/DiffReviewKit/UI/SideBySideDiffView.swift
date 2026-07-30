@@ -115,10 +115,11 @@ struct SideBySideDiffView: View {
 
     @ViewBuilder
     private func rowView(_ row: SideBySideRow) -> some View {
+        let modification = intralineChanges(for: row)
         HStack(spacing: 0) {
-            cell(line: row.left, side: .old)
+            cell(line: row.left, side: .old, changedRanges: modification?.old)
             Divider()
-            cell(line: row.right, side: .new)
+            cell(line: row.right, side: .new, changedRanges: modification?.new)
         }
 
         if let anchor = activeCommentAnchor, matches(anchor, row: row) {
@@ -128,6 +129,18 @@ struct SideBySideDiffView: View {
         ForEach(commentsAnchored(to: row)) { comment in
             CommentThreadView(model: model, comment: comment)
         }
+    }
+
+    /// A row counts as a "modification" only when it pairs a removed line with its replacement
+    /// (as opposed to a standalone added/removed line, or unchanged context) — only then does it
+    /// make sense to highlight just the changed span instead of the whole line.
+    private func intralineChanges(
+        for row: SideBySideRow
+    ) -> (old: [Range<String.Index>], new: [Range<String.Index>])? {
+        guard let left = row.left, let right = row.right, left.kind == .deletion, right.kind == .addition else {
+            return nil
+        }
+        return IntralineDiff.changedRanges(old: left.text, new: right.text)
     }
 
     private func matches(_ anchor: CommentAnchor, row: SideBySideRow) -> Bool {
@@ -147,7 +160,7 @@ struct SideBySideDiffView: View {
     }
 
     @ViewBuilder
-    private func cell(line: DiffLine?, side: ReviewComment.Side) -> some View {
+    private func cell(line: DiffLine?, side: ReviewComment.Side, changedRanges: [Range<String.Index>]?) -> some View {
         HStack(spacing: 6) {
             if let line {
                 let number = side == .old ? line.oldLineNumber : line.newLineNumber
@@ -167,9 +180,9 @@ struct SideBySideDiffView: View {
                 .opacity(0.35)
                 .frame(width: 14)
 
-                Text(highlightedText(line))
+                Text(highlightedText(line, changedRanges: changedRanges))
                     .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(foreground(for: line.kind))
+                    .foregroundStyle(DiffReviewTheme.contextForeground)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
             } else {
@@ -178,19 +191,22 @@ struct SideBySideDiffView: View {
         }
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity, minHeight: Self.rowHeight, maxHeight: Self.rowHeight, alignment: .leading)
-        .background(background(for: line?.kind))
+        // A modified line (changedRanges != nil) shows no whole-line tint — only the changed span,
+        // via a backgroundColor run inside highlightedText — so unchanged text on that line reads
+        // normally instead of implying the entire line is new/removed.
+        .background(changedRanges == nil ? background(for: line?.kind) : .clear)
     }
 
-    private func highlightedText(_ line: DiffLine) -> AttributedString {
-        line.text.isEmpty ? AttributedString(" ") : SyntaxHighlighter.highlight(line.text, language: language)
-    }
-
-    private func foreground(for kind: DiffLine.Kind) -> Color {
-        switch kind {
-        case .context: DiffReviewTheme.contextForeground
-        case .addition: DiffReviewTheme.additionForeground
-        case .deletion: DiffReviewTheme.deletionForeground
+    private func highlightedText(_ line: DiffLine, changedRanges: [Range<String.Index>]?) -> AttributedString {
+        guard !line.text.isEmpty else { return AttributedString(" ") }
+        var attributed = SyntaxHighlighter.highlight(line.text, language: language)
+        guard let changedRanges, !changedRanges.isEmpty else { return attributed }
+        let emphasis = emphasisBackground(for: line.kind)
+        for range in changedRanges {
+            guard let attributedRange = Range(range, in: attributed) else { continue }
+            attributed[attributedRange].backgroundColor = emphasis
         }
+        return attributed
     }
 
     private func background(for kind: DiffLine.Kind?) -> Color {
@@ -198,6 +214,14 @@ struct SideBySideDiffView: View {
         case .addition: DiffReviewTheme.additionBackground
         case .deletion: DiffReviewTheme.deletionBackground
         default: .clear
+        }
+    }
+
+    private func emphasisBackground(for kind: DiffLine.Kind) -> Color {
+        switch kind {
+        case .addition: DiffReviewTheme.additionEmphasisBackground
+        case .deletion: DiffReviewTheme.deletionEmphasisBackground
+        case .context: .clear
         }
     }
 
