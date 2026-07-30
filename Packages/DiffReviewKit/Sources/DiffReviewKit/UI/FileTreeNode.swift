@@ -13,9 +13,28 @@ struct FileTreeNode: Identifiable, Hashable {
 
 /// Builds a directory tree from a flat list of changed files, grouping by path component.
 enum FileTreeBuilder {
+    /// Builds the tree, then collapses directory chains with no branching (a folder whose only
+    /// child is itself a folder) into a single row — e.g. `Sources/DiffReviewKit/UI` instead of
+    /// three nested rows — matching GitHub's PR file tree.
     static func build(from files: [DiffFile]) -> [FileTreeNode] {
         let entries = files.map { (components: $0.path.split(separator: "/").map(String.init), file: $0) }
-        return buildLevel(entries, pathPrefix: "")
+        return buildLevel(entries, pathPrefix: "").map(compressed)
+    }
+
+    /// Merges a run of single-child directories into one node, working bottom-up so a chain of
+    /// any length collapses fully (e.g. `A > B > C` becomes one `"A/B/C"` node).
+    private static func compressed(_ node: FileTreeNode) -> FileTreeNode {
+        guard let children = node.children else { return node }
+        let compressedChildren = children.map(compressed)
+        if compressedChildren.count == 1, let onlyChild = compressedChildren.first, onlyChild.isDirectory {
+            return FileTreeNode(
+                id: onlyChild.id,
+                name: "\(node.name)/\(onlyChild.name)",
+                file: nil,
+                children: onlyChild.children
+            )
+        }
+        return FileTreeNode(id: node.id, name: node.name, file: nil, children: compressedChildren)
     }
 
     private static func buildLevel(
