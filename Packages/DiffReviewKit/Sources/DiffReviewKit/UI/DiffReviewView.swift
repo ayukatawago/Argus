@@ -28,14 +28,18 @@ public struct DiffReviewView: View {
     }
 
     public var body: some View {
-        NavigationSplitView {
-            FileTreeView(model: model)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 260)
-        } detail: {
-            VStack(spacing: 0) {
-                RevisionPickerView(model: model)
-                Divider()
-                detailContent
+        VStack(spacing: 0) {
+            DiffSummaryBar(stats: model.sizeStats)
+            Divider()
+            NavigationSplitView {
+                FileTreeView(model: model)
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 260)
+            } detail: {
+                VStack(spacing: 0) {
+                    RevisionPickerView(model: model)
+                    Divider()
+                    detailContent
+                }
             }
         }
         .task {
