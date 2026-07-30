@@ -7,6 +7,11 @@ public enum DiffReviewTheme {
     public static let additionForeground = Color.green
     public static let deletionBackground = Color.red.opacity(0.12)
     public static let deletionForeground = Color.red
+
+    /// Stronger tint for the specific span that changed within a modified line — the rest of that
+    /// line is left unhighlighted (see `SideBySideDiffView`'s intraline diff).
+    public static let additionEmphasisBackground = Color.green.opacity(0.4)
+    public static let deletionEmphasisBackground = Color.red.opacity(0.4)
     public static let contextForeground = Color.primary.opacity(0.85)
     public static let lineNumberForeground = Color.secondary.opacity(0.6)
     public static let commentAccent = Color.accentColor
