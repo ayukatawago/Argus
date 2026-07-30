@@ -74,6 +74,16 @@ struct SideBySideDiffView: View {
         let lineNumber: Int
     }
 
+    /// Fixed row height, in points. Every row (including the empty placeholder on the unmatched
+    /// side of a row) is pinned to this exact value — an integer at the device's pixel scale — so
+    /// adjacent same-color rows' backgrounds tile without the hairline gaps that otherwise appear
+    /// when each row's height is left to its font's fractional natural line height.
+    private static let rowHeight: CGFloat = 20
+
+    private var language: SyntaxLanguage {
+        SyntaxLanguage.detect(fromPath: file.path)
+    }
+
     var body: some View {
         ScrollView {
             if file.isBinaryOrHunkless {
@@ -157,18 +167,22 @@ struct SideBySideDiffView: View {
                 .opacity(0.35)
                 .frame(width: 14)
 
-                Text(line.text.isEmpty ? " " : line.text)
+                Text(highlightedText(line))
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(foreground(for: line.kind))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
             } else {
-                Color.clear.frame(height: 20)
+                Color.clear
             }
         }
         .padding(.horizontal, 4)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: Self.rowHeight, maxHeight: Self.rowHeight, alignment: .leading)
         .background(background(for: line?.kind))
+    }
+
+    private func highlightedText(_ line: DiffLine) -> AttributedString {
+        line.text.isEmpty ? AttributedString(" ") : SyntaxHighlighter.highlight(line.text, language: language)
     }
 
     private func foreground(for kind: DiffLine.Kind) -> Color {
