@@ -38,33 +38,42 @@ public struct GitRunner: Sendable {
         guard FileManager.default.isExecutableFile(atPath: executablePath) else {
             throw GitError.executableNotFound
         }
-        return try await withCheckedThrowingContinuation { continuation in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: executablePath)
-            process.arguments = ["-C", repositoryPath] + arguments
 
-            let stdoutPipe = Pipe()
-            let stderrPipe = Pipe()
-            process.standardOutput = stdoutPipe
-            process.standardError = stderrPipe
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = ["-C", repositoryPath] + arguments
 
-            process.terminationHandler = { finished in
-                let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                continuation.resume(
-                    returning: Result(
-                        standardOutput: String(data: stdoutData, encoding: .utf8) ?? "",
-                        standardError: String(data: stderrData, encoding: .utf8) ?? "",
-                        exitCode: finished.terminationStatus
-                    )
-                )
-            }
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
 
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(throwing: GitError.launchFailed(error.localizedDescription))
-            }
+        do {
+            try process.run()
+        } catch {
+            throw GitError.launchFailed(error.localizedDescription)
         }
+
+        // Drain both pipes concurrently while the process is still running. A pipe's kernel
+        // buffer is only ~64KB — a real `git diff` easily exceeds that, and reading only after
+        // termination deadlocks: git blocks on write() waiting for buffer space that never frees
+        // because nothing is reading it, so it never terminates.
+        async let stdoutData = Self.readToEnd(stdoutPipe)
+        async let stderrData = Self.readToEnd(stderrPipe)
+        let (outData, errData) = await (stdoutData, stderrData)
+
+        process.waitUntilExit()
+
+        return Result(
+            standardOutput: String(data: outData, encoding: .utf8) ?? "",
+            standardError: String(data: errData, encoding: .utf8) ?? "",
+            exitCode: process.terminationStatus
+        )
+    }
+
+    private static func readToEnd(_ pipe: Pipe) async -> Data {
+        await Task.detached {
+            pipe.fileHandleForReading.readDataToEndOfFile()
+        }.value
     }
 }
