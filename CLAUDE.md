@@ -15,6 +15,30 @@ To regenerate the Xcode project after editing `project.yml`:
 xcodegen generate
 ```
 
+### Debug code signing
+
+Debug builds sign with a local identity named `Argus Local Dev` instead of ad-hoc (`-`), so macOS's
+per-folder file-access grants (Desktop, Documents, Downloads, Movies, Music, Pictures — needed
+because Argus spawns a login shell per pane) survive rebuilds instead of re-prompting every launch.
+This identity is a self-signed certificate that lives only in your local login keychain — it is not
+committed and does not chain to Apple's root, so it must never be used for Release/distribution
+builds (see `project.yml`'s `debug:` vs `release:` settings). To create it on a new machine:
+
+```sh
+TMPDIR=$(mktemp -d)
+openssl req -x509 -newkey rsa:2048 -keyout "$TMPDIR/argus-codesign.key" -out "$TMPDIR/argus-codesign.crt" \
+  -days 3650 -nodes -subj "/CN=Argus Local Dev" \
+  -addext "extendedKeyUsage=codeSigning" -addext "basicConstraints=critical,CA:false" \
+  -addext "keyUsage=critical,digitalSignature"
+security import "$TMPDIR/argus-codesign.key" -k ~/Library/Keychains/login.keychain-db -A
+security import "$TMPDIR/argus-codesign.crt" -k ~/Library/Keychains/login.keychain-db -A
+security add-trusted-cert -p codeSign -k ~/Library/Keychains/login.keychain-db "$TMPDIR/argus-codesign.crt"
+rm -rf "$TMPDIR"
+```
+
+Also grant Argus **Full Disk Access** in System Settings → Privacy & Security — Argus hosts an
+arbitrary shell like Terminal.app/iTerm2, so macOS expects that grant rather than per-folder consent.
+
 ## Module layout
 
 ```

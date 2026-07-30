@@ -60,7 +60,6 @@ targets:
         INFOPLIST_FILE: App/Info.plist
         SWIFT_VERSION: "6.0"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
-        CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: ""
         CODE_SIGNING_REQUIRED: "NO"
@@ -72,6 +71,11 @@ targets:
         SWIFT_OPTIMIZATION_LEVEL: "-Onone"
         DEBUG_INFORMATION_FORMAT: dwarf
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+        # Stable local identity (not ad-hoc) so macOS TCC grants for the panes'
+        # spawned shells survive rebuilds instead of re-prompting every launch.
+        # Not for distribution — see CLAUDE.md.
+        CODE_SIGN_IDENTITY: "Argus Local Dev"
+        CODE_SIGNING_REQUIRED: "YES"
       release:
         SWIFT_OPTIMIZATION_LEVEL: "-O"
         DEBUG_INFORMATION_FORMAT: "dwarf-with-dsym"
