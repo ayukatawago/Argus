@@ -15,6 +15,12 @@ public final class DiffReviewModel {
     public var includeUncommitted = false
     public var availableRefs: [String] = []
 
+    /// Commits in `baseRef..headRef`, newest first (see `RevisionResolver.listCommits`).
+    public var commits: [Commit] = []
+    /// Indices into `commits` (0 = newest) currently selected in the commit sidebar. `nil` means
+    /// "all of them" — the common case where the whole base..head range is under review.
+    public var selectedCommitRange: ClosedRange<Int>?
+
     public var files: [DiffFile] = []
     public var selectedFilePath: String?
     public var comments: [ReviewComment] = []
@@ -38,6 +44,28 @@ public final class DiffReviewModel {
         files.first { $0.path == selectedFilePath }
     }
 
+    /// The base/head actually diffed: narrowed to the selected commit sub-range when one is set,
+    /// otherwise the full `baseRef..headRef` range. Falls back to `baseRef`/`headRef` verbatim
+    /// when there's no commit list to narrow against (e.g. `includeUncommitted` is on, or the
+    /// range is empty) so those paths keep working unchanged.
+    var effectiveBase: String {
+        guard !includeUncommitted, !commits.isEmpty, let range = selectedCommitRange ?? fullCommitRange else {
+            return baseRef
+        }
+        return "\(commits[range.upperBound].hash)^"
+    }
+
+    var effectiveHead: String {
+        guard !includeUncommitted, !commits.isEmpty, let range = selectedCommitRange ?? fullCommitRange else {
+            return headRef
+        }
+        return commits[range.lowerBound].hash
+    }
+
+    private var fullCommitRange: ClosedRange<Int>? {
+        commits.isEmpty ? nil : 0...(commits.count - 1)
+    }
+
     /// Total/production/test breakdown of the current diff, in that order.
     public var sizeStats: [DiffSizeStat] {
         let testFiles = files.filter { DiffFileClassifier.isTestFile($0.path) }
@@ -51,14 +79,29 @@ public final class DiffReviewModel {
 
     // MARK: - Loading
 
-    /// Resolves branch list + default base (if not already set) and loads the initial diff.
+    /// Resolves branch list + default base (if not already set) and loads the initial commit
+    /// list + diff.
     public func start() async {
         async let branches = revisionResolver.listBranches()
         async let base = revisionResolver.defaultBase()
         let (branchList, defaultBase) = await (branches, base)
         availableRefs = branchList
         if baseRef.isEmpty { baseRef = defaultBase }
+        await reload()
+    }
+
+    /// Re-resolves the commit list for the current `baseRef..headRef` (resetting the commit
+    /// sub-selection to "all") and reloads the diff. Call this when the header base/head refs
+    /// change; call `refreshDiff()` directly for changes that don't affect the commit range
+    /// (e.g. the "include uncommitted" toggle, or a manual refresh).
+    public func reload() async {
+        await loadCommits()
         await refreshDiff()
+    }
+
+    private func loadCommits() async {
+        commits = await revisionResolver.listCommits(base: baseRef, head: headRef)
+        selectedCommitRange = nil
     }
 
     public func refreshDiff() async {
@@ -67,8 +110,8 @@ public final class DiffReviewModel {
         defer { isLoadingDiff = false }
         do {
             let newFiles = try await diffService.diff(
-                base: baseRef,
-                head: headRef,
+                base: effectiveBase,
+                head: effectiveHead,
                 includeUncommitted: includeUncommitted
             )
             files = newFiles

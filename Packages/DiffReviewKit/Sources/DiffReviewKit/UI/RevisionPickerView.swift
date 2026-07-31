@@ -22,7 +22,7 @@ struct RevisionPickerView: View {
                 ProgressView().controlSize(.small)
             } else {
                 Button {
-                    Task { await model.refreshDiff() }
+                    Task { await model.reload() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -38,13 +38,13 @@ struct RevisionPickerView: View {
             TextField(title, text: selection)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 140)
-                .onSubmit { Task { await model.refreshDiff() } }
+                .onSubmit { Task { await model.reload() } }
             if !model.availableRefs.isEmpty {
                 Menu {
                     ForEach(model.availableRefs, id: \.self) { ref in
                         Button(ref) {
                             selection.wrappedValue = ref
-                            Task { await model.refreshDiff() }
+                            Task { await model.reload() }
                         }
                     }
                 } label: {
