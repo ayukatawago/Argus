@@ -1,32 +1,33 @@
 import SwiftUI
 
-/// Base/head ref pickers plus the "include uncommitted changes" toggle shown above the diff pane.
+/// Base/head ref pickers plus the "include uncommitted changes" toggle and refresh button, shown
+/// atop the commit sidebar (`CommitListView`). Stacked vertically to fit the sidebar's width.
 struct RevisionPickerView: View {
     @Bindable var model: DiffReviewModel
 
     var body: some View {
-        HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             refPicker(title: "Base", selection: $model.baseRef)
-            Image(systemName: "arrow.right")
-                .foregroundStyle(.secondary)
             refPicker(title: "Head", selection: $model.headRef)
+            HStack {
+                Toggle("Include uncommitted", isOn: $model.includeUncommitted)
+                    .onChange(of: model.includeUncommitted) {
+                        Task { await model.refreshDiff() }
+                    }
+                    .font(.caption)
 
-            Toggle("Include uncommitted", isOn: $model.includeUncommitted)
-                .onChange(of: model.includeUncommitted) {
-                    Task { await model.refreshDiff() }
+                Spacer()
+
+                if model.isLoadingDiff {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button {
+                        Task { await model.reload() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("Refresh diff")
                 }
-
-            Spacer()
-
-            if model.isLoadingDiff {
-                ProgressView().controlSize(.small)
-            } else {
-                Button {
-                    Task { await model.reload() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .help("Refresh diff")
             }
         }
         .padding(8)
@@ -34,10 +35,11 @@ struct RevisionPickerView: View {
 
     private func refPicker(title: String, selection: Binding<String>) -> some View {
         HStack(spacing: 4) {
-            Text(title).foregroundStyle(.secondary)
+            Text(title)
+                .foregroundStyle(.secondary)
+                .frame(width: 32, alignment: .leading)
             TextField(title, text: selection)
                 .textFieldStyle(.roundedBorder)
-                .frame(minWidth: 140)
                 .onSubmit { Task { await model.reload() } }
             if !model.availableRefs.isEmpty {
                 Menu {

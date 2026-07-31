@@ -36,11 +36,7 @@ public struct DiffReviewView: View {
                     FileTreeView(model: model)
                         .navigationSplitViewColumnWidth(min: 240, ideal: 320)
                 } detail: {
-                    VStack(spacing: 0) {
-                        RevisionPickerView(model: model)
-                        Divider()
-                        detailContent
-                    }
+                    detailContent
                 }
                 Divider()
                 CommitListView(model: model)

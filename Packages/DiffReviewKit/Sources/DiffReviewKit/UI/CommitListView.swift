@@ -23,6 +23,8 @@ struct CommitListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            RevisionPickerView(model: model)
+            Divider()
             header
             Divider()
             if model.commits.isEmpty {
