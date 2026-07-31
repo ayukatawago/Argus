@@ -31,15 +31,20 @@ public struct DiffReviewView: View {
         VStack(spacing: 0) {
             DiffSummaryBar(stats: model.sizeStats)
             Divider()
-            NavigationSplitView {
-                FileTreeView(model: model)
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 260)
-            } detail: {
-                VStack(spacing: 0) {
-                    RevisionPickerView(model: model)
-                    Divider()
-                    detailContent
+            HStack(spacing: 0) {
+                NavigationSplitView {
+                    FileTreeView(model: model)
+                        .navigationSplitViewColumnWidth(min: 240, ideal: 320)
+                } detail: {
+                    VStack(spacing: 0) {
+                        RevisionPickerView(model: model)
+                        Divider()
+                        detailContent
+                    }
                 }
+                Divider()
+                CommitListView(model: model)
+                    .frame(width: 300)
             }
         }
         .task {
