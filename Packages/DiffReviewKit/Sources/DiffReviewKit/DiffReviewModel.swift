@@ -12,13 +12,15 @@ public final class DiffReviewModel {
 
     public var baseRef: String = ""
     public var headRef: String = "HEAD"
-    public var includeUncommitted = false
     public var availableRefs: [String] = []
 
     /// Commits in `baseRef..headRef`, newest first (see `RevisionResolver.listCommits`).
     public var commits: [Commit] = []
-    /// Indices into `commits` (0 = newest) currently selected in the commit sidebar. `nil` means
-    /// "all of them" — the common case where the whole base..head range is under review.
+    /// Indices into `commits` (0 = newest) currently selected in the commit sidebar, with `-1`
+    /// standing for the synthetic "Uncommitted changes" row pinned above the newest commit.
+    /// `nil` means "every real commit, no uncommitted changes" — the default full range. A range
+    /// whose `lowerBound` is `-1` includes uncommitted changes, optionally combined with a
+    /// contiguous run of the newest commits (`0...upperBound`).
     public var selectedCommitRange: ClosedRange<Int>?
 
     public var files: [DiffFile] = []
@@ -44,26 +46,33 @@ public final class DiffReviewModel {
         files.first { $0.path == selectedFilePath }
     }
 
-    /// The base/head actually diffed: narrowed to the selected commit sub-range when one is set,
-    /// otherwise the full `baseRef..headRef` range. Falls back to `baseRef`/`headRef` verbatim
-    /// when there's no commit list to narrow against (e.g. `includeUncommitted` is on, or the
-    /// range is empty) so those paths keep working unchanged.
+    /// Whether the current selection includes the synthetic "Uncommitted changes" row.
+    public var includesUncommitted: Bool {
+        currentRange?.lowerBound == -1
+    }
+
+    /// The base/head actually diffed: narrowed to the selected commit sub-range (and/or
+    /// uncommitted changes) when one is set, otherwise the full `baseRef..headRef` range. Falls
+    /// back to `baseRef`/`headRef` verbatim when there's no commit list to narrow against.
     var effectiveBase: String {
-        guard !includeUncommitted, !commits.isEmpty, let range = selectedCommitRange ?? fullCommitRange else {
-            return baseRef
-        }
+        guard let range = currentRange else { return baseRef }
+        guard range.upperBound >= 0 else { return headRef }
         return "\(commits[range.upperBound].hash)^"
     }
 
     var effectiveHead: String {
-        guard !includeUncommitted, !commits.isEmpty, let range = selectedCommitRange ?? fullCommitRange else {
-            return headRef
-        }
+        guard let range = currentRange, range.lowerBound >= 0 else { return headRef }
         return commits[range.lowerBound].hash
     }
 
     private var fullCommitRange: ClosedRange<Int>? {
         commits.isEmpty ? nil : 0...(commits.count - 1)
+    }
+
+    /// The selection actually in effect: the explicit `selectedCommitRange` when set, otherwise
+    /// every real commit (never uncommitted changes) by default.
+    private var currentRange: ClosedRange<Int>? {
+        selectedCommitRange ?? fullCommitRange
     }
 
     /// Total/production/test breakdown of the current diff, in that order.
@@ -112,7 +121,7 @@ public final class DiffReviewModel {
             let newFiles = try await diffService.diff(
                 base: effectiveBase,
                 head: effectiveHead,
-                includeUncommitted: includeUncommitted
+                includeUncommitted: includesUncommitted
             )
             files = newFiles
             if selectedFilePath == nil || !newFiles.contains(where: { $0.path == selectedFilePath }) {

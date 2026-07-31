@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Base/head ref pickers plus the "include uncommitted changes" toggle and refresh button, shown
-/// atop the commit sidebar (`CommitListView`). Stacked vertically to fit the sidebar's width.
+/// Base/head ref pickers plus the refresh button, shown atop the commit sidebar
+/// (`CommitListView`). Stacked vertically to fit the sidebar's width. Uncommitted changes are
+/// selected as a row in the commit list below, not toggled here.
 struct RevisionPickerView: View {
     @Bindable var model: DiffReviewModel
 
@@ -10,12 +11,6 @@ struct RevisionPickerView: View {
             refPicker(title: "Base", selection: $model.baseRef)
             refPicker(title: "Head", selection: $model.headRef)
             HStack {
-                Toggle("Include uncommitted", isOn: $model.includeUncommitted)
-                    .onChange(of: model.includeUncommitted) {
-                        Task { await model.refreshDiff() }
-                    }
-                    .font(.caption)
-
                 Spacer()
 
                 if model.isLoadingDiff {
