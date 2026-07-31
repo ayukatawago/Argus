@@ -1,16 +1,16 @@
 import AppKit
 import SwiftUI
 
-/// Right-hand sidebar listing the commits in the current `baseRef..headRef` range, newest first.
-/// All commits are selected by default (the whole range is under review); clicking narrows the
-/// selection to a single commit, and shift-clicking extends it to a contiguous run — both narrow
-/// the file tree + diff to "parent of the oldest selected commit → newest selected commit" via
-/// `model.effectiveBase`/`effectiveHead`.
+/// Right-hand sidebar listing the commits in the current `baseRef..headRef` range, newest first,
+/// with a synthetic "Uncommitted changes" row pinned above them (index `-1`). All real commits
+/// are selected by default (uncommitted changes are excluded); clicking a row narrows the
+/// selection to just that row, and shift-clicking extends it to a contiguous run — both narrow
+/// the file tree + diff via `model.effectiveBase`/`effectiveHead`/`includesUncommitted`.
 struct CommitListView: View {
     @Bindable var model: DiffReviewModel
 
     /// Anchor index for shift-click range extension; reset whenever a plain click starts a new
-    /// single-commit selection.
+    /// single-row selection. `-1` is the "Uncommitted changes" row.
     @State private var anchorIndex: Int?
 
     private var fullRange: ClosedRange<Int>? {
@@ -27,23 +27,21 @@ struct CommitListView: View {
             Divider()
             header
             Divider()
-            if model.commits.isEmpty {
-                Text("No commits in range.")
-                    .foregroundStyle(.secondary)
-                    .font(.callout)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List {
-                    ForEach(Array(model.commits.enumerated()), id: \.element.id) { index, commit in
-                        CommitRow(commit: commit, isSelected: selectedRange?.contains(index) ?? false)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                select(index: index, extend: NSEvent.modifierFlags.contains(.shift))
-                            }
+            List {
+                UncommittedRow(isSelected: selectedRange?.contains(-1) ?? false)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        select(index: -1, extend: NSEvent.modifierFlags.contains(.shift))
                     }
+                ForEach(Array(model.commits.enumerated()), id: \.element.id) { index, commit in
+                    CommitRow(commit: commit, isSelected: selectedRange?.contains(index) ?? false)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            select(index: index, extend: NSEvent.modifierFlags.contains(.shift))
+                        }
                 }
-                .listStyle(.sidebar)
             }
+            .listStyle(.sidebar)
         }
     }
 
@@ -68,11 +66,16 @@ struct CommitListView: View {
 
     private var rangeSummary: String {
         guard let range = selectedRange else { return "0 commits" }
-        let count = range.upperBound - range.lowerBound + 1
-        guard count != model.commits.count else {
-            return "\(count) commit\(count == 1 ? "" : "s")"
+        guard range.lowerBound == -1 else {
+            let count = range.upperBound - range.lowerBound + 1
+            return count == model.commits.count
+                ? "\(count) commit\(count == 1 ? "" : "s")"
+                : "\(count) of \(model.commits.count) selected"
         }
-        return "\(count) of \(model.commits.count) selected"
+        let commitCount = range.upperBound + 1
+        return commitCount == 0
+            ? "Uncommitted changes"
+            : "Uncommitted + \(commitCount) commit\(commitCount == 1 ? "" : "s")"
     }
 
     private func select(index: Int, extend: Bool) {
@@ -83,6 +86,21 @@ struct CommitListView: View {
             model.selectedCommitRange = index...index
         }
         Task { await model.refreshDiff() }
+    }
+}
+
+private struct UncommittedRow: View {
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "pencil.circle")
+                .foregroundStyle(DiffReviewTheme.commentAccent)
+            Text("Uncommitted changes")
+                .font(.callout.italic())
+        }
+        .padding(.vertical, 2)
+        .listRowBackground(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
     }
 }
 
