@@ -6,18 +6,43 @@ Built with Swift + SwiftUI/AppKit, powered by [libghostty](https://github.com/gh
 
 ## Features
 
-- Sidebar listing git repos and their worktrees
-- Split layout: AI agent pane (Claude Code or Codex) + shell terminal per worktree
-- Visual agent status — idle / running / waitingForApproval / done — driven by Claude Code hooks
-- Sidebar dot and border color change to reflect agent state at a glance
-- Choose AI agent (Claude Code or Codex) with user-editable launch commands via Settings (⌘,)
-- Lazygit popup (`⌘G`) per worktree
-- Leader key shortcuts (default `Ctrl+B` prefix): `j`/`k` to cycle worktrees, `a` to reload agent pane
-- Configurable leader key and key bindings via Settings (⌘,); saved to `~/.config/argus/argus.json`
-- Drag-and-drop reordering of repos in the sidebar
+### Layout & agents
+
+- Sidebar listing git repos and their worktrees; drag-and-drop reordering of repos
+- Three selectable window layouts (Settings ⌘,): Terminal + Agent, Agents / Terminal (70/30 split), Terminal + Claude + Codex — the Codex pane is spun up lazily, only when a layout needs it
+- Choose the primary AI agent (Claude Code or Codex) with user-editable launch commands via Settings (⌘,)
 - Create and force-delete worktrees directly from the sidebar
 - Per-worktree terminal sessions with release button to free resources
 - Restores the last selected worktree on relaunch
+
+### Agent & shell status
+
+- Visual agent status — idle / running / waitingForApproval / done — driven by Claude Code hooks
+- Sidebar dot and border color change to reflect agent state at a glance
+- Animated sidebar border when a shell pane has a foreground command running, via fish hooks (accent-tinted when the worktree is selected)
+
+### Diff review
+
+- Side-by-side diff review popup (leader `w`) for the selected worktree: file tree, base/head revision picker with an "include uncommitted" toggle, total/production/test size breakdown, syntax highlighting, and changed-span (intraline) highlighting
+- PR-style inline comments whose **Reply**/**Apply** buttons run a headless Claude Code / Codex agent in the worktree — Apply lets it edit files, then refreshes the diff
+
+### Sidebar monitors
+
+- GitHub PR monitor: your open/draft PRs plus PRs assigned to you, with target branch, review status, draft/approved styling, new/updated highlighting, and a collapsed "Do Not Merge" section (configured on the Settings → GitHub page)
+- Disk space monitor (leader `d`, or a low-space banner): free-space gauge and cleanup candidates (DerivedData, caches, workspace git repos, …) with size and last-modified date, sortable and size-filterable, with move-to-Trash
+
+### Utilities
+
+- Markdown preview (leader `m`) with in-page search (⌘F), local-image rendering, and a `.md` file tree
+- User-configurable popup terminals (Settings → Keyboard) — run any command in a floating pane via leader + a key; lazygit ships as the default (leader `g`)
+- nvim popup (leader `v` or ⌘⇧N) with a tmux-persisted session; close with ⌘H
+- Cmd+click `https` links in the terminal to open them in the browser
+- Global environment variables injected into every new terminal/agent pane (Settings → Environment)
+
+### Shortcuts
+
+- Leader key shortcuts (default `Ctrl+B` prefix): `n`/`p` to cycle worktrees, `h`/`l` to focus panes, `a` to reload the agent pane, `w` diff review, `d` disk status, `m` markdown preview, `v` nvim, `r` refresh workspace, `,` settings
+- Configurable leader key, timeout, key bindings, and popup terminals via Settings (⌘,); saved to `~/.config/argus/argus.json`
 
 ## Requirements
 
