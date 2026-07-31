@@ -44,15 +44,18 @@ arbitrary shell like Terminal.app/iTerm2, so macOS expects that grant rather tha
 ```
 Sources/
   AgentState/       Foundation only — agent state enum, IPC bus, hook manager
-  Config/           Foundation only — ArgusConfig struct, ArgusConfigStore, AgentSelection enum
-  GhosttyBridge/    GhosttyKit (C lib) + Foundation — PTY and terminal surface
+  Config/           Foundation only — ArgusConfig struct, ArgusConfigStore, AgentSelection/WindowLayout enums
+  GhosttyBridge/    GhosttyKit (C lib) + Foundation — PTY, terminal surface, URL-open
   Workspaces/       Foundation only — git repo/worktree scanning and store
+Packages/
+  DiffReviewKit/    SPM package (macOS 14+, Swift 6) — side-by-side diff review UI + headless agent runner
 App/
-  Views/            SwiftUI + AppKit — all UI (sidebar, shell, main shell)
-  ArgusApp.swift    NSApplicationDelegate, top-level wiring
+  ShellStateBus.swift  Shell-busy tracking (fish hooks / tmux fallback), feeds the sidebar border
+  Views/            SwiftUI + AppKit — all UI (sidebar, panes, monitors, popups, diff review host)
+  ArgusApp.swift    NSApplicationDelegate, leader-key monitor, top-level wiring
 ```
 
-Cross-module import rule: only `App/` imports everything; source modules may only import siblings listed in CONVENTIONS.md.
+Cross-module import rule: only `App/` imports everything; source modules may only import siblings listed in CONVENTIONS.md. `Packages/DiffReviewKit` is a separate SPM package embedded via Xcode's local package dependency; it does not import any `Sources/` module — `App/` wires it up (agent selection, worktree path) from the outside.
 
 ## Agent state system
 
@@ -93,6 +96,32 @@ Scripts live in `~/Library/Application Support/argus/hooks/` and are written onc
 
 `WorktreeHookManager.install(worktreePath:)` is idempotent: it overwrites the scripts and upserts Argus's entries in `.claude/settings.local.json` without disturbing other hook entries. That file is gitignored.
 
+## Window layout & pane pool
+
+`WindowLayout` (`Sources/Config/ArgusConfig.swift`, config key `layout`) selects one of three per-app layouts, rendered by `App/Views/WorktreeContentView.swift`: `terminalAgent` (single agent + terminal, `AgentSelection` picks Claude or Codex), `agentsOverTerminal` (Codex + Claude side by side on top, terminal full-width below, 70/30 split via `RatioVSplitView`), and `terminalClaudeCodex` (three columns: terminal, Claude, Codex).
+
+`App/Views/PanePool.swift` owns all three `TerminalHost`s (shell/claude/codex) but only registers the roles a layout actually needs (`requiredRoles(layout:agent:)`) — the Codex terminal/session is not spun up unless a layout requires it, so switching into `terminalAgent` with Claude selected never launches Codex. `primaryAgentRole(layout:agent:)` determines which agent session the canvas view and `reloadAgentPane` (leader `a`) target.
+
+## Diff review
+
+`Packages/DiffReviewKit` (a local SPM package) provides a side-by-side diff review UI with PR-style inline comments; `App/Views/DiffReviewWindow.swift` hosts it as a floating popup (95% of the screen) opened via leader `w` or the toolbar's "Review diff" button (`.openDiffReview`), one window per worktree.
+
+It always uses the app's single global `AgentSelection` (`.claude`/`.codex`) — there is no per-worktree agent override. Each comment's **Reply** (read-only) and **Apply** (edits + refreshes the diff) button spawns an **independent headless** `$SHELL -l -c` process (`claude -p --output-format stream-json` / `codex exec --json`) — it never attaches to, or shares context with, a live interactive agent pane. A per-comment session id (from the CLI's own stream output) is kept in memory so a follow-up Reply/Apply on the *same* comment resumes that thread; all of this state — comments, replies, session ids — lives only in `DiffReviewModel` and is discarded when the review window closes (no disk persistence).
+
+Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent` picks the CLI + env, `PromptComposer` builds the per-comment prompt), `Git/` (git exec, diff, revision resolution), `Model/` (parsed diff, review comments, size/test classification, intraline diff), `Syntax/` (highlighting), `UI/` (`DiffReviewView` is the public entry point).
+
+## Shell-busy detection
+
+`App/ShellStateBus.swift` publishes the set of worktree paths whose shell pane has a foreground command running, which drives an animated sidebar border (`App/Views/SidebarComponents.swift`, accent-tinted when the row is selected). This is independent of the Claude/agent hook system above.
+
+- **Fish login shells (preferred):** `WorktreeHookManager.installFishHooksIfNeeded()` writes `~/.config/fish/conf.d/argus.fish`, registering `fish_preexec`/`fish_postexec` hooks that append JSON lines to `HookIPC.shellEventLogPath` (`/private/tmp/argus-$UID-shell-events.jsonl`); `ShellStateBus` tails that file every 200ms.
+- **Non-fish fallback:** polls `tmux list-panes -a` every 400ms, marking a worktree busy when its shell pane's current command isn't a known shell name.
+
+## Sidebar monitors
+
+- **GitHub PR monitor** (`App/Views/PRMonitorStore.swift`, `PRMonitorView.swift`): fetches via the GitHub REST API directly (`URLSession` + bearer token), not the `gh` CLI. Configured on the Settings → GitHub page (`apiBaseURL`, `token`, `refreshIntervalSeconds`). Groups PRs into My Open / My Drafts / Assigned / a collapsed "Do Not Merge" section; highlights PRs whose approvals changed since the last poll; grays out approved/draft PRs.
+- **Disk space monitor** (`App/Views/DiskMonitorStore.swift`, `DiskCleanupScanner.swift`, `DiskStatusView.swift`, `DiskStatusWindow.swift`): opened via leader `d` or a low-disk banner. Shows a free-space gauge and cleanup candidates (Xcode DerivedData, package manager caches, workspace git repos, `~/Library` subdirectories, …) sized via `du -sk` at concurrency 4, sortable by name/size with a size filter. Config block `diskMonitor` (`checkIntervalSeconds`, `alertThresholdPercent`, `sizeCheckIntervalSeconds`).
+
 ## Key files
 
 | File | Role |
@@ -100,15 +129,25 @@ Scripts live in `~/Library/Application Support/argus/hooks/` and are written onc
 | `App/ArgusApp.swift` | App entry, keyboard leader, canvas overlay |
 | `App/Views/AppShellView.swift` | Main split layout, agent state border/tint |
 | `App/Views/SidebarView.swift` | Repo/worktree list, `AgentDot`, drag reorder |
-| `App/Views/WorktreeContentView.swift` | Per-worktree dual-pane (agent + shell) |
+| `App/Views/WorktreeContentView.swift` | Per-worktree layout (terminal/agent panes per `WindowLayout`) |
+| `App/Views/PanePool.swift` | Owns shell/claude/codex `TerminalHost`s; lazy per-layout role registration |
 | `App/Views/PopupTerminalWindow.swift` | User-defined popup terminal windows (key/command/size), incl. lazygit default |
+| `App/Views/NvimWindow.swift` | nvim popup with tmux-persisted session |
+| `App/Views/MarkdownPreviewWindow.swift` | Markdown preview popup (⌘F search, local images, file tree) |
+| `App/Views/DiffReviewWindow.swift` | Floating diff-review popup host (one per worktree) |
+| `App/Views/PRMonitorStore.swift` / `PRMonitorView.swift` | GitHub PR fetch/categorize + sidebar section |
+| `App/Views/DiskMonitorStore.swift` / `DiskCleanupScanner.swift` / `DiskStatusWindow.swift` | Disk space poll, cleanup candidate scan, popup host |
 | `App/Views/SettingsWindow.swift` | Settings UI — Agent page (agent picker + commands) and GitHub/Environment pages |
 | `App/Views/KeyboardSettingsView.swift` | Settings UI — Keyboard page (key bindings + popup terminal shortcuts editor) |
+| `App/ShellStateBus.swift` | Shell-busy tracking (fish hooks / tmux fallback) → sidebar border |
 | `Sources/AgentState/AgentStateBus.swift` | `@MainActor` ObservableObject, socket reader |
-| `Sources/AgentState/WorktreeHookManager.swift` | Hook script writer + settings patcher |
-| `Sources/Config/ArgusConfig.swift` | `ArgusConfig` struct, `ArgusConfigStore` (`~/.config/argus/argus.json`), `AgentSelection` enum |
+| `Sources/AgentState/WorktreeHookManager.swift` | Hook script writer + settings patcher (Claude hooks + fish shell-busy hooks) |
+| `Sources/Config/ArgusConfig.swift` | `ArgusConfig` struct, `ArgusConfigStore` (`~/.config/argus/argus.json`), `AgentSelection`/`WindowLayout` enums, `github`/`diskMonitor`/`environmentVariables`/`popupShortcuts` config blocks |
 | `Sources/Workspaces/WorkspaceStore.swift` | Repo/worktree scanning, persistence |
 | `Sources/GhosttyBridge/WorktreePane.swift` | ghostty surface lifecycle per pane |
+| `Sources/GhosttyBridge/TerminalViewState+URLOpen.swift` | Cmd+click terminal links → open in browser |
+| `Packages/DiffReviewKit/Sources/DiffReviewKit/DiffReviewModel.swift` | Diff-review state owner + agent-run orchestration |
+| `Packages/DiffReviewKit/Sources/DiffReviewKit/Agent/AgentRunner.swift` | Spawns headless Claude/Codex CLI, streams stream-json |
 | `project.yml` | XcodeGen project definition — edit this, not the `.xcodeproj` |
 
 ## Conventions
