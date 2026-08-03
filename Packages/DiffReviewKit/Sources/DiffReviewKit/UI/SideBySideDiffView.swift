@@ -1,68 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// One rendered row of the side-by-side view: a line from the old file, the new file, or both
-/// (for unchanged context lines).
-struct SideBySideRow: Identifiable {
-    let id: String
-    let left: DiffLine?
-    let right: DiffLine?
-}
-
-/// Pairs a hunk's flat sequence of context/deletion/addition lines into side-by-side rows, the way
-/// GitHub's split diff view does: consecutive deletions are paired index-wise with the consecutive
-/// additions that follow them, and unmatched lines get an empty cell on the other side.
-enum SideBySideBuilder {
-    static func rows(for hunk: DiffHunk) -> [SideBySideRow] {
-        var rows: [SideBySideRow] = []
-        let lines = hunk.lines
-        var index = 0
-
-        while index < lines.count {
-            let line = lines[index]
-            switch line.kind {
-            case .context:
-                rows.append(SideBySideRow(id: line.id.uuidString, left: line, right: line))
-                index += 1
-
-            case .deletion, .addition:
-                var deletions: [DiffLine] = []
-                while index < lines.count, lines[index].kind == .deletion {
-                    deletions.append(lines[index])
-                    index += 1
-                }
-                var additions: [DiffLine] = []
-                while index < lines.count, lines[index].kind == .addition {
-                    additions.append(lines[index])
-                    index += 1
-                }
-                let pairCount = max(deletions.count, additions.count)
-                for pairIndex in 0..<pairCount {
-                    let left = deletions[safe: pairIndex]
-                    let right = additions[safe: pairIndex]
-                    rows.append(
-                        SideBySideRow(
-                            id: "\(left?.id.uuidString ?? "-")|\(right?.id.uuidString ?? "-")",
-                            left: left,
-                            right: right
-                        )
-                    )
-                }
-            }
-        }
-
-        return rows
-    }
-}
-
-extension Array {
-    fileprivate subscript(safe index: Int) -> Element? {
-        indices.contains(index) ? self[index] : nil
-    }
-}
-
 /// Two-column diff for a single file: line numbers, added/removed highlighting, per-line "add
-/// comment" affordance, multi-line range selection, and inline comment threads.
+/// comment" affordance, multi-line range selection, collapsed-context expansion, and inline
+/// comment threads.
 struct SideBySideDiffView: View {
     let model: DiffReviewModel
     let file: DiffFile
@@ -104,14 +45,25 @@ struct SideBySideDiffView: View {
                     .padding()
             } else {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(file.hunks) { hunk in
-                        hunkHeader(hunk)
-                        ForEach(SideBySideBuilder.rows(for: hunk)) { row in
-                            rowView(row)
-                        }
+                    ForEach(DiffBlockBuilder.blocks(for: file)) { block in
+                        blockView(block)
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: DiffBlock) -> some View {
+        switch block {
+        case .hunk(let hunk):
+            hunkHeader(hunk)
+            ForEach(SideBySideBuilder.rows(for: hunk)) { row in
+                rowView(row)
+            }
+
+        case .gap(let gap):
+            gapView(gap)
         }
     }
 
@@ -128,7 +80,7 @@ struct SideBySideDiffView: View {
     // MARK: - Rows
 
     @ViewBuilder
-    private func rowView(_ row: SideBySideRow) -> some View {
+    func rowView(_ row: SideBySideRow) -> some View {
         let modification = intralineChanges(for: row)
         HStack(spacing: 0) {
             cell(row: row, line: row.left, side: .old, changedRanges: modification?.old)

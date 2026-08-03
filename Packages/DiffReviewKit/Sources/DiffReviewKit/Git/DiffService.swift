@@ -30,6 +30,19 @@ public struct DiffService: Sendable {
         return files
     }
 
+    /// Fetches the full content of `path` as it exists at `ref`, split into lines with any
+    /// trailing newline dropped — used to reveal a diff hunk's collapsed context lines, which
+    /// aren't present in the unified diff output itself.
+    public func fileContent(ref: String, path: String) async throws -> [String] {
+        let result = try await git.run(["show", "\(ref):\(path)"])
+        guard result.succeeded else {
+            throw DiffServiceError.gitFailed(result.standardError)
+        }
+        var lines = result.standardOutput.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        if result.standardOutput.hasSuffix("\n") { lines.removeLast() }
+        return lines
+    }
+
     private func resolvedMergeBase(base: String, head: String) async -> String {
         guard let result = try? await git.run(["merge-base", base, head]), result.succeeded else {
             return base
