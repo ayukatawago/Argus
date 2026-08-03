@@ -16,6 +16,11 @@ public enum DiffReviewTheme {
     public static let lineNumberForeground = Color.secondary.opacity(0.6)
     public static let commentAccent = Color.accentColor
 
+    /// Tint for lines currently selected via shift-click, before a range comment is submitted.
+    public static let selectionBackground = Color.accentColor.opacity(0.18)
+    /// Subtler tint marking the full range an existing multi-line comment is anchored to.
+    public static let commentRangeBackground = Color.accentColor.opacity(0.07)
+
     // MARK: - Syntax highlighting
 
     public static let syntaxKeyword = Color(red: 0.72, green: 0.32, blue: 0.62)

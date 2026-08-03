@@ -134,8 +134,22 @@ public final class DiffReviewModel {
 
     // MARK: - Comments
 
-    public func addComment(filePath: String, side: ReviewComment.Side, lineNumber: Int, body: String) {
-        comments.append(ReviewComment(filePath: filePath, side: side, lineNumber: lineNumber, body: body))
+    public func addComment(
+        filePath: String,
+        side: ReviewComment.Side,
+        startLineNumber: Int? = nil,
+        lineNumber: Int,
+        body: String
+    ) {
+        comments.append(
+            ReviewComment(
+                filePath: filePath,
+                side: side,
+                startLineNumber: startLineNumber,
+                lineNumber: lineNumber,
+                body: body
+            )
+        )
     }
 
     public func comments(for filePath: String) -> [ReviewComment] {
