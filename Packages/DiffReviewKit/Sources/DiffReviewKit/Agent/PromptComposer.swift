@@ -19,7 +19,7 @@ public enum PromptComposer {
 
         lines.append("")
         lines.append("File: \(file.path)")
-        lines.append("Line \(comment.lineNumber) (\(comment.side == .old ? "old" : "new") side):")
+        lines.append("\(lineDescription(for: comment)) (\(comment.side == .old ? "old" : "new") side):")
         lines.append("")
         lines.append(contextSnippet(for: comment, in: file))
         lines.append("")
@@ -29,14 +29,22 @@ public enum PromptComposer {
         return lines.joined(separator: "\n")
     }
 
-    /// Extracts the hunk containing the commented line, rendered as plain text, to anchor the
+    private static func lineDescription(for comment: ReviewComment) -> String {
+        guard let startLineNumber = comment.startLineNumber, startLineNumber != comment.lineNumber else {
+            return "Line \(comment.lineNumber)"
+        }
+        return "Lines \(startLineNumber)-\(comment.lineNumber)"
+    }
+
+    /// Extracts the hunk containing any commented line, rendered as plain text, to anchor the
     /// agent's attention without requiring it to re-derive the diff itself.
     private static func contextSnippet(for comment: ReviewComment, in file: DiffFile) -> String {
+        let range = (comment.startLineNumber ?? comment.lineNumber)...comment.lineNumber
         for hunk in file.hunks {
             let matches = hunk.lines.contains { line in
                 switch comment.side {
-                case .old: line.oldLineNumber == comment.lineNumber
-                case .new: line.newLineNumber == comment.lineNumber
+                case .old: line.oldLineNumber.map(range.contains) ?? false
+                case .new: line.newLineNumber.map(range.contains) ?? false
                 }
             }
             guard matches else { continue }

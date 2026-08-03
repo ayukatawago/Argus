@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// One rendered row of the side-by-side view: a line from the old file, the new file, or both
@@ -61,17 +62,28 @@ extension Array {
 }
 
 /// Two-column diff for a single file: line numbers, added/removed highlighting, per-line "add
-/// comment" affordance, and inline comment threads.
+/// comment" affordance, multi-line range selection, and inline comment threads.
 struct SideBySideDiffView: View {
     let model: DiffReviewModel
     let file: DiffFile
 
     @State private var activeCommentAnchor: CommentAnchor?
     @State private var draftCommentText = ""
+    @State private var pendingSelection: LineSelection?
 
     struct CommentAnchor: Equatable {
         let side: ReviewComment.Side
-        let lineNumber: Int
+        let startLine: Int
+        let endLine: Int
+    }
+
+    /// A shift-click-extendable line range, tracked per side, before it's turned into a comment.
+    struct LineSelection: Equatable {
+        let side: ReviewComment.Side
+        let anchorLine: Int
+        let focusLine: Int
+
+        var range: ClosedRange<Int> { min(anchorLine, focusLine)...max(anchorLine, focusLine) }
     }
 
     /// Fixed row height, in points. Every row (including the empty placeholder on the unmatched
@@ -113,17 +125,21 @@ struct SideBySideDiffView: View {
             .background(Color.secondary.opacity(0.08))
     }
 
+    // MARK: - Rows
+
     @ViewBuilder
     private func rowView(_ row: SideBySideRow) -> some View {
         let modification = intralineChanges(for: row)
         HStack(spacing: 0) {
-            cell(line: row.left, side: .old, changedRanges: modification?.old)
+            cell(row: row, line: row.left, side: .old, changedRanges: modification?.old)
             Divider()
-            cell(line: row.right, side: .new, changedRanges: modification?.new)
+            cell(row: row, line: row.right, side: .new, changedRanges: modification?.new)
         }
 
         if let anchor = activeCommentAnchor, matches(anchor, row: row) {
             commentComposer(anchor: anchor)
+        } else if let pendingSelection, isSelectionEnd(row: row, selection: pendingSelection) {
+            pendingSelectionToolbar(pendingSelection)
         }
 
         ForEach(commentsAnchored(to: row)) { comment in
@@ -145,9 +161,14 @@ struct SideBySideDiffView: View {
 
     private func matches(_ anchor: CommentAnchor, row: SideBySideRow) -> Bool {
         switch anchor.side {
-        case .old: row.left?.oldLineNumber == anchor.lineNumber
-        case .new: row.right?.newLineNumber == anchor.lineNumber
+        case .old: row.left?.oldLineNumber == anchor.endLine
+        case .new: row.right?.newLineNumber == anchor.endLine
         }
+    }
+
+    private func isSelectionEnd(row: SideBySideRow, selection: LineSelection) -> Bool {
+        let number = selection.side == .old ? row.left?.oldLineNumber : row.right?.newLineNumber
+        return number == selection.range.upperBound
     }
 
     private func commentsAnchored(to row: SideBySideRow) -> [ReviewComment] {
@@ -159,8 +180,62 @@ struct SideBySideDiffView: View {
         }
     }
 
+    // MARK: - Line selection
+
+    private func handleLineNumberTap(side: ReviewComment.Side, line: Int) {
+        activeCommentAnchor = nil
+        if NSEvent.modifierFlags.contains(.shift), let existing = pendingSelection, existing.side == side {
+            pendingSelection = LineSelection(side: side, anchorLine: existing.anchorLine, focusLine: line)
+        } else {
+            pendingSelection = LineSelection(side: side, anchorLine: line, focusLine: line)
+        }
+    }
+
     @ViewBuilder
-    private func cell(line: DiffLine?, side: ReviewComment.Side, changedRanges: [Range<String.Index>]?) -> some View {
+    private func pendingSelectionToolbar(_ selection: LineSelection) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                activeCommentAnchor = CommentAnchor(
+                    side: selection.side,
+                    startLine: selection.range.lowerBound,
+                    endLine: selection.range.upperBound
+                )
+                pendingSelection = nil
+            } label: {
+                Label(commentButtonTitle(for: selection.range), systemImage: "plus.bubble")
+            }
+            .buttonStyle(.borderless)
+
+            Button {
+                pendingSelection = nil
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+
+            Spacer()
+        }
+        .font(.caption)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(DiffReviewTheme.selectionBackground)
+    }
+
+    private func commentButtonTitle(for range: ClosedRange<Int>) -> String {
+        range.lowerBound == range.upperBound
+            ? "Comment on line \(range.lowerBound)"
+            : "Comment on lines \(range.lowerBound)\u{2013}\(range.upperBound)"
+    }
+
+    // MARK: - Cell rendering
+
+    @ViewBuilder
+    private func cell(
+        row: SideBySideRow,
+        line: DiffLine?,
+        side: ReviewComment.Side,
+        changedRanges: [Range<String.Index>]?
+    ) -> some View {
         HStack(spacing: 6) {
             if let line {
                 let number = side == .old ? line.oldLineNumber : line.newLineNumber
@@ -168,10 +243,15 @@ struct SideBySideDiffView: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(DiffReviewTheme.lineNumberForeground)
                     .frame(width: 36, alignment: .trailing)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if let number { handleLineNumberTap(side: side, line: number) }
+                    }
 
                 Button {
                     if let number {
-                        activeCommentAnchor = CommentAnchor(side: side, lineNumber: number)
+                        activeCommentAnchor = CommentAnchor(side: side, startLine: number, endLine: number)
+                        pendingSelection = nil
                     }
                 } label: {
                     Image(systemName: "plus.bubble")
@@ -191,10 +271,7 @@ struct SideBySideDiffView: View {
         }
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity, minHeight: Self.rowHeight, maxHeight: Self.rowHeight, alignment: .leading)
-        // A modified line (changedRanges != nil) shows no whole-line tint — only the changed span,
-        // via a backgroundColor run inside highlightedText — so unchanged text on that line reads
-        // normally instead of implying the entire line is new/removed.
-        .background(changedRanges == nil ? background(for: line?.kind) : .clear)
+        .background(rowBackground(line: line, side: side, changedRanges: changedRanges))
     }
 
     private func highlightedText(_ line: DiffLine, changedRanges: [Range<String.Index>]?) -> AttributedString {
@@ -207,6 +284,34 @@ struct SideBySideDiffView: View {
             attributed[attributedRange].backgroundColor = emphasis
         }
         return attributed
+    }
+
+    /// A modified line (changedRanges != nil) shows no whole-line tint — only the changed span,
+    /// via a backgroundColor run inside highlightedText — so unchanged text on that line reads
+    /// normally instead of implying the entire line is new/removed. Pending-selection and
+    /// existing-comment-range tints take priority over the plain addition/deletion tint since
+    /// they're both rarer and more important for the reviewer to notice.
+    private func rowBackground(
+        line: DiffLine?,
+        side: ReviewComment.Side,
+        changedRanges: [Range<String.Index>]?
+    ) -> Color {
+        let number = side == .old ? line?.oldLineNumber : line?.newLineNumber
+        if let number, let pendingSelection, pendingSelection.side == side, pendingSelection.range.contains(number) {
+            return DiffReviewTheme.selectionBackground
+        }
+        if let number, isWithinExistingCommentRange(line: number, side: side) {
+            return DiffReviewTheme.commentRangeBackground
+        }
+        return changedRanges == nil ? background(for: line?.kind) : .clear
+    }
+
+    private func isWithinExistingCommentRange(line number: Int, side: ReviewComment.Side) -> Bool {
+        model.comments(for: file.path).contains { comment in
+            guard comment.side == side else { return false }
+            let range = (comment.startLineNumber ?? comment.lineNumber)...comment.lineNumber
+            return range.contains(number)
+        }
     }
 
     private func background(for kind: DiffLine.Kind?) -> Color {
@@ -225,9 +330,17 @@ struct SideBySideDiffView: View {
         }
     }
 
+    // MARK: - Comment composer
+
     @ViewBuilder
     private func commentComposer(anchor: CommentAnchor) -> some View {
         VStack(alignment: .leading, spacing: 6) {
+            if anchor.startLine != anchor.endLine {
+                Text("Commenting on lines \(anchor.startLine)\u{2013}\(anchor.endLine)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             TextEditor(text: $draftCommentText)
                 .frame(height: 60)
                 .font(.system(.body, design: .monospaced))
@@ -243,7 +356,8 @@ struct SideBySideDiffView: View {
                     model.addComment(
                         filePath: file.path,
                         side: anchor.side,
-                        lineNumber: anchor.lineNumber,
+                        startLineNumber: anchor.startLine == anchor.endLine ? nil : anchor.startLine,
+                        lineNumber: anchor.endLine,
                         body: draftCommentText
                     )
                     activeCommentAnchor = nil

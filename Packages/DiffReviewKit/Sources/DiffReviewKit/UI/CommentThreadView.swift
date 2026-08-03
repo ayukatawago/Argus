@@ -11,6 +11,11 @@ struct CommentThreadView: View {
                 Image(systemName: "bubble.left.fill")
                     .foregroundStyle(DiffReviewTheme.commentAccent)
                 VStack(alignment: .leading, spacing: 4) {
+                    if let startLineNumber = comment.startLineNumber {
+                        Text("Lines \(startLineNumber)\u{2013}\(comment.lineNumber)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                     Text(comment.body)
                         .font(.callout)
                     ForEach(comment.replies) { reply in

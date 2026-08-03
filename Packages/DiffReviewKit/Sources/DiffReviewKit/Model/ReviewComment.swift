@@ -18,6 +18,11 @@ public struct ReviewComment: Identifiable, Hashable, Sendable {
     public let id: UUID
     public let filePath: String
     public let side: Side
+    /// First line of the commented range. `nil` for an ordinary single-line comment, in which
+    /// case the comment covers only `lineNumber`.
+    public let startLineNumber: Int?
+    /// Last line of the commented range (the anchor line comments render under, matching
+    /// GitHub's convention of anchoring a multi-line comment to its final line).
     public let lineNumber: Int
     public var body: String
     public var status: Status
@@ -27,6 +32,7 @@ public struct ReviewComment: Identifiable, Hashable, Sendable {
         id: UUID = UUID(),
         filePath: String,
         side: Side,
+        startLineNumber: Int? = nil,
         lineNumber: Int,
         body: String,
         status: Status = .open,
@@ -35,6 +41,7 @@ public struct ReviewComment: Identifiable, Hashable, Sendable {
         self.id = id
         self.filePath = filePath
         self.side = side
+        self.startLineNumber = startLineNumber
         self.lineNumber = lineNumber
         self.body = body
         self.status = status
