@@ -21,6 +21,9 @@ public enum DiffReviewTheme {
     /// Subtler tint marking the full range an existing multi-line comment is anchored to.
     public static let commentRangeBackground = Color.accentColor.opacity(0.07)
 
+    /// Background for a collapsed "expand hidden lines" affordance row.
+    public static let gapBackground = Color.secondary.opacity(0.08)
+
     // MARK: - Syntax highlighting
 
     public static let syntaxKeyword = Color(red: 0.72, green: 0.32, blue: 0.62)

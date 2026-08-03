@@ -156,6 +156,72 @@ public final class DiffReviewModel {
         comments.filter { $0.filePath == filePath }
     }
 
+    // MARK: - Hidden-context expansion
+
+    private var expandedGapLines: [String: [DiffLine]] = [:]
+    private var loadingGapIDs: Set<String> = []
+
+    /// The revealed lines for a previously collapsed gap, if `expandGap` has completed for it.
+    public func expandedLines(forGapID gapID: String) -> [DiffLine]? {
+        expandedGapLines[gapID]
+    }
+
+    public func isLoadingGap(_ gapID: String) -> Bool {
+        loadingGapIDs.contains(gapID)
+    }
+
+    /// Fetches the file content needed to reveal a collapsed gap's lines (from disk for the
+    /// working tree, otherwise via `git show`) and populates `expandedGapLines`. A no-op if the
+    /// gap is already expanded or a fetch for it is already in flight.
+    public func expandGap(_ gap: DiffGap, in file: DiffFile) async {
+        guard expandedGapLines[gap.id] == nil, !loadingGapIDs.contains(gap.id) else { return }
+        loadingGapIDs.insert(gap.id)
+        defer { loadingGapIDs.remove(gap.id) }
+
+        guard let sourceLines = await gapSourceLines(for: file) else { return }
+        expandedGapLines[gap.id] = Self.gapLines(gap, in: file, sourceLines: sourceLines)
+    }
+
+    /// The unchanged lines a gap spans are identical on both sides of the diff, so either
+    /// revision's content works; the deleted-file case is the only one where only the base
+    /// revision still has the file at all.
+    private func gapSourceLines(for file: DiffFile) async -> [String]? {
+        if file.kind == .deleted {
+            return try? await diffService.fileContent(ref: effectiveBase, path: file.path)
+        }
+        if includesUncommitted {
+            let fullPath = (repositoryPath as NSString).appendingPathComponent(file.path)
+            guard let data = FileManager.default.contents(atPath: fullPath),
+                let text = String(data: data, encoding: .utf8)
+            else { return nil }
+            return Self.splitLines(text)
+        }
+        return try? await diffService.fileContent(ref: effectiveHead, path: file.path)
+    }
+
+    private static func splitLines(_ text: String) -> [String] {
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        if text.hasSuffix("\n") { lines.removeLast() }
+        return lines
+    }
+
+    private static func gapLines(_ gap: DiffGap, in file: DiffFile, sourceLines: [String]) -> [DiffLine] {
+        let start = (file.kind == .deleted ? gap.oldStart : gap.newStart) - 1
+        guard start >= 0, start < sourceLines.count else { return [] }
+        let end = gap.lineCount.map { min(start + $0, sourceLines.count) } ?? sourceLines.count
+        guard end > start else { return [] }
+
+        return (start..<end).map { sourceIndex in
+            let offset = sourceIndex - start
+            return DiffLine(
+                kind: .context,
+                text: sourceLines[sourceIndex],
+                oldLineNumber: file.kind == .added ? nil : gap.oldStart + offset,
+                newLineNumber: file.kind == .deleted ? nil : gap.newStart + offset
+            )
+        }
+    }
+
     // MARK: - Agent actions
 
     /// Runs the agent for a comment: `.reply` streams a read-only answer, `.apply` lets it edit
