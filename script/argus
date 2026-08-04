@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# CLI dispatcher for Argus. Each command below encodes itself into an
+# `argus://` URL and hands it to `open`, which launches Argus if it isn't
+# already running and activates it either way — see AppDelegate's
+# `application(_:open:)` in App/ArgusApp.swift for the receiving side.
+#
+# `diff` is the first subcommand; add more as `cmd_<name>` functions plus a
+# case in `main` below, and a matching `host` case in AppDelegate.
+
+usage() {
+    cat <<'EOF'
+Usage: argus <command> [args]
+
+Commands:
+  diff <workspace> --from <ref> [--to <ref>]
+      Open Argus's diff-review popup for the git repo/worktree at
+      <workspace>, diffing <from>..<to> (default: HEAD). <workspace> can be
+      any git repo or worktree path — it does not need to already be tracked
+      in Argus's sidebar.
+
+  -h, --help
+      Show this help.
+EOF
+}
+
+# Percent-encodes a string for use in a URL query value. Pure bash (no jq/
+# python3 dependency); ASCII-scoped, which covers filesystem paths and git
+# refs in practice.
+urlencode() {
+    local string="$1"
+    local length="${#string}"
+    local i c
+    for ((i = 0; i < length; i++)); do
+        c="${string:i:1}"
+        case "$c" in
+            [a-zA-Z0-9.~_-]) printf '%s' "$c" ;;
+            *) printf '%%%02X' "'$c" ;;
+        esac
+    done
+}
+
+cmd_diff() {
+    if [[ $# -eq 0 || "$1" == -* ]]; then
+        echo "error: argus diff requires a <workspace> path" >&2
+        usage >&2
+        exit 1
+    fi
+    local workspace="$1" from="" to="HEAD"
+    shift
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --from)
+                from="${2:-}"
+                shift 2
+                ;;
+            --to)
+                to="${2:-}"
+                shift 2
+                ;;
+            *)
+                echo "error: unknown argument '$1'" >&2
+                usage >&2
+                exit 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$from" ]]; then
+        echo "error: --from <ref> is required" >&2
+        usage >&2
+        exit 1
+    fi
+
+    # Resolve to an absolute path so relative paths (and `.`) work — Argus's
+    # argus:// handler only accepts absolute paths.
+    local resolved
+    if ! resolved="$(cd "$workspace" 2>/dev/null && pwd -P)"; then
+        echo "error: '$workspace' is not a directory" >&2
+        exit 1
+    fi
+    workspace="$resolved"
+
+    open "argus://diff?workspace=$(urlencode "$workspace")&from=$(urlencode "$from")&to=$(urlencode "$to")"
+}
+
+main() {
+    if [[ $# -eq 0 ]]; then
+        usage >&2
+        exit 1
+    fi
+
+    case "$1" in
+        diff)
+            shift
+            cmd_diff "$@"
+            ;;
+        -h | --help)
+            usage
+            ;;
+        *)
+            echo "error: unknown command '$1'" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

@@ -11,17 +11,32 @@ import SwiftUI
 final class DiffReviewWindow: NSObject, NSWindowDelegate, ObservableObject {
     private var window: NSWindow?
     private var currentWorktreePath: String?
+    private var currentBase: String?
+    private var currentHead: String?
 
-    func open(worktreePath: String, agent: AgentSelection) {
-        if currentWorktreePath == worktreePath, let existing = window {
+    /// - Parameters:
+    ///   - base: initial base ref (empty auto-resolves the default branch, see
+    ///     `DiffReviewView.initialBase`).
+    ///   - head: initial head ref, defaulting to `HEAD`.
+    func open(worktreePath: String, base: String = "", head: String = "HEAD", agent: AgentSelection) {
+        if currentWorktreePath == worktreePath, currentBase == base, currentHead == head, let existing = window {
             existing.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
+        // Any previous window (a different worktree, or the same one with different refs) would
+        // otherwise be orphaned on screen instead of replaced.
+        window?.close()
+
         let reviewAgent = DiffReviewAgent(kind: agent == .codex ? .codex : .claude)
         let hosting = NSHostingView(
-            rootView: DiffReviewView(repositoryPath: worktreePath, agent: reviewAgent)
+            rootView: DiffReviewView(
+                repositoryPath: worktreePath,
+                initialBase: base,
+                initialHead: head,
+                agent: reviewAgent
+            )
         )
 
         let screen = NSApp.keyWindow?.screen ?? NSApp.mainWindow?.screen ?? NSScreen.main ?? NSScreen.screens[0]
@@ -45,10 +60,14 @@ final class DiffReviewWindow: NSObject, NSWindowDelegate, ObservableObject {
 
         window = win
         currentWorktreePath = worktreePath
+        currentBase = base
+        currentHead = head
     }
 
     func windowWillClose(_: Notification) {
         window = nil
         currentWorktreePath = nil
+        currentBase = nil
+        currentHead = nil
     }
 }

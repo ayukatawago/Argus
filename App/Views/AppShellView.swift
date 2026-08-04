@@ -71,6 +71,16 @@ struct AppShellView: View {
                 else { return }
                 diffReview.open(worktreePath: worktree.path, agent: configStore.config.agent)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openDiffReviewForPath)) { notification in
+                // CLI-originated (`argus diff`) request — the path is used as-is, independent of
+                // whether it's a workspace `store` already tracks in the sidebar.
+                guard let info = notification.userInfo, let workspace = info["workspace"] as? String else {
+                    return
+                }
+                let base = info["base"] as? String ?? ""
+                let head = info["head"] as? String ?? "HEAD"
+                diffReview.open(worktreePath: workspace, base: base, head: head, agent: configStore.config.agent)
+            }
     }
 
     private var coreView: some View {
@@ -134,6 +144,11 @@ struct AppShellView: View {
             diskMonitor.start()
             diskScanner.start()
             prMonitor.start()
+            // Lets AppDelegate know it's safe to deliver a CLI-originated `argus://diff` request
+            // instead of buffering it — see .openDiffReviewForPath above. A direct call (not a
+            // NotificationCenter round trip) since ordering against AppDelegate's own setup isn't
+            // guaranteed otherwise.
+            AppDelegate.current?.markAppShellReady()
         }
         .onDisappear {
             shellStateBus.stop()
@@ -215,31 +230,6 @@ struct AppShellView: View {
         if !ordered.contains(focusedRole) {
             focusedRole = ordered.first ?? .shell
         }
-    }
-
-    // MARK: - Directional focus
-
-    private func stepFocus(direction: Int) {
-        let config = configStore.config
-        let ordered = PaneLayoutResolver.orderedRoles(layout: config.layout, agent: config.agent)
-        guard !ordered.isEmpty else { return }
-        let currentIndex = ordered.firstIndex(of: focusedRole) ?? 0
-        let newIndex = max(0, min(ordered.count - 1, currentIndex + direction))
-        focusedRole = ordered[newIndex]
-        pool.host(for: focusedRole).focusActiveTerminal()
-    }
-
-    // MARK: - Worktree navigation
-
-    private func navigateWorktrees(forward: Bool) {
-        let eligibleIDs = store.repos.flatMap(\.worktrees)
-            .filter { !store.hiddenWorktreeIDs.contains($0.id) && pool.activeIDs.contains($0.id) }
-            .map(\.id)
-        guard let next = WorktreeNavigator.next(from: selectedWorktreeID, in: eligibleIDs, forward: forward) else {
-            return
-        }
-        selectedWorktreeID = next
-        DispatchQueue.main.async { self.pool.host(for: self.focusedRole).focusActiveTerminal() }
     }
 
     // MARK: - Terminal detail
@@ -326,5 +316,30 @@ extension AppShellView {
         let state = agentBus.state(for: id)
         guard state == .done || state == .waitingForApproval else { return }
         agentBus.reset(for: id)
+    }
+
+    // MARK: - Directional focus
+
+    fileprivate func stepFocus(direction: Int) {
+        let config = configStore.config
+        let ordered = PaneLayoutResolver.orderedRoles(layout: config.layout, agent: config.agent)
+        guard !ordered.isEmpty else { return }
+        let currentIndex = ordered.firstIndex(of: focusedRole) ?? 0
+        let newIndex = max(0, min(ordered.count - 1, currentIndex + direction))
+        focusedRole = ordered[newIndex]
+        pool.host(for: focusedRole).focusActiveTerminal()
+    }
+
+    // MARK: - Worktree navigation
+
+    fileprivate func navigateWorktrees(forward: Bool) {
+        let eligibleIDs = store.repos.flatMap(\.worktrees)
+            .filter { !store.hiddenWorktreeIDs.contains($0.id) && pool.activeIDs.contains($0.id) }
+            .map(\.id)
+        guard let next = WorktreeNavigator.next(from: selectedWorktreeID, in: eligibleIDs, forward: forward) else {
+            return
+        }
+        selectedWorktreeID = next
+        DispatchQueue.main.async { self.pool.host(for: self.focusedRole).focusActiveTerminal() }
     }
 }

@@ -2,14 +2,112 @@ import AppKit
 import ArgusConfigKit
 import SwiftUI
 
+/// A parsed `argus://diff?workspace=...&from=...&to=...` request — see `AppDelegate.handleDiffRequest`.
+/// Field names match `DiffReviewWindow.open(worktreePath:base:head:agent:)`; `from`/`to` are only
+/// the URL's (and the CLI's) external vocabulary.
+private struct DiffReviewRequest {
+    let workspace: String
+    let base: String
+    let head: String
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Set in `init()` — SwiftUI constructs the `@NSApplicationDelegateAdaptor`-owned delegate
+    /// before evaluating any Scene/View, so this is reliably non-nil by the time `AppShellView`
+    /// appears. Lets it signal readiness via a direct call (see `markAppShellReady`) instead of a
+    /// `NotificationCenter` round trip, which would race `AppShellView.onAppear` against this
+    /// class's own observer registration with no guaranteed ordering between them.
+    static private(set) weak var current: AppDelegate?
+
     private var keyEventMonitor: Any?
     private var mouseEventMonitor: Any?
     private var awaitingLeader = false
     private var leaderTimer: Timer?
 
+    override init() {
+        super.init()
+        AppDelegate.current = self
+    }
+
+    // MARK: - CLI-originated diff review (`argus diff` → `argus://diff`)
+
+    /// Whether `AppShellView` has appeared (and so has its `.openDiffReviewForPath` subscription
+    /// live) yet. A URL can arrive before that, in which case posting the notification would be
+    /// silently dropped — so a request that arrives too early is buffered here and flushed by
+    /// `markAppShellReady`.
+    private var isAppShellReady = false
+    private var pendingDiffReviewRequest: DiffReviewRequest?
+
+    /// Handles `argus://<subcommand>` URLs from `script/argus` (or any other `open`-based
+    /// caller). Only `diff` is implemented today; unrecognized hosts are ignored so future
+    /// subcommands can be added without breaking older callers.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme == "argus" {
+            switch url.host {
+            case "diff": handleDiffRequest(url)
+            default: break
+            }
+        }
+    }
+
+    private func handleDiffRequest(_ url: URL) {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
+        let items = components.queryItems ?? []
+        func value(_ name: String) -> String? { items.first(where: { $0.name == name })?.value }
+
+        guard let workspace = value("workspace"), !workspace.isEmpty else { return }
+        guard workspace.hasPrefix("/"), FileManager.default.fileExists(atPath: workspace) else {
+            showInvalidWorkspaceAlert(path: workspace)
+            return
+        }
+
+        let request = DiffReviewRequest(workspace: workspace, base: value("from") ?? "", head: value("to") ?? "HEAD")
+        if isAppShellReady {
+            postDiffReviewRequest(request)
+        } else {
+            pendingDiffReviewRequest = request
+        }
+    }
+
+    /// Called by `AppShellView.onAppear` — flushes any `argus://diff` request that arrived before
+    /// its `.openDiffReviewForPath` subscription existed to receive it.
+    func markAppShellReady() {
+        isAppShellReady = true
+        guard let pending = pendingDiffReviewRequest else { return }
+        pendingDiffReviewRequest = nil
+        postDiffReviewRequest(pending)
+    }
+
+    private func postDiffReviewRequest(_ request: DiffReviewRequest) {
+        NotificationCenter.default.post(
+            name: .openDiffReviewForPath,
+            object: nil,
+            userInfo: ["workspace": request.workspace, "base": request.base, "head": request.head]
+        )
+    }
+
+    /// A path that doesn't exist can't be diffed at all — surfaced here rather than left to the
+    /// diff window, since there'd be nothing sensible to open it onto. A path that exists but
+    /// isn't a git repo still opens the window and reports through its existing `loadError` UI.
+    private func showInvalidWorkspaceAlert(path: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Can't open diff review"
+        alert.informativeText = "\"\(path)\" isn't a valid absolute path."
+        alert.runModal()
+    }
+
     func applicationDidFinishLaunching(_: Notification) {
+        installKeyEventMonitor()
+
+        mouseEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+            NotificationCenter.default.post(name: .workspaceInteracted, object: nil)
+            return event
+        }
+    }
+
+    private func installKeyEventMonitor() {
         keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
@@ -57,11 +155,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return nil
             }
 
-            NotificationCenter.default.post(name: .workspaceInteracted, object: nil)
-            return event
-        }
-
-        mouseEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
             NotificationCenter.default.post(name: .workspaceInteracted, object: nil)
             return event
         }
