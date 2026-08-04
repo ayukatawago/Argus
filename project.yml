@@ -41,6 +41,11 @@ targets:
       - path: Sources/GhosttyBridge
         excludes:
           - "**/*.md"
+      # Bundled into Contents/Resources so the CLI ships with the app itself
+      # (no git checkout required) and is ready for a future Homebrew cask's
+      # `binary` stanza to symlink onto PATH — see script/argus.
+      - path: script/argus
+        buildPhase: resources
     dependencies:
       - package: libghostty-spm
         product: GhosttyTerminal
