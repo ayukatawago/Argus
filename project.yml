@@ -46,6 +46,14 @@ targets:
       # `binary` stanza to symlink onto PATH — see script/argus.
       - path: script/argus
         buildPhase: resources
+      # Distributable skill sources, so `argus skill install` (script/argus)
+      # can copy them out even when run from an installed .app rather than a
+      # git checkout. `type: folder` preserves the skills/<name>/ nesting as
+      # an Xcode folder reference — a plain source list flattens every file
+      # to the top of Contents/Resources instead.
+      - path: skills
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: libghostty-spm
         product: GhosttyTerminal
