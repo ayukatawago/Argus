@@ -15,6 +15,11 @@ extension Notification.Name {
     static let openSettings = Notification.Name("argus.openSettings")
     static let reloadAgentPane = Notification.Name("argus.reloadAgentPane")
     static let openDiffReview = Notification.Name("argus.openDiffReview")
+    /// Posted by `AppDelegate` for a CLI-originated `argus://diff` request — carries
+    /// `workspace`/`base`/`head` in `userInfo` and, unlike `openDiffReview`, is resolved without
+    /// consulting `WorkspaceStore` (the path is taken as-is, whether or not it's a tracked
+    /// workspace).
+    static let openDiffReviewForPath = Notification.Name("argus.openDiffReviewForPath")
 }
 
 /// Manages a single floating NSWindow running a user-defined command in the active
