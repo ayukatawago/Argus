@@ -20,6 +20,11 @@ Commands:
       any git repo or worktree path — it does not need to already be tracked
       in Argus's sidebar.
 
+  skill install
+      Copy the argus-cli skill (skills/argus-cli) into Claude Code's and
+      Codex's user-scope skill directories (~/.claude/skills,
+      ~/.codex/skills), for whichever of those is present on this machine.
+
   -h, --help
       Show this help.
 EOF
@@ -86,6 +91,55 @@ cmd_diff() {
     open "argus://diff?workspace=$(urlencode "$workspace")&from=$(urlencode "$from")&to=$(urlencode "$to")"
 }
 
+cmd_skill() {
+    if [[ $# -eq 0 || "$1" != "install" ]]; then
+        echo "error: argus skill requires a subcommand (install)" >&2
+        usage >&2
+        exit 1
+    fi
+
+    # This script lives at either <checkout>/script/argus or, bundled inside
+    # the installed app, Argus.app/Contents/Resources/argus — the skill
+    # source sits one level up in the first case, alongside it in the
+    # second (see project.yml's `skills` resource).
+    local script_dir skill_source
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [[ -d "$script_dir/skills/argus-cli" ]]; then
+        skill_source="$script_dir/skills/argus-cli"
+    elif [[ -d "$script_dir/../skills/argus-cli" ]]; then
+        skill_source="$script_dir/../skills/argus-cli"
+    else
+        echo "error: couldn't find the argus-cli skill source next to $0" >&2
+        exit 1
+    fi
+
+    local installed_any=0
+    if [[ -d "$HOME/.claude" ]]; then
+        install_skill_into "$skill_source" "$HOME/.claude/skills/argus-cli" "Claude Code"
+        installed_any=1
+    fi
+    if [[ -d "$HOME/.codex" ]]; then
+        install_skill_into "$skill_source" "$HOME/.codex/skills/argus-cli" "Codex"
+        installed_any=1
+    fi
+
+    if [[ "$installed_any" -eq 0 ]]; then
+        echo "error: neither ~/.claude nor ~/.codex was found — nothing to install into" >&2
+        exit 1
+    fi
+}
+
+# Overwrites $dest with a fresh copy of $source, so re-running install
+# always picks up the latest skill content instead of silently keeping a
+# stale one.
+install_skill_into() {
+    local source="$1" dest="$2" label="$3"
+    mkdir -p "$(dirname "$dest")"
+    rm -rf "$dest"
+    cp -R "$source" "$dest"
+    echo "Installed argus-cli skill for $label at $dest"
+}
+
 main() {
     if [[ $# -eq 0 ]]; then
         usage >&2
@@ -96,6 +150,10 @@ main() {
         diff)
             shift
             cmd_diff "$@"
+            ;;
+        skill)
+            shift
+            cmd_skill "$@"
             ;;
         -h | --help)
             usage
