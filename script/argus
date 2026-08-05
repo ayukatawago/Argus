@@ -21,7 +21,7 @@ Commands:
       in Argus's sidebar.
 
   skill install
-      Copy the argus-cli skill (skills/argus-cli) into Claude Code's and
+      Copy the argus-diff skill (skills/argus-diff) into Claude Code's and
       Codex's user-scope skill directories (~/.claude/skills,
       ~/.codex/skills), for whichever of those is present on this machine.
 
@@ -104,22 +104,22 @@ cmd_skill() {
     # second (see project.yml's `skills` resource).
     local script_dir skill_source
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    if [[ -d "$script_dir/skills/argus-cli" ]]; then
-        skill_source="$script_dir/skills/argus-cli"
-    elif [[ -d "$script_dir/../skills/argus-cli" ]]; then
-        skill_source="$script_dir/../skills/argus-cli"
+    if [[ -d "$script_dir/skills/argus-diff" ]]; then
+        skill_source="$script_dir/skills/argus-diff"
+    elif [[ -d "$script_dir/../skills/argus-diff" ]]; then
+        skill_source="$script_dir/../skills/argus-diff"
     else
-        echo "error: couldn't find the argus-cli skill source next to $0" >&2
+        echo "error: couldn't find the argus-diff skill source next to $0" >&2
         exit 1
     fi
 
     local installed_any=0
     if [[ -d "$HOME/.claude" ]]; then
-        install_skill_into "$skill_source" "$HOME/.claude/skills/argus-cli" "Claude Code"
+        install_skill_into "$skill_source" "$HOME/.claude/skills/argus-diff" "Claude Code"
         installed_any=1
     fi
     if [[ -d "$HOME/.codex" ]]; then
-        install_skill_into "$skill_source" "$HOME/.codex/skills/argus-cli" "Codex"
+        install_skill_into "$skill_source" "$HOME/.codex/skills/argus-diff" "Codex"
         installed_any=1
     fi
 
@@ -137,7 +137,7 @@ install_skill_into() {
     mkdir -p "$(dirname "$dest")"
     rm -rf "$dest"
     cp -R "$source" "$dest"
-    echo "Installed argus-cli skill for $label at $dest"
+    echo "Installed argus-diff skill for $label at $dest"
 }
 
 main() {
