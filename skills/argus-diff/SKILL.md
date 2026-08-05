@@ -1,5 +1,5 @@
 ---
-name: argus-cli
+name: argus-diff
 description: This skill should be used when the user asks to "review this diff in Argus", "open the diff in Argus", "show this in Argus's diff review", "compare <branch> to <branch> in Argus", or otherwise wants to open Argus's side-by-side diff-review popup for a git repo/worktree from the command line via the `argus` CLI. Requires the `argus` CLI (from https://github.com/ayukatawago/argus) to be installed; macOS only.
 ---
 
