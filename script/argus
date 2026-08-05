@@ -30,6 +30,21 @@ Commands:
 EOF
 }
 
+# Resolves the real directory this script lives in, following symlinks —
+# `${BASH_SOURCE[0]}` alone reports the symlink's own path (e.g.
+# /opt/homebrew/bin/argus), not its target, and macOS's BSD `readlink`
+# lacks GNU's `-f` to do this in one call.
+resolve_script_dir() {
+    local source="${BASH_SOURCE[0]}"
+    while [[ -L "$source" ]]; do
+        local dir
+        dir="$(cd -P "$(dirname "$source")" && pwd)"
+        source="$(readlink "$source")"
+        [[ "$source" != /* ]] && source="$dir/$source"
+    done
+    cd -P "$(dirname "$source")" && pwd
+}
+
 # Percent-encodes a string for use in a URL query value. Pure bash (no jq/
 # python3 dependency); ASCII-scoped, which covers filesystem paths and git
 # refs in practice.
@@ -103,7 +118,7 @@ cmd_skill() {
     # source sits one level up in the first case, alongside it in the
     # second (see project.yml's `skills` resource).
     local script_dir skill_source
-    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    script_dir="$(resolve_script_dir)"
     if [[ -d "$script_dir/skills/argus-diff" ]]; then
         skill_source="$script_dir/skills/argus-diff"
     elif [[ -d "$script_dir/../skills/argus-diff" ]]; then
