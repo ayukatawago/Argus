@@ -1,4 +1,5 @@
 import AppKit
+import ArgusConfigKit
 import GhosttyTerminal
 
 /// The terminal role a pane serves within a worktree.

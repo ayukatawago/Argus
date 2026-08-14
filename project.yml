@@ -47,9 +47,6 @@ targets:
       - path: Sources/AgentState
         excludes:
           - "**/*.md"
-      - path: Sources/Config
-        excludes:
-          - "**/*.md"
     dependencies:
       - package: libghostty-spm
         product: GhosttyTerminal
@@ -57,6 +54,8 @@ targets:
         product: DiffReviewKit
       - package: ArgusCore
         product: ArgusSupport
+      - package: ArgusCore
+        product: ArgusConfigKit
       - sdk: WebKit.framework
     settings:
       base:

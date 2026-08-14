@@ -1,4 +1,5 @@
 import AppKit
+import ArgusConfigKit
 import SwiftUI
 
 struct WorktreeContentView: View {

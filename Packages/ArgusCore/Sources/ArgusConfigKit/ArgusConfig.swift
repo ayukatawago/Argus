@@ -10,13 +10,13 @@ private struct RawStringKey: CodingKey {
     init?(intValue: Int) { nil }
 }
 
-enum AgentSelection: String, Codable, CaseIterable, Identifiable {
+public enum AgentSelection: String, Codable, CaseIterable, Identifiable, Sendable {
     case claude
     case codex
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .claude: "Claude Code"
         case .codex: "Codex"
@@ -24,14 +24,14 @@ enum AgentSelection: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-enum WindowLayout: String, Codable, CaseIterable, Identifiable {
+public enum WindowLayout: String, Codable, CaseIterable, Identifiable, Sendable {
     case terminalAgent
     case agentsOverTerminal
     case terminalClaudeCodex
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .terminalAgent: "Terminal + Agent"
         case .agentsOverTerminal: "Agents / Terminal"
@@ -39,7 +39,7 @@ enum WindowLayout: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    var toolbarIcon: String {
+    public var toolbarIcon: String {
         switch self {
         case .terminalAgent: "rectangle.split.2x1"
         case .agentsOverTerminal: "rectangle.split.1x2"
@@ -48,25 +48,25 @@ enum WindowLayout: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct ArgusConfig: Codable, Equatable {
-    var leaderKey = "ctrl+b"
-    var leaderTimeoutSeconds = 1.5
-    var keyBindings = KeyBindings()
-    var agent: AgentSelection = .claude
-    var layout: WindowLayout = .terminalAgent
-    var claudeCommand: String = "claude --continue"
-    var codexCommand: String = "codex resume --last"
-    var diskMonitor = DiskMonitor()
-    var github = GitHub()
-    var environmentVariables: [String: String] = [:]
-    var popupShortcuts: [PopupShortcut] = [.lazygitDefault]
+public struct ArgusConfig: Codable, Equatable, Sendable {
+    public var leaderKey = "ctrl+b"
+    public var leaderTimeoutSeconds = 1.5
+    public var keyBindings = KeyBindings()
+    public var agent: AgentSelection = .claude
+    public var layout: WindowLayout = .terminalAgent
+    public var claudeCommand: String = "claude --continue"
+    public var codexCommand: String = "codex resume --last"
+    public var diskMonitor = DiskMonitor()
+    public var github = GitHub()
+    public var environmentVariables: [String: String] = [:]
+    public var popupShortcuts: [PopupShortcut] = [.lazygitDefault]
 
     // Needed because we declare a custom init(from:).
-    init() {}
+    public init() {}
 
     // Use decodeIfPresent for every field so that keys added or renamed in future
     // versions never cause the whole config to silently fall back to defaults.
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         leaderKey = (try? container.decodeIfPresent(String.self, forKey: .leaderKey)) ?? "ctrl+b"
         leaderTimeoutSeconds = (try? container.decodeIfPresent(Double.self, forKey: .leaderTimeoutSeconds)) ?? 1.5
@@ -88,32 +88,32 @@ struct ArgusConfig: Codable, Equatable {
         case claudeCommand, codexCommand, diskMonitor, github, environmentVariables, popupShortcuts
     }
 
-    func launchCommand(for selection: AgentSelection) -> String {
+    public func launchCommand(for selection: AgentSelection) -> String {
         switch selection {
         case .claude: claudeCommand
         case .codex: codexCommand
         }
     }
 
-    struct KeyBindings: Codable, Equatable {
-        var focusPaneLeft: String = "h"
-        var focusPaneRight: String = "l"
-        var selectNextWorktree: String = "n"
-        var selectPreviousWorktree: String = "p"
-        var openNvim: String = "v"
-        var refreshWorkspace: String = "r"
-        var openMarkdownPreview: String = "m"
-        var openSettings: String = ","
-        var reloadAgentPane: String = "a"
-        var openDiskStatus: String = "d"
-        var openDiffReview: String = "w"
+    public struct KeyBindings: Codable, Equatable, Sendable {
+        public var focusPaneLeft: String = "h"
+        public var focusPaneRight: String = "l"
+        public var selectNextWorktree: String = "n"
+        public var selectPreviousWorktree: String = "p"
+        public var openNvim: String = "v"
+        public var refreshWorkspace: String = "r"
+        public var openMarkdownPreview: String = "m"
+        public var openSettings: String = ","
+        public var reloadAgentPane: String = "a"
+        public var openDiskStatus: String = "d"
+        public var openDiffReview: String = "w"
 
         // Memberwise init needed because we declare a custom init(from:).
-        init() {}
+        public init() {}
 
         // Decode using decodeIfPresent so that missing or renamed keys use Swift defaults
         // rather than failing the entire config load. Legacy key names are tried as fallbacks.
-        init(from decoder: Decoder) throws {
+        public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: RawStringKey.self)
             func read(_ key: String, legacy: String? = nil, default dflt: String) -> String {
                 if let value = try? container.decodeIfPresent(String.self, forKey: RawStringKey(key)) {
@@ -140,14 +140,22 @@ struct ArgusConfig: Codable, Equatable {
         }
     }
 
-    struct PopupShortcut: Codable, Equatable, Identifiable {
-        var id: String
-        var name: String
-        var key: String
-        var command: String
-        var sizePercent: Int
+    public struct PopupShortcut: Codable, Equatable, Identifiable, Sendable {
+        public var id: String
+        public var name: String
+        public var key: String
+        public var command: String
+        public var sizePercent: Int
 
-        static let lazygitDefault = PopupShortcut(
+        public init(id: String, name: String, key: String, command: String, sizePercent: Int) {
+            self.id = id
+            self.name = name
+            self.key = key
+            self.command = command
+            self.sizePercent = sizePercent
+        }
+
+        public static let lazygitDefault = PopupShortcut(
             id: "lazygit",
             name: "lazygit",
             key: "g",
@@ -156,24 +164,28 @@ struct ArgusConfig: Codable, Equatable {
         )
     }
 
-    struct DiskMonitor: Codable, Equatable {
-        var checkIntervalSeconds: Double = 60
-        var alertThresholdPercent: Double = 5.0
-        var sizeCheckIntervalSeconds: Double = 1800
+    public struct DiskMonitor: Codable, Equatable, Sendable {
+        public var checkIntervalSeconds: Double = 60
+        public var alertThresholdPercent: Double = 5.0
+        public var sizeCheckIntervalSeconds: Double = 1800
+
+        public init() {}
     }
 
-    struct GitHub: Codable, Equatable {
-        var apiBaseURL: String = "https://api.github.com"
-        var token: String = ""
-        var refreshIntervalSeconds: Double = 300
+    public struct GitHub: Codable, Equatable, Sendable {
+        public var apiBaseURL: String = "https://api.github.com"
+        public var token: String = ""
+        public var refreshIntervalSeconds: Double = 300
+
+        public init() {}
     }
 }
 
 @MainActor
-final class ArgusConfigStore: ObservableObject {
-    static let shared = ArgusConfigStore()
+public final class ArgusConfigStore: ObservableObject {
+    public static let shared = ArgusConfigStore()
 
-    @Published var config = ArgusConfig()
+    @Published public var config = ArgusConfig()
 
     private static var configURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -184,14 +196,14 @@ final class ArgusConfigStore: ObservableObject {
         load()
     }
 
-    func load() {
+    public func load() {
         guard let data = try? Data(contentsOf: Self.configURL),
             let decoded = try? JSONDecoder().decode(ArgusConfig.self, from: data)
         else { return }
         config = decoded
     }
 
-    func save() {
+    public func save() {
         let url = Self.configURL
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
