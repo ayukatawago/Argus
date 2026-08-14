@@ -104,7 +104,9 @@ public final class WorkspaceStore: ObservableObject {
         let discovered = await Task.detached(priority: .userInitiated) { () async -> [GitRepo] in
             var result: [GitRepo] = []
             for root in currentRoots {
-                result.append(contentsOf: await Self.findRepos(under: root, excluding: currentExcluded))
+                result.append(
+                    contentsOf: await RepoScanner.findRepos(
+                        under: root, excluding: currentExcluded, worktreeLister: Self.fetchWorktrees))
             }
             return result
         }.value
@@ -153,40 +155,6 @@ public final class WorkspaceStore: ObservableObject {
             return [workspace]
         }
         return [home]
-    }
-
-    private nonisolated static func findRepos(under root: String, excluding: Set<String>) async -> [GitRepo] {
-        let files = FileManager.default
-
-        var isGitDir: ObjCBool = false
-        files.fileExists(atPath: root + "/.git", isDirectory: &isGitDir)
-        if isGitDir.boolValue {
-            guard !excluding.contains(root) else { return [] }
-            let worktrees = await fetchWorktrees(repoPath: root)
-            guard !worktrees.isEmpty else { return [] }
-            let name = URL(fileURLWithPath: root).lastPathComponent
-            return [GitRepo(name: name, mainPath: root, worktrees: worktrees)]
-        }
-
-        guard let entries = try? files.contentsOfDirectory(atPath: root) else { return [] }
-        var found: [GitRepo] = []
-        for name in entries.sorted() {
-            let path = root + "/" + name
-            guard !excluding.contains(path) else { continue }
-            var isDir: ObjCBool = false
-            files.fileExists(atPath: path + "/.git", isDirectory: &isDir)
-            guard isDir.boolValue else { continue }
-            let worktrees = await fetchWorktrees(repoPath: path)
-            guard !worktrees.isEmpty else { continue }
-            found.append(GitRepo(name: name, mainPath: path, worktrees: worktrees))
-        }
-        if found.isEmpty {
-            guard !excluding.contains(root) else { return [] }
-            let name = URL(fileURLWithPath: root).lastPathComponent
-            let worktree = GitWorktree(path: root, branch: nil, isMain: true)
-            return [GitRepo(name: name, mainPath: root, worktrees: [worktree], isGitRepo: false)]
-        }
-        return found
     }
 
     private nonisolated static func fetchWorktrees(repoPath: String) async -> [GitWorktree] {
