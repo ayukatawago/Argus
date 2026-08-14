@@ -197,21 +197,10 @@ public final class ArgusConfigStore: ObservableObject {
     }
 
     public func load() {
-        guard let data = try? Data(contentsOf: Self.configURL),
-            let decoded = try? JSONDecoder().decode(ArgusConfig.self, from: data)
-        else { return }
-        config = decoded
+        config = ArgusConfigFile.load(from: Self.configURL)
     }
 
     public func save() {
-        let url = Self.configURL
-        try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(config) else { return }
-        try? data.write(to: url, options: .atomic)
+        ArgusConfigFile.save(config, to: Self.configURL)
     }
 }
