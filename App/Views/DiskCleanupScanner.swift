@@ -277,9 +277,7 @@ final class DiskCleanupScanner: ObservableObject {
 
     private static nonisolated func measureDiskUsage(at url: URL) async -> Int64 {
         let result = await ProcessRunner.run("/usr/bin/du", ["-sk", url.path])
-        let parts = result.standardOutput.components(separatedBy: "\t")
-        let kilobytes = Int64(parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "0") ?? 0
-        return kilobytes * 1_024
+        return DiskUsageParser.bytes(fromDuOutput: result.standardOutput)
     }
 
     private func recycleToTrash(_ url: URL) async {
