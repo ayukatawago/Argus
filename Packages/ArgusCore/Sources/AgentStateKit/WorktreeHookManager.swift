@@ -10,17 +10,6 @@ public enum WorktreeHookManager {
         public var errorDescription: String? { "Cannot locate Application Support directory." }
     }
 
-    private struct HookPaths {
-        let running: URL
-        let done: URL
-        let approval: URL
-        let userPrompt: URL
-        let preCompact: URL
-        let postCompact: URL
-        let postToolUse: URL
-        let sessionEnd: URL
-    }
-
     public static var isFishShell: Bool {
         LoginShell.current.hasSuffix("/fish")
     }
@@ -31,7 +20,7 @@ public enum WorktreeHookManager {
         installFishHooksIfNeeded()
         let hooksDir = try argusHooksDir()
         let eventLogPath = HookIPC.eventLogPath
-        let paths = HookPaths(
+        let paths = ClaudeHookPaths(
             running: hooksDir.appendingPathComponent("claude-running.sh"),
             done: hooksDir.appendingPathComponent("claude-done.sh"),
             approval: hooksDir.appendingPathComponent("claude-waiting-approval.sh"),
@@ -90,13 +79,13 @@ public enum WorktreeHookManager {
 
     // MARK: - .claude/settings.local.json
 
-    private static func patchLocalSettings(worktreePath: String, paths: HookPaths) throws {
+    private static func patchLocalSettings(worktreePath: String, paths: ClaudeHookPaths) throws {
         let claudeDir = URL(fileURLWithPath: worktreePath).appendingPathComponent(".claude")
         try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
         let settingsURL = claudeDir.appendingPathComponent("settings.local.json")
-        var settings = loadSettings(at: settingsURL)
-        settings["hooks"] = mergedHooks(in: settings, paths: paths)
-        try saveSettings(settings, to: settingsURL)
+        let settings = loadSettings(at: settingsURL)
+        let merged = ClaudeSettingsPatcher.merged(into: settings, paths: paths)
+        try saveSettings(merged, to: settingsURL)
     }
 
     private static func loadSettings(at url: URL) -> [String: Any] {
@@ -104,70 +93,6 @@ public enum WorktreeHookManager {
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return [:] }
         return obj
-    }
-
-    private static func mergedHooks(in settings: [String: Any], paths: HookPaths) -> [String: Any] {
-        var hooks = settings["hooks"] as? [String: Any] ?? [:]
-        hooks["PreToolUse"] = upsertArgusEntry(
-            in: hooks["PreToolUse"] as? [[String: Any]] ?? [],
-            entry: ["matcher": ".*", "hooks": [["type": "command", "command": quoted(paths.running.path)]]]
-        )
-        // Stop is a session-level event; "matcher": "" is required even though it's unused.
-        hooks["Stop"] = upsertArgusEntry(
-            in: hooks["Stop"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.done.path)]]]
-        )
-        // StopFailure fires when the turn ends due to an API error — Stop does not fire in this case.
-        hooks["StopFailure"] = upsertArgusEntry(
-            in: hooks["StopFailure"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.done.path)]]]
-        )
-        // PreCompact fires when /compact begins — show running indicator during compaction.
-        hooks["PreCompact"] = upsertArgusEntry(
-            in: hooks["PreCompact"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.preCompact.path)]]]
-        )
-        // PostCompact fires after /compact finishes — Stop does not fire in this case.
-        hooks["PostCompact"] = upsertArgusEntry(
-            in: hooks["PostCompact"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.postCompact.path)]]]
-        )
-        // PermissionRequest fires when Claude Code shows an approval dialog (blocking).
-        hooks["PermissionRequest"] = upsertArgusEntry(
-            in: hooks["PermissionRequest"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.approval.path)]]]
-        )
-        // UserPromptSubmit fires when the user sends a message — transitions to running
-        // before PreToolUse so the done/approval indicator clears immediately on reply.
-        hooks["UserPromptSubmit"] = upsertArgusEntry(
-            in: hooks["UserPromptSubmit"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.userPrompt.path)]]]
-        )
-        // PostToolUse refreshes the "running" timestamp so tools that take > 3 min don't
-        // trip the staleness monitor that handles missing Stop events on Escape interrupt.
-        hooks["PostToolUse"] = upsertArgusEntry(
-            in: hooks["PostToolUse"] as? [[String: Any]] ?? [],
-            entry: ["matcher": ".*", "hooks": [["type": "command", "command": quoted(paths.postToolUse.path)]]]
-        )
-        // SessionEnd fires when the claude session terminates (/exit, window close, etc.).
-        hooks["SessionEnd"] = upsertArgusEntry(
-            in: hooks["SessionEnd"] as? [[String: Any]] ?? [],
-            entry: ["matcher": "", "hooks": [["type": "command", "command": quoted(paths.sessionEnd.path)]]]
-        )
-        return hooks
-    }
-
-    private static func quoted(_ path: String) -> String { "\"\(path)\"" }
-
-    private static func upsertArgusEntry(
-        in existing: [[String: Any]],
-        entry: [String: Any]
-    ) -> [[String: Any]] {
-        let filtered = existing.filter { item in
-            guard let hooksList = item["hooks"] as? [[String: Any]] else { return true }
-            return !hooksList.contains { ($0["command"] as? String)?.contains("/argus/hooks/") == true }
-        }
-        return filtered + [entry]
     }
 
     private static func saveSettings(_ settings: [String: Any], to url: URL) throws {
