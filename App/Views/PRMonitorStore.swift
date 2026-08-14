@@ -53,6 +53,8 @@ struct GitHubPR: Decodable, Identifiable {
     var repoName: String { repositoryURL.lastPathComponent }
 }
 
+extension GitHubPR: CategorizablePullRequest {}
+
 private struct GitHubAuthUser: Decodable {
     let login: String
 }
@@ -181,7 +183,6 @@ final class PRMonitorStore: ObservableObject {
         async let authored = searchPRs(query: "is:pr+is:open+author:\(username)", config: config)
         async let assigned = searchPRs(query: "is:pr+is:open+assignee:\(username)", config: config)
         let (authoredPRs, assignedPRs) = try await (authored, assigned)
-        let dontMerge = "!!! DONT' MERGE !!!"
 
         var seen = Set<Int>()
         let allPRs = (authoredPRs + assignedPRs).filter { seen.insert($0.id).inserted }
@@ -192,24 +193,19 @@ final class PRMonitorStore: ObservableObject {
                 var copy = pullRequest
                 copy.baseBranch = enrichments[pullRequest.id]?.baseBranch
                 copy.approvedBy = enrichments[pullRequest.id]?.approvedBy ?? []
-                copy.approvedByMe = copy.approvedBy.contains(username)
                 return copy
             }
         }
 
-        let enrichedAuthored = enrich(authoredPRs)
-        let enrichedAssigned = enrich(assignedPRs)
-        let notDNM = { (pullRequest: GitHubPR) in !pullRequest.labelNames.contains(dontMerge) }
-
-        myOpenPRs = enrichedAuthored.filter { !$0.draft && notDNM($0) }
-        myDraftPRs = enrichedAuthored.filter { $0.draft && notDNM($0) }
-        let authoredIDs = Set(enrichedAuthored.map(\.id))
-        reviewRequestedPRs = enrichedAssigned.filter {
-            !authoredIDs.contains($0.id) && notDNM($0)
-        }
-        var dnmSeen = Set<Int>()
-        doNotMergePRs = enrich(allPRs)
-            .filter { $0.labelNames.contains(dontMerge) && dnmSeen.insert($0.id).inserted }
+        let categorized = PRCategorizer.categorize(
+            authored: enrich(authoredPRs),
+            assigned: enrich(assignedPRs),
+            username: username
+        )
+        myOpenPRs = categorized.myOpenPRs
+        myDraftPRs = categorized.myDraftPRs
+        reviewRequestedPRs = categorized.reviewRequestedPRs
+        doNotMergePRs = categorized.doNotMergePRs
         updateHighlights(trackable: myOpenPRs + reviewRequestedPRs)
     }
 
