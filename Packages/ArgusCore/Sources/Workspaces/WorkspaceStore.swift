@@ -91,12 +91,8 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public func moveRepo(fromIndex: Int, toIndex: Int) {
-        guard fromIndex != toIndex, repos.indices.contains(fromIndex), repos.indices.contains(toIndex) else { return }
+        guard let order = RepoOrdering.move(fromIndex: fromIndex, toIndex: toIndex, in: repos) else { return }
         let snapshot = repos
-        var order = snapshot.map(\.mainPath)
-        let item = order.remove(at: fromIndex)
-        let insertAt = fromIndex < toIndex ? toIndex - 1 : toIndex
-        order.insert(item, at: insertAt)
         repoOrder = order
         repos = order.compactMap { path in snapshot.first(where: { $0.mainPath == path }) }
         saveConfig()
@@ -116,12 +112,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     private func applyOrder(_ discovered: [GitRepo]) -> [GitRepo] {
-        guard !repoOrder.isEmpty else { return discovered }
-        let byPath = discovered.reduce(into: [String: GitRepo]()) { $0[$1.mainPath] = $1 }
-        let ordered = repoOrder.compactMap { byPath[$0] }
-        let known = Set(repoOrder)
-        let appended = discovered.filter { !known.contains($0.mainPath) }
-        return ordered + appended
+        RepoOrdering.apply(order: repoOrder, to: discovered)
     }
 
     private func startWatcher() {
