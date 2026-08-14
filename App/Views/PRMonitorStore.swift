@@ -1,6 +1,7 @@
 import ArgusConfigKit
 import ArgusSupport
 import Foundation
+import Monitors
 
 // MARK: - Models
 
@@ -280,17 +281,10 @@ final class PRMonitorStore: ObservableObject {
     }
 
     private nonisolated static func approvedLogins(from reviews: [GitHubReview]) -> [String] {
-        var latestByLogin: [String: (date: String, state: String)] = [:]
-        for review in reviews {
-            let login = review.user.login
-            if let existing = latestByLogin[login], existing.date >= review.submittedAt {
-                continue
-            }
-            latestByLogin[login] = (review.submittedAt, review.state)
-        }
-        return latestByLogin.compactMap { login, pair in
-            pair.state == "APPROVED" ? login : nil
-        }.sorted()
+        PRApprovalDigest.approvedLogins(
+            from: reviews.map {
+                ReviewSubmission(login: $0.user.login, state: $0.state, submittedAt: $0.submittedAt)
+            })
     }
 
     private nonisolated static func githubFetch<T: Decodable>(url: URL, token: String) async throws -> T {

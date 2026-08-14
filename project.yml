@@ -54,6 +54,8 @@ targets:
         product: AgentStateKit
       - package: ArgusCore
         product: Workspaces
+      - package: ArgusCore
+        product: Monitors
       - sdk: WebKit.framework
     settings:
       base:
