@@ -58,4 +58,16 @@ struct PRApprovalDigestTests {
         ]
         #expect(PRApprovalDigest.approvedLogins(from: reviews) == ["alice"])
     }
+
+    @Test("a tied submittedAt timestamp keeps the first-seen review, not a later duplicate")
+    func tiedTimestampKeepsFirstSeen() {
+        // Locks current behavior: the `>=` comparison (not `>`) means that when two reviews for
+        // the same login carry the identical submittedAt string, the one earlier in the array
+        // wins and any later one at the same timestamp is skipped — not "last one wins".
+        let reviews = [
+            ReviewSubmission(login: "alice", state: "APPROVED", submittedAt: "2026-01-01T00:00:00Z"),
+            ReviewSubmission(login: "alice", state: "CHANGES_REQUESTED", submittedAt: "2026-01-01T00:00:00Z"),
+        ]
+        #expect(PRApprovalDigest.approvedLogins(from: reviews) == ["alice"])
+    }
 }
