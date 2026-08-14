@@ -1,33 +1,48 @@
 import Foundation
 
-struct GitWorktree: Identifiable, Hashable {
-    var id: String { path }
-    let path: String
-    let branch: String?
-    let isMain: Bool
+public struct GitWorktree: Identifiable, Hashable, Sendable {
+    public var id: String { path }
+    public let path: String
+    public let branch: String?
+    public let isMain: Bool
 
-    static func == (lhs: GitWorktree, rhs: GitWorktree) -> Bool { lhs.path == rhs.path }
-    func hash(into hasher: inout Hasher) { hasher.combine(path) }
+    public init(path: String, branch: String?, isMain: Bool) {
+        self.path = path
+        self.branch = branch
+        self.isMain = isMain
+    }
+
+    public static func == (lhs: GitWorktree, rhs: GitWorktree) -> Bool { lhs.path == rhs.path }
+    public func hash(into hasher: inout Hasher) { hasher.combine(path) }
 }
 
-struct GitRepo: Identifiable, Equatable {
-    var id: String { mainPath }
-    let name: String
-    let mainPath: String
-    var worktrees: [GitWorktree]
-    var isGitRepo: Bool = true
+public struct GitRepo: Identifiable, Equatable, Sendable {
+    public var id: String { mainPath }
+    public let name: String
+    public let mainPath: String
+    public var worktrees: [GitWorktree]
+    public var isGitRepo: Bool = true
+
+    public init(name: String, mainPath: String, worktrees: [GitWorktree], isGitRepo: Bool = true) {
+        self.name = name
+        self.mainPath = mainPath
+        self.worktrees = worktrees
+        self.isGitRepo = isGitRepo
+    }
 }
 
 @MainActor
-final class WorkspaceStore: ObservableObject {
-    @Published var repos: [GitRepo] = []
-    @Published var hiddenWorktreeIDs: Set<String> = []
-    private(set) var roots: [String] = []
+public final class WorkspaceStore: ObservableObject {
+    @Published public var repos: [GitRepo] = []
+    @Published public var hiddenWorktreeIDs: Set<String> = []
+    public private(set) var roots: [String] = []
     private var excludedRepoPaths: Set<String> = []
     private var repoOrder: [String] = []
     private var scanner: WorkspaceScanner?
 
-    func load() {
+    public init() {}
+
+    public func load() {
         let stored = Self.loadConfig()
         roots = stored.roots
         hiddenWorktreeIDs = stored.hiddenWorktreeIDs
@@ -37,7 +52,7 @@ final class WorkspaceStore: ObservableObject {
         Task { await refresh() }
     }
 
-    func addRoot(_ path: String) {
+    public func addRoot(_ path: String) {
         guard !roots.contains(path) else { return }
         roots.append(path)
         saveConfig()
@@ -45,14 +60,14 @@ final class WorkspaceStore: ObservableObject {
         Task { await refresh() }
     }
 
-    func removeRoot(_ path: String) {
+    public func removeRoot(_ path: String) {
         roots.removeAll { $0 == path }
         saveConfig()
         startWatcher()
         Task { await refresh() }
     }
 
-    func removeRepo(mainPath: String) {
+    public func removeRepo(mainPath: String) {
         if roots.contains(mainPath) {
             roots.removeAll { $0 == mainPath }
             startWatcher()
@@ -63,18 +78,18 @@ final class WorkspaceStore: ObservableObject {
         Task { await refresh() }
     }
 
-    func hideWorktree(id: String) {
+    public func hideWorktree(id: String) {
         hiddenWorktreeIDs.insert(id)
         saveConfig()
     }
 
-    func unhideWorktrees(repoID: String) {
+    public func unhideWorktrees(repoID: String) {
         guard let repo = repos.first(where: { $0.id == repoID }) else { return }
         repo.worktrees.forEach { hiddenWorktreeIDs.remove($0.id) }
         saveConfig()
     }
 
-    func moveRepo(fromIndex: Int, toIndex: Int) {
+    public func moveRepo(fromIndex: Int, toIndex: Int) {
         guard fromIndex != toIndex, repos.indices.contains(fromIndex), repos.indices.contains(toIndex) else { return }
         let snapshot = repos
         var order = snapshot.map(\.mainPath)
@@ -86,7 +101,7 @@ final class WorkspaceStore: ObservableObject {
         saveConfig()
     }
 
-    func refresh() async {
+    public func refresh() async {
         let currentRoots = roots
         let currentExcluded = excludedRepoPaths
         let discovered = await Task.detached(priority: .userInitiated) {

@@ -8,6 +8,7 @@ let package = Package(
         .library(name: "ArgusSupport", targets: ["ArgusSupport"]),
         .library(name: "ArgusConfigKit", targets: ["ArgusConfigKit"]),
         .library(name: "AgentStateKit", targets: ["AgentStateKit"]),
+        .library(name: "Workspaces", targets: ["Workspaces"]),
     ],
     targets: [
         .target(
@@ -35,6 +36,15 @@ let package = Package(
         .testTarget(
             name: "AgentStateKitTests",
             dependencies: ["AgentStateKit"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "Workspaces",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "WorkspacesTests",
+            dependencies: ["Workspaces"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]

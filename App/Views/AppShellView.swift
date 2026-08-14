@@ -1,6 +1,7 @@
 import AgentStateKit
 import ArgusConfigKit
 import SwiftUI
+import Workspaces
 
 struct AppShellView: View {
     @StateObject private var store = WorkspaceStore()
