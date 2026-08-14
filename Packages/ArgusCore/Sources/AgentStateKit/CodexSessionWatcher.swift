@@ -6,11 +6,13 @@ import Foundation
 /// @unchecked Sendable: all mutable state is @MainActor-protected; the type is passed
 /// into a background task only as a strong let reference used solely via MainActor.run.
 @MainActor
-final class CodexSessionWatcher: @unchecked Sendable {
-    var onPayload: ((HookPayload) -> Void)?
+public final class CodexSessionWatcher: @unchecked Sendable {
+    public var onPayload: ((HookPayload) -> Void)?
     private var pollTask: Task<Void, Never>?
 
-    func start() {
+    public init() {}
+
+    public func start() {
         pollTask = Task.detached(priority: .utility) { [weak self] in
             guard let watcher = self else { return }
             await Self.pollSessions { payload in
@@ -19,7 +21,7 @@ final class CodexSessionWatcher: @unchecked Sendable {
         }
     }
 
-    func stop() {
+    public func stop() {
         pollTask?.cancel()
         pollTask = nil
     }

@@ -1,3 +1,4 @@
+import AgentStateKit
 import AppKit
 import GhosttyTerminal
 import SwiftUI

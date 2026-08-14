@@ -3,10 +3,10 @@ import Foundation
 /// Writes hook scripts to App Support and wires them into a worktree's
 /// .claude/settings.local.json automatically when a pane is first opened.
 /// The file is gitignored by default, so no repo pollution.
-enum WorktreeHookManager {
-    enum Failure: Error, LocalizedError {
+public enum WorktreeHookManager {
+    public enum Failure: Error, LocalizedError {
         case noAppSupport
-        var errorDescription: String? { "Cannot locate Application Support directory." }
+        public var errorDescription: String? { "Cannot locate Application Support directory." }
     }
 
     private struct HookPaths {
@@ -20,7 +20,7 @@ enum WorktreeHookManager {
         let sessionEnd: URL
     }
 
-    static var isFishShell: Bool {
+    public static var isFishShell: Bool {
         loginShell().hasSuffix("/fish")
     }
 
@@ -45,7 +45,7 @@ enum WorktreeHookManager {
 
     /// Idempotent: writes the shared hook scripts once and merges argus's hook
     /// entries into the worktree's .claude/settings.local.json.
-    static func install(worktreePath: String) throws {
+    public static func install(worktreePath: String) throws {
         installFishHooksIfNeeded()
         let hooksDir = try argusHooksDir()
         let eventLogPath = HookIPC.eventLogPath

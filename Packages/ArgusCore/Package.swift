@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .library(name: "ArgusSupport", targets: ["ArgusSupport"]),
         .library(name: "ArgusConfigKit", targets: ["ArgusConfigKit"]),
+        .library(name: "AgentStateKit", targets: ["AgentStateKit"]),
     ],
     targets: [
         .target(
@@ -25,6 +26,15 @@ let package = Package(
         .testTarget(
             name: "ArgusConfigKitTests",
             dependencies: ["ArgusConfigKit"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .target(
+            name: "AgentStateKit",
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "AgentStateKitTests",
+            dependencies: ["AgentStateKit"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]
