@@ -1,5 +1,6 @@
 import AppKit
 import ArgusConfigKit
+import ArgusSupport
 import Foundation
 
 struct CleanupCandidate: Identifiable {
@@ -269,26 +270,10 @@ final class DiskCleanupScanner: ObservableObject {
     }
 
     private static nonisolated func measureDiskUsage(at url: URL) async -> Int64 {
-        await withCheckedContinuation { continuation in
-            let task = Process()
-            let pipe = Pipe()
-            task.launchPath = "/usr/bin/du"
-            task.arguments = ["-sk", url.path]
-            task.standardOutput = pipe
-            task.standardError = Pipe()
-            task.terminationHandler = { _ in
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                let output = String(data: data, encoding: .utf8) ?? ""
-                let parts = output.components(separatedBy: "\t")
-                let kilobytes = Int64(parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "0") ?? 0
-                continuation.resume(returning: kilobytes * 1_024)
-            }
-            do {
-                try task.run()
-            } catch {
-                continuation.resume(returning: 0)
-            }
-        }
+        let result = await ProcessRunner.run("/usr/bin/du", ["-sk", url.path])
+        let parts = result.standardOutput.components(separatedBy: "\t")
+        let kilobytes = Int64(parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "0") ?? 0
+        return kilobytes * 1_024
     }
 
     private func recycleToTrash(_ url: URL) async {
