@@ -1,3 +1,4 @@
+import ArgusSupport
 import Foundation
 
 public struct GitWorktree: Identifiable, Hashable, Sendable {
@@ -104,8 +105,12 @@ public final class WorkspaceStore: ObservableObject {
     public func refresh() async {
         let currentRoots = roots
         let currentExcluded = excludedRepoPaths
-        let discovered = await Task.detached(priority: .userInitiated) {
-            currentRoots.flatMap { Self.findRepos(under: $0, excluding: currentExcluded) }
+        let discovered = await Task.detached(priority: .userInitiated) { () async -> [GitRepo] in
+            var result: [GitRepo] = []
+            for root in currentRoots {
+                result.append(contentsOf: await Self.findRepos(under: root, excluding: currentExcluded))
+            }
+            return result
         }.value
         repos = applyOrder(discovered)
     }
@@ -197,29 +202,30 @@ public final class WorkspaceStore: ObservableObject {
         return [home]
     }
 
-    private nonisolated static func findRepos(under root: String, excluding: Set<String>) -> [GitRepo] {
+    private nonisolated static func findRepos(under root: String, excluding: Set<String>) async -> [GitRepo] {
         let files = FileManager.default
 
         var isGitDir: ObjCBool = false
         files.fileExists(atPath: root + "/.git", isDirectory: &isGitDir)
         if isGitDir.boolValue {
             guard !excluding.contains(root) else { return [] }
-            let worktrees = fetchWorktrees(repoPath: root)
+            let worktrees = await fetchWorktrees(repoPath: root)
             guard !worktrees.isEmpty else { return [] }
             let name = URL(fileURLWithPath: root).lastPathComponent
             return [GitRepo(name: name, mainPath: root, worktrees: worktrees)]
         }
 
         guard let entries = try? files.contentsOfDirectory(atPath: root) else { return [] }
-        let found = entries.sorted().compactMap { name -> GitRepo? in
+        var found: [GitRepo] = []
+        for name in entries.sorted() {
             let path = root + "/" + name
-            guard !excluding.contains(path) else { return nil }
+            guard !excluding.contains(path) else { continue }
             var isDir: ObjCBool = false
             files.fileExists(atPath: path + "/.git", isDirectory: &isDir)
-            guard isDir.boolValue else { return nil }
-            let worktrees = fetchWorktrees(repoPath: path)
-            guard !worktrees.isEmpty else { return nil }
-            return GitRepo(name: name, mainPath: path, worktrees: worktrees)
+            guard isDir.boolValue else { continue }
+            let worktrees = await fetchWorktrees(repoPath: path)
+            guard !worktrees.isEmpty else { continue }
+            found.append(GitRepo(name: name, mainPath: path, worktrees: worktrees))
         }
         if found.isEmpty {
             guard !excluding.contains(root) else { return [] }
@@ -230,12 +236,12 @@ public final class WorkspaceStore: ObservableObject {
         return found
     }
 
-    private nonisolated static func fetchWorktrees(repoPath: String) -> [GitWorktree] {
-        let (output, code) = runGit("-C", repoPath, "worktree", "list", "--porcelain")
-        if code != 0 {
+    private nonisolated static func fetchWorktrees(repoPath: String) async -> [GitWorktree] {
+        let result = await ProcessRunner.run("/usr/bin/git", ["-C", repoPath, "worktree", "list", "--porcelain"])
+        guard result.succeeded else {
             return [GitWorktree(path: repoPath, branch: nil, isMain: true)]
         }
-        return parseWorktreeOutput(output)
+        return parseWorktreeOutput(result.standardOutput)
     }
 
     private nonisolated static func parseWorktreeOutput(_ output: String) -> [GitWorktree] {
@@ -260,16 +266,4 @@ public final class WorkspaceStore: ObservableObject {
         }
     }
 
-    private nonisolated static func runGit(_ args: String...) -> (String, Int32) {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        proc.arguments = Array(args)
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = Pipe()
-        guard (try? proc.run()) != nil else { return ("", -1) }
-        proc.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return (String(data: data, encoding: .utf8) ?? "", proc.terminationStatus)
-    }
 }
