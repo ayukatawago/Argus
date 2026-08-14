@@ -241,29 +241,6 @@ public final class WorkspaceStore: ObservableObject {
         guard result.succeeded else {
             return [GitWorktree(path: repoPath, branch: nil, isMain: true)]
         }
-        return parseWorktreeOutput(result.standardOutput)
+        return WorktreeListParser.parse(result.standardOutput)
     }
-
-    private nonisolated static func parseWorktreeOutput(_ output: String) -> [GitWorktree] {
-        let blocks = output.components(separatedBy: "\n\n")
-        return blocks.enumerated().compactMap { index, block -> GitWorktree? in
-            var path: String?
-            var branch: String?
-            var isDetached = false
-            for line in block.components(separatedBy: "\n") {
-                if line.hasPrefix("worktree ") {
-                    path = String(line.dropFirst("worktree ".count))
-                } else if line.hasPrefix("branch ") {
-                    branch =
-                        String(line.dropFirst("branch ".count))
-                        .components(separatedBy: "/").last
-                } else if line == "detached" {
-                    isDetached = true
-                }
-            }
-            guard let wtPath = path, !wtPath.isEmpty else { return nil }
-            return GitWorktree(path: wtPath, branch: isDetached ? nil : branch, isMain: index == 0)
-        }
-    }
-
 }
