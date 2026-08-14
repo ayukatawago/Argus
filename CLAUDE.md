@@ -42,26 +42,34 @@ arbitrary shell like Terminal.app/iTerm2, so macOS expects that grant rather tha
 ## Module layout
 
 ```
-Sources/
-  AgentState/       Foundation only — agent state enum, IPC bus, hook manager
-  Config/           Foundation only — ArgusConfig struct, ArgusConfigStore, AgentSelection/WindowLayout enums
-  GhosttyBridge/    GhosttyKit (C lib) + Foundation — PTY, terminal surface, URL-open
-  Workspaces/       Foundation only — git repo/worktree scanning and store
 Packages/
-  DiffReviewKit/    SPM package (macOS 14+, Swift 6) — side-by-side diff review UI + headless agent runner
+  ArgusCore/        local SPM package (macOS 14+, Swift 6) — testable logic, no AppKit/SwiftUI
+    ArgusSupport/     Foundation only — ProcessRunner, LoginShell, JSONLTailer, PollingTask,
+                       TmuxSessionName, CanvasLayout
+    ArgusConfigKit/   Foundation only — ArgusConfig struct, ArgusConfigStore, AgentSelection/
+                       WindowLayout/PaneRole enums, LeaderKey, PaneLayoutResolver
+    AgentStateKit/    Foundation only — agent state enum, IPC bus, hook manager,
+                       ClaudeSettingsPatcher, CodexSessionParser
+    Workspaces/       Foundation only — git repo/worktree scanning and store,
+                       WorktreeListParser, RepoScanner, RepoOrdering
+    Monitors/         Foundation only — PR categorization/highlighting, disk cleanup
+                       filter/sort, tmux pane parsing
+  DiffReviewKit/     SPM package (macOS 14+, Swift 6) — side-by-side diff review UI + headless agent runner
+Sources/
+  GhosttyBridge/     GhosttyKit (C lib) + Foundation — PTY, terminal surface, URL-open
 App/
   ShellStateBus.swift  Shell-busy tracking (fish hooks / tmux fallback), feeds the sidebar border
-  Views/            SwiftUI + AppKit — all UI (sidebar, panes, monitors, popups, diff review host)
-  ArgusApp.swift    NSApplicationDelegate, leader-key monitor, top-level wiring
+  Views/             SwiftUI + AppKit — all UI (sidebar, panes, monitors, popups, diff review host)
+  ArgusApp.swift     NSApplicationDelegate, leader-key monitor, top-level wiring
 ```
 
-Cross-module import rule: only `App/` imports everything; source modules may only import siblings listed in CONVENTIONS.md. `Packages/DiffReviewKit` is a separate SPM package embedded via Xcode's local package dependency; it does not import any `Sources/` module — `App/` wires it up (agent selection, worktree path) from the outside.
+Cross-module import rule: only `App/` imports everything; other modules may only import siblings listed in CONVENTIONS.md. `Packages/ArgusCore` and `Packages/DiffReviewKit` are local SPM packages embedded via Xcode's local package dependency. `DiffReviewKit` doesn't import any other module — `App/` wires it up (agent selection, worktree path) from the outside. `ArgusCore`'s five targets have their own internal graph — `ArgusConfigKit`/`AgentStateKit`/`Workspaces`/`Monitors` each depend only on `ArgusSupport`, with no edges between those four — so `swift test` in `Packages/ArgusCore` runs in seconds with no GhosttyKit/AppKit/SwiftUI in the build graph at all.
 
 ## Agent state system
 
 Claude Code hooks write JSON payloads to a Unix socket; Argus reads them and updates per-worktree state.
 
-### States (`Sources/AgentState/AgentState.swift`)
+### States (`Packages/ArgusCore/Sources/AgentStateKit/AgentState.swift`)
 
 | State | Meaning | Visual |
 |---|---|---|
@@ -72,7 +80,7 @@ Claude Code hooks write JSON payloads to a Unix socket; Argus reads them and upd
 
 `done` and `waitingForApproval` borders dismiss when the user interacts with the workspace (click or keypress). `waitingForApproval` also clears automatically when the agent resumes.
 
-### Hook → state mapping (`Sources/AgentState/WorktreeHookManager.swift`)
+### Hook → state mapping (`Packages/ArgusCore/Sources/AgentStateKit/WorktreeHookManager.swift`)
 
 | Claude Code hook | State sent | Script |
 |---|---|---|
@@ -94,13 +102,13 @@ Note: There is **no hook for Escape/interrupt**. When the user interrupts Claude
 
 Scripts live in `~/Library/Application Support/argus/hooks/` and are written once on first pane open. They append JSON lines to `/private/tmp/argus-$UID-hook-events.jsonl` (`HookIPC.eventLogPath`) because sandboxed Codex hook processes cannot connect to Argus's Unix socket. Argus still opens `/private/tmp/argus-$UID-hook.sock` (`HookIPC.socketPath`) for best-effort direct IPC.
 
-`WorktreeHookManager.install(worktreePath:)` is idempotent: it overwrites the scripts and upserts Argus's entries in `.claude/settings.local.json` without disturbing other hook entries. That file is gitignored.
+`WorktreeHookManager.install(worktreePath:)` is idempotent: it overwrites the scripts and delegates the `.claude/settings.local.json` merge to `ClaudeSettingsPatcher`, which upserts Argus's entries without disturbing other hook entries. That file is gitignored.
 
 ## Window layout & pane pool
 
-`WindowLayout` (`Sources/Config/ArgusConfig.swift`, config key `layout`) selects one of three per-app layouts, rendered by `App/Views/WorktreeContentView.swift`: `terminalAgent` (single agent + terminal, `AgentSelection` picks Claude or Codex), `agentsOverTerminal` (Codex + Claude side by side on top, terminal full-width below, 70/30 split via `RatioVSplitView`), and `terminalClaudeCodex` (three columns: terminal, Claude, Codex).
+`WindowLayout` (`Packages/ArgusCore/Sources/ArgusConfigKit/ArgusConfig.swift`, config key `layout`) selects one of three per-app layouts, rendered by `App/Views/WorktreeContentView.swift`: `terminalAgent` (single agent + terminal, `AgentSelection` picks Claude or Codex), `agentsOverTerminal` (Codex + Claude side by side on top, terminal full-width below, 70/30 split via `RatioVSplitView`), and `terminalClaudeCodex` (three columns: terminal, Claude, Codex).
 
-`App/Views/PanePool.swift` owns all three `TerminalHost`s (shell/claude/codex) but only registers the roles a layout actually needs (`requiredRoles(layout:agent:)`) — the Codex terminal/session is not spun up unless a layout requires it, so switching into `terminalAgent` with Claude selected never launches Codex. `primaryAgentRole(layout:agent:)` determines which agent session the canvas view and `reloadAgentPane` (leader `a`) target.
+`App/Views/PanePool.swift` owns all three `TerminalHost`s (shell/claude/codex). Which roles a layout actually needs is decided by `PaneLayoutResolver.requiredRoles(layout:agent:)` (`Packages/ArgusCore/Sources/ArgusConfigKit/PaneLayoutResolver.swift`) — the Codex terminal/session is not spun up unless a layout requires it, so switching into `terminalAgent` with Claude selected never launches Codex. `PaneLayoutResolver.primaryAgentRole(layout:agent:)` determines which agent session the canvas view and `reloadAgentPane` (leader `a`) target.
 
 ## Diff review
 
@@ -140,10 +148,11 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 | `App/Views/SettingsWindow.swift` | Settings UI — Agent page (agent picker + commands) and GitHub/Environment pages |
 | `App/Views/KeyboardSettingsView.swift` | Settings UI — Keyboard page (key bindings + popup terminal shortcuts editor) |
 | `App/ShellStateBus.swift` | Shell-busy tracking (fish hooks / tmux fallback) → sidebar border |
-| `Sources/AgentState/AgentStateBus.swift` | `@MainActor` ObservableObject, socket reader |
-| `Sources/AgentState/WorktreeHookManager.swift` | Hook script writer + settings patcher (Claude hooks + fish shell-busy hooks) |
-| `Sources/Config/ArgusConfig.swift` | `ArgusConfig` struct, `ArgusConfigStore` (`~/.config/argus/argus.json`), `AgentSelection`/`WindowLayout` enums, `github`/`diskMonitor`/`environmentVariables`/`popupShortcuts` config blocks |
-| `Sources/Workspaces/WorkspaceStore.swift` | Repo/worktree scanning, persistence |
+| `Packages/ArgusCore/Sources/AgentStateKit/AgentStateBus.swift` | `@MainActor` ObservableObject, socket reader |
+| `Packages/ArgusCore/Sources/AgentStateKit/WorktreeHookManager.swift` | Hook script writer; delegates the settings.local.json merge to `ClaudeSettingsPatcher` |
+| `Packages/ArgusCore/Sources/ArgusConfigKit/ArgusConfig.swift` | `ArgusConfig` struct, `ArgusConfigStore`, `AgentSelection`/`WindowLayout` enums, `github`/`diskMonitor`/`environmentVariables`/`popupShortcuts` config blocks; persistence itself is `ArgusConfigFile.swift` (`~/.config/argus/argus.json`) |
+| `Packages/ArgusCore/Sources/Workspaces/WorkspaceStore.swift` | Repo/worktree scanning orchestrator; parsing (`WorktreeListParser`) and discovery (`RepoScanner`) are separate testable files in the same target |
+| `Packages/ArgusCore/Package.swift` | ArgusCore's five targets + their internal dependency graph — edit this to add a file to a new target |
 | `Sources/GhosttyBridge/WorktreePane.swift` | ghostty surface lifecycle per pane |
 | `Sources/GhosttyBridge/TerminalViewState+URLOpen.swift` | Cmd+click terminal links → open in browser |
 | `Packages/DiffReviewKit/Sources/DiffReviewKit/DiffReviewModel.swift` | Diff-review state owner + agent-run orchestration |
