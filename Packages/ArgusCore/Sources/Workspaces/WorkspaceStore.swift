@@ -124,63 +124,25 @@ public final class WorkspaceStore: ObservableObject {
         scanner = watcher
     }
 
+    private nonisolated static var configURL: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("argus/workspaces.json")
+    }
+
     private func saveConfig() {
-        guard
-            let appSupport = FileManager.default.urls(
-                for: .applicationSupportDirectory, in: .userDomainMask
-            ).first
-        else { return }
-        let dir = appSupport.appendingPathComponent("argus")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        struct Config: Encodable {
-            let roots: [String]
-            let hiddenWorktreeIDs: [String]
-            let excludedRepoPaths: [String]
-            let repoOrder: [String]
-        }
-        let data = try? JSONEncoder().encode(
-            Config(
-                roots: roots,
-                hiddenWorktreeIDs: Array(hiddenWorktreeIDs),
-                excludedRepoPaths: Array(excludedRepoPaths),
-                repoOrder: repoOrder
-            ))
-        try? data?.write(to: dir.appendingPathComponent("workspaces.json"))
+        guard let url = Self.configURL else { return }
+        let config = WorkspaceConfig(
+            roots: roots,
+            hiddenWorktreeIDs: hiddenWorktreeIDs,
+            excludedRepoPaths: excludedRepoPaths,
+            repoOrder: repoOrder
+        )
+        WorkspaceConfigFile.save(config, to: url)
     }
 
-    private struct StoredConfig {
-        let roots: [String]
-        let hiddenWorktreeIDs: Set<String>
-        let excludedRepoPaths: Set<String>
-        let repoOrder: [String]
-    }
-
-    private nonisolated static func loadConfig() -> StoredConfig {
-        guard
-            let appSupport = FileManager.default.urls(
-                for: .applicationSupportDirectory, in: .userDomainMask
-            ).first
-        else {
-            return StoredConfig(roots: defaultRoots(), hiddenWorktreeIDs: [], excludedRepoPaths: [], repoOrder: [])
-        }
-        let configURL = appSupport.appendingPathComponent("argus/workspaces.json")
-        struct Payload: Decodable {
-            let roots: [String]
-            let hiddenWorktreeIDs: [String]?
-            let excludedRepoPaths: [String]?
-            let repoOrder: [String]?
-        }
-        if let data = try? Data(contentsOf: configURL),
-            let payload = try? JSONDecoder().decode(Payload.self, from: data)
-        {
-            return StoredConfig(
-                roots: payload.roots,
-                hiddenWorktreeIDs: Set(payload.hiddenWorktreeIDs ?? []),
-                excludedRepoPaths: Set(payload.excludedRepoPaths ?? []),
-                repoOrder: payload.repoOrder ?? []
-            )
-        }
-        return StoredConfig(roots: defaultRoots(), hiddenWorktreeIDs: [], excludedRepoPaths: [], repoOrder: [])
+    private nonisolated static func loadConfig() -> WorkspaceConfig {
+        guard let url = configURL else { return WorkspaceConfig(roots: defaultRoots()) }
+        return WorkspaceConfigFile.load(from: url, defaultRoots: defaultRoots())
     }
 
     private nonisolated static func defaultRoots() -> [String] {
