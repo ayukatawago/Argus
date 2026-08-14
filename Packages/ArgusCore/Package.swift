@@ -41,6 +41,7 @@ let package = Package(
         ),
         .target(
             name: "Workspaces",
+            dependencies: ["ArgusSupport"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
