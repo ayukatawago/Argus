@@ -31,6 +31,7 @@ let package = Package(
         ),
         .target(
             name: "AgentStateKit",
+            dependencies: ["ArgusSupport"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
