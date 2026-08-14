@@ -41,9 +41,6 @@ targets:
       - path: Sources/GhosttyBridge
         excludes:
           - "**/*.md"
-      - path: Sources/Workspaces
-        excludes:
-          - "**/*.md"
     dependencies:
       - package: libghostty-spm
         product: GhosttyTerminal
@@ -55,6 +52,8 @@ targets:
         product: ArgusConfigKit
       - package: ArgusCore
         product: AgentStateKit
+      - package: ArgusCore
+        product: Workspaces
       - sdk: WebKit.framework
     settings:
       base:

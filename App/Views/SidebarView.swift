@@ -2,6 +2,7 @@ import AgentStateKit
 import ArgusConfigKit
 import SwiftUI
 import UniformTypeIdentifiers
+import Workspaces
 
 private struct WorktreeDeleteTarget {
     let worktree: GitWorktree
