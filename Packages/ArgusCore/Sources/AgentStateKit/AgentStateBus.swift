@@ -49,7 +49,9 @@ public final class AgentStateBus: ObservableObject {
         }
     }
 
-    private func apply(_ payload: HookPayload) {
+    // Internal (not private) so tests can drive the reducer directly via @testable import,
+    // without going through the socket/file-tailing IPC plumbing in start().
+    func apply(_ payload: HookPayload) {
         let path = payload.worktreePath
         let canonical = canonicalPath(path)
         let type: AgentType = payload.agent == "codex" ? .codex : .claude
