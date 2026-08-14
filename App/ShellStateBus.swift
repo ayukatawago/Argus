@@ -1,6 +1,7 @@
 import AgentStateKit
 import ArgusSupport
 import Foundation
+import Monitors
 
 /// Tracks which shell panes have a command running and publishes the set of busy
 /// worktree paths.  Fish shell users get an event-driven path via preexec/postexec
@@ -12,10 +13,6 @@ final class ShellStateBus: ObservableObject {
 
     private var pollTask: Task<Void, Never>?
     private var activePaths: Set<String> = []
-
-    private static let shellNames: Set<String> = [
-        "bash", "zsh", "fish", "sh", "dash", "ksh", "tcsh", "csh",
-    ]
 
     func updateActivePaths(_ paths: Set<String>) {
         activePaths = paths
@@ -69,23 +66,11 @@ final class ShellStateBus: ObservableObject {
         let tmux = WorktreePane.tmuxExecutable
         let result = await ProcessRunner.run(
             tmux, ["list-panes", "-a", "-F", "#{session_name}|#{pane_current_command}"])
-        let output = result.standardOutput
 
-        var sessionToCommand: [String: String] = [:]
-        for line in output.split(separator: "\n") {
-            let parts = line.split(separator: "|", maxSplits: 1)
-            if parts.count == 2 {
-                sessionToCommand[String(parts[0])] = String(parts[1])
-            }
-        }
-
-        var newBusy: Set<String> = []
-        for path in paths {
-            let session = WorktreePane.sessionName("s", path: path)
-            if let cmd = sessionToCommand[session], !ShellStateBus.shellNames.contains(cmd) {
-                newBusy.insert(path)
-            }
-        }
-        busyPaths = newBusy
+        let pathBySession = Dictionary(
+            uniqueKeysWithValues: paths.map { (WorktreePane.sessionName("s", path: $0), $0) })
+        let busySessions = TmuxPaneParser.busySessions(
+            from: result.standardOutput, activeSessions: Set(pathBySession.keys))
+        busyPaths = Set(busySessions.compactMap { pathBySession[$0] })
     }
 }
