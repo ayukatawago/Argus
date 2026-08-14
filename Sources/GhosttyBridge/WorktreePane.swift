@@ -76,21 +76,9 @@ final class WorktreePane {
         TmuxSessionName.make(type: type, path: path)
     }
 
-    // Produces "export KEY="value"; " for each configured env var.
-    // Values are double-quote escaped so they survive the shell layer tmux invokes.
     // Changes take effect only when new tmux sessions are created (reload with leader+a).
     static func envExportPreamble() -> String {
-        let vars = ArgusConfigStore.shared.config.environmentVariables
-        guard !vars.isEmpty else { return "" }
-        return vars.sorted(by: { $0.key < $1.key }).map { key, value in
-            let escaped =
-                value
-                .replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-                .replacingOccurrences(of: "$", with: "\\$")
-                .replacingOccurrences(of: "`", with: "\\`")
-            return "export \(key)=\"\(escaped)\""
-        }.joined(separator: "; ") + "; "
+        EnvExportPreamble.make(from: ArgusConfigStore.shared.config.environmentVariables)
     }
 
     static var tmuxExecutable: String {
