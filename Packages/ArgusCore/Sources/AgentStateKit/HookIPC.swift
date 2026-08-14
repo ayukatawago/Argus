@@ -1,3 +1,4 @@
+import ArgusSupport
 import Darwin
 import Foundation
 
@@ -109,43 +110,9 @@ public final class HookIPC: @unchecked Sendable {
         path: String,
         handler: @Sendable @escaping (HookPayload) async -> Void
     ) async {
-        let url = URL(fileURLWithPath: path)
-        var offset: UInt64 = 0
-
-        while !Task.isCancelled {
-            guard
-                let attrs = try? FileManager.default.attributesOfItem(atPath: path),
-                let fileSize = attrs[.size] as? NSNumber
-            else {
-                offset = 0
-                try? await Task.sleep(nanoseconds: 200_000_000)
-                continue
-            }
-            let size = fileSize.uint64Value
-
-            if size < offset { offset = 0 }
-            guard size > offset, let handle = try? FileHandle(forReadingFrom: url) else {
-                try? await Task.sleep(nanoseconds: 200_000_000)
-                continue
-            }
-
-            do {
-                try handle.seek(toOffset: offset)
-                let data = try handle.readToEnd() ?? Data()
-                offset = try handle.offset()
-                try handle.close()
-
-                guard let text = String(data: data, encoding: .utf8) else { continue }
-                for line in text.split(separator: "\n") {
-                    guard let payloadData = line.data(using: .utf8),
-                        let payload = try? JSONDecoder().decode(HookPayload.self, from: payloadData)
-                    else { continue }
-                    await handler(payload)
-                }
-            } catch {
-                try? handle.close()
-            }
-            try? await Task.sleep(nanoseconds: 200_000_000)
+        for await lineData in JSONLTailer(path: path).lines() {
+            guard let payload = try? JSONDecoder().decode(HookPayload.self, from: lineData) else { continue }
+            await handler(payload)
         }
     }
 }
