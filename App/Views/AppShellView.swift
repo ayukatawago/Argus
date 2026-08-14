@@ -232,19 +232,13 @@ struct AppShellView: View {
     // MARK: - Worktree navigation
 
     private func navigateWorktrees(forward: Bool) {
-        let all = store.repos.flatMap(\.worktrees).filter {
-            !store.hiddenWorktreeIDs.contains($0.id) && pool.activeIDs.contains($0.id)
-        }
-        guard !all.isEmpty else { return }
-        guard let current = selectedWorktreeID,
-            let idx = all.firstIndex(where: { $0.id == current })
-        else {
-            selectedWorktreeID = all.first?.id
-            DispatchQueue.main.async { self.pool.host(for: self.focusedRole).focusActiveTerminal() }
+        let eligibleIDs = store.repos.flatMap(\.worktrees)
+            .filter { !store.hiddenWorktreeIDs.contains($0.id) && pool.activeIDs.contains($0.id) }
+            .map(\.id)
+        guard let next = WorktreeNavigator.next(from: selectedWorktreeID, in: eligibleIDs, forward: forward) else {
             return
         }
-        let next = forward ? (idx + 1) % all.count : (idx - 1 + all.count) % all.count
-        selectedWorktreeID = all[next].id
+        selectedWorktreeID = next
         DispatchQueue.main.async { self.pool.host(for: self.focusedRole).focusActiveTerminal() }
     }
 
