@@ -24,14 +24,17 @@ final class DiskCleanupScanner: ObservableObject {
 
     func start() {
         guard backgroundTask == nil else { return }
-        backgroundTask = Task { [weak self] in
-            while !Task.isCancelled {
-                self?.loadCandidates()
+        backgroundTask = PollingTask.repeating(
+            order: .actThenSleep,
+            interval: {
+                let seconds = await ArgusConfigStore.shared.config.diskMonitor.sizeCheckIntervalSeconds
+                return UInt64(seconds * 1_000_000_000)
+            },
+            action: { [weak self] in
+                await self?.loadCandidates()
                 await self?.scanSizes()
-                let interval = ArgusConfigStore.shared.config.diskMonitor.sizeCheckIntervalSeconds
-                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
             }
-        }
+        )
     }
 
     func stop() {
