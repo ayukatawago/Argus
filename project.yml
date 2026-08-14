@@ -18,6 +18,8 @@ packages:
     branch: main
   DiffReviewKit:
     path: Packages/DiffReviewKit
+  ArgusCore:
+    path: Packages/ArgusCore
 
 settings:
   base:
@@ -53,6 +55,8 @@ targets:
         product: GhosttyTerminal
       - package: DiffReviewKit
         product: DiffReviewKit
+      - package: ArgusCore
+        product: ArgusSupport
       - sdk: WebKit.framework
     settings:
       base:
