@@ -2,6 +2,7 @@ import AppKit
 import ArgusConfigKit
 import ArgusSupport
 import Foundation
+import Monitors
 
 struct CleanupCandidate: Identifiable {
     var id: URL { path }
@@ -12,6 +13,8 @@ struct CleanupCandidate: Identifiable {
     var isSelected: Bool
     let isTrash: Bool
 }
+
+extension CleanupCandidate: SizedCandidate {}
 
 @MainActor
 final class DiskCleanupScanner: ObservableObject {
