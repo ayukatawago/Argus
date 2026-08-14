@@ -124,7 +124,7 @@ public final class CodexSessionWatcher: @unchecked Sendable {
         // cwd appears at ~byte 156; 512 bytes is always enough regardless of system-prompt length
         let data = handle.readData(ofLength: 512)
         guard let text = String(data: data, encoding: .utf8) else { return nil }
-        return extractCwd(from: text)
+        return CodexSessionParser.extractCwd(from: text)
     }
 
     /// Reads the session file and returns `(cwd, state)` by parsing the header and tail.
@@ -135,7 +135,7 @@ public final class CodexSessionWatcher: @unchecked Sendable {
         // cwd appears at ~byte 156; 512 bytes is always enough regardless of system-prompt length
         let headerData = handle.readData(ofLength: 512)
         guard let headerText = String(data: headerData, encoding: .utf8) else { return nil }
-        guard let cwd = extractCwd(from: headerText) else { return nil }
+        guard let cwd = CodexSessionParser.extractCwd(from: headerText) else { return nil }
 
         // Seek to tail to find the last relevant event_msg entries
         guard
@@ -148,46 +148,7 @@ public final class CodexSessionWatcher: @unchecked Sendable {
         let tailData = handle.readDataToEndOfFile()
         guard let tailText = String(data: tailData, encoding: .utf8) else { return (cwd, "running") }
 
-        let state = inferState(from: tailText)
+        let state = CodexSessionParser.inferState(from: tailText)
         return (cwd, state)
-    }
-
-    /// Extracts the `cwd` value by searching for `"cwd":"<path>"` in raw bytes.
-    /// Avoids full JSON parsing — the session_meta first line is ~22 KB due to the embedded
-    /// system prompt, so parsing it as JSON from a fixed-size header read would fail.
-    /// macOS paths cannot contain `"` so a simple quote-delimited scan is safe.
-    private nonisolated static func extractCwd(from header: String) -> String? {
-        guard let keyRange = header.range(of: #""cwd":""#) else { return nil }
-        let afterKey = header[keyRange.upperBound...]
-        guard let endQuote = afterKey.firstIndex(of: "\"") else { return nil }
-        let value = String(afterKey[..<endQuote])
-        return value.isEmpty ? nil : value
-    }
-
-    /// Scans the last lines of the tail text for `event_msg` entries and returns
-    /// `"done"` / `"running"` based on the most recent `task_complete` or `task_started`.
-    private nonisolated static func inferState(from tailText: String) -> String {
-        let lines = tailText.split(separator: "\n", omittingEmptySubsequences: true)
-        for line in lines.reversed() {
-            guard
-                let data = line.data(using: .utf8),
-                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                obj["type"] as? String == "event_msg",
-                let payload = obj["payload"] as? [String: Any],
-                let eventType = payload["type"] as? String
-            else { continue }
-
-            switch eventType {
-            case "task_complete", "turn_aborted":
-                return "done"
-
-            case "task_started":
-                return "running"
-
-            default:
-                continue
-            }
-        }
-        return "running"
     }
 }
