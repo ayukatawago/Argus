@@ -26,47 +26,9 @@ final class PanePool: ObservableObject {
         }
     }
 
-    /// The roles that must be registered for a given layout + agent selection.
-    static func requiredRoles(layout: WindowLayout, agent: AgentSelection) -> [PaneRole] {
-        switch layout {
-        case .terminalAgent:
-            return [.shell, agent == .codex ? .codex : .claude]
-
-        case .agentsOverTerminal, .terminalClaudeCodex:
-            return [.shell, .claude, .codex]
-        }
-    }
-
-    /// The primary agent role (determines which session canvas attaches to and which
-    /// session reload targets).
-    static func primaryAgentRole(layout: WindowLayout, agent: AgentSelection) -> PaneRole {
-        switch layout {
-        case .terminalAgent:
-            return agent == .codex ? .codex : .claude
-
-        case .agentsOverTerminal, .terminalClaudeCodex:
-            return .claude
-        }
-    }
-
-    /// Left-to-right (then top-to-bottom) pane order used for directional focus.
-    static func orderedRoles(layout: WindowLayout, agent: AgentSelection) -> [PaneRole] {
-        switch layout {
-        case .terminalAgent:
-            return [.shell, agent == .codex ? .codex : .claude]
-
-        case .agentsOverTerminal:
-            // Top-left Codex, top-right Claude, bottom Shell
-            return [.codex, .claude, .shell]
-
-        case .terminalClaudeCodex:
-            return [.shell, .claude, .codex]
-        }
-    }
-
     func getOrCreate(id: String, workingDirectory: String) {
         let config = ArgusConfigStore.shared.config
-        let roles = Self.requiredRoles(layout: config.layout, agent: config.agent)
+        let roles = PaneLayoutResolver.requiredRoles(layout: config.layout, agent: config.agent)
         if panes[id] == nil {
             try? WorktreeHookManager.install(worktreePath: workingDirectory)
             let pane = WorktreePane(workingDirectory: workingDirectory)
@@ -104,7 +66,7 @@ final class PanePool: ObservableObject {
     func openCanvas(worktrees: [(id: String, path: String)], fontSize: Int) {
         let config = ArgusConfigStore.shared.config
         for (id, path) in worktrees where canvasViews[id] == nil {
-            let primaryRole = Self.primaryAgentRole(layout: config.layout, agent: config.agent)
+            let primaryRole = PaneLayoutResolver.primaryAgentRole(layout: config.layout, agent: config.agent)
             let session = WorktreePane.sessionName(primaryRole == .codex ? "x" : "a", path: path)
             let tmux = WorktreePane.tmuxExecutable
             let attachCmd =
@@ -129,9 +91,9 @@ final class PanePool: ObservableObject {
 
     func reloadAgentPane(id: String, workingDirectory: String) {
         let config = ArgusConfigStore.shared.config
-        let primaryRole = Self.primaryAgentRole(layout: config.layout, agent: config.agent)
+        let primaryRole = PaneLayoutResolver.primaryAgentRole(layout: config.layout, agent: config.agent)
         var rolesToReload: Set<PaneRole> = [primaryRole]
-        if Self.requiredRoles(layout: config.layout, agent: config.agent).contains(.codex) {
+        if PaneLayoutResolver.requiredRoles(layout: config.layout, agent: config.agent).contains(.codex) {
             rolesToReload.insert(.codex)
         }
         for role in rolesToReload {
