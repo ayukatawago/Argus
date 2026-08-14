@@ -2,6 +2,7 @@ import ArgusConfigKit
 import ArgusSupport
 import Combine
 import Foundation
+import Monitors
 
 @MainActor
 final class DiskMonitorStore: ObservableObject {
@@ -35,13 +36,13 @@ final class DiskMonitorStore: ObservableObject {
         else { return }
         let total = (attrs[.systemSize] as? NSNumber)?.int64Value ?? 0
         let free = (attrs[.systemFreeSize] as? NSNumber)?.int64Value ?? 0
-        let percent = total > 0 ? Double(free) / Double(total) * 100 : 100
+        let usage = DiskUsage(total: total, free: free)
         let threshold = ArgusConfigStore.shared.config.diskMonitor.alertThresholdPercent
         let wasLow = isLow
-        totalBytes = total
-        availableBytes = free
-        availablePercent = percent
-        isLow = percent < threshold
+        totalBytes = usage.total
+        availableBytes = usage.free
+        availablePercent = usage.percentFree
+        isLow = usage.isLow(threshold: threshold)
         if isLow && !wasLow {
             NotificationCenter.default.post(name: .diskSpaceLow, object: nil)
         }
