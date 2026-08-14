@@ -1,4 +1,5 @@
 import AgentStateKit
+import ArgusSupport
 import Foundation
 
 /// Tracks which shell panes have a command running and publishes the set of busy
@@ -97,17 +98,9 @@ final class ShellStateBus: ObservableObject {
         let paths = activePaths
         guard !paths.isEmpty else { busyPaths = []; return }
         let tmux = WorktreePane.tmuxExecutable
-        let output = await Task.detached(priority: .utility) { () -> String in
-            let process = Process()
-            let pipe = Pipe()
-            process.executableURL = URL(fileURLWithPath: tmux)
-            process.arguments = ["list-panes", "-a", "-F", "#{session_name}|#{pane_current_command}"]
-            process.standardOutput = pipe
-            process.standardError = FileHandle.nullDevice
-            try? process.run()
-            process.waitUntilExit()
-            return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        }.value
+        let result = await ProcessRunner.run(
+            tmux, ["list-panes", "-a", "-F", "#{session_name}|#{pane_current_command}"])
+        let output = result.standardOutput
 
         var sessionToCommand: [String: String] = [:]
         for line in output.split(separator: "\n") {
