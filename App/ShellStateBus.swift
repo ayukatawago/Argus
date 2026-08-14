@@ -46,39 +46,9 @@ final class ShellStateBus: ObservableObject {
     // MARK: - Fish: tail shell event log
 
     private func tailShellEvents() async {
-        let path = HookIPC.shellEventLogPath
-        let url = URL(fileURLWithPath: path)
-        var offset: UInt64 = 0
-        while !Task.isCancelled {
-            guard
-                let attrs = try? FileManager.default.attributesOfItem(atPath: path),
-                let size = (attrs[.size] as? NSNumber)?.uint64Value
-            else {
-                offset = 0
-                try? await Task.sleep(nanoseconds: 200_000_000)
-                continue
-            }
-            if size < offset { offset = 0 }
-            guard size > offset, let handle = try? FileHandle(forReadingFrom: url) else {
-                try? await Task.sleep(nanoseconds: 200_000_000)
-                continue
-            }
-            do {
-                try handle.seek(toOffset: offset)
-                let data = try handle.readToEnd() ?? Data()
-                offset = try handle.offset()
-                try handle.close()
-                guard let text = String(data: data, encoding: .utf8) else { continue }
-                for line in text.split(separator: "\n") {
-                    guard let lineData = line.data(using: .utf8),
-                        let payload = try? JSONDecoder().decode(HookPayload.self, from: lineData)
-                    else { continue }
-                    applyShellEvent(payload)
-                }
-            } catch {
-                try? handle.close()
-            }
-            try? await Task.sleep(nanoseconds: 200_000_000)
+        for await lineData in JSONLTailer(path: HookIPC.shellEventLogPath).lines() {
+            guard let payload = try? JSONDecoder().decode(HookPayload.self, from: lineData) else { continue }
+            applyShellEvent(payload)
         }
     }
 
