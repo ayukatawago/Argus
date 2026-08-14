@@ -3,41 +3,43 @@ import Foundation
 /// Aggregates agent state events from HookIPC and publishes per-worktree state.
 /// Key is the worktree path, which matches GitWorktree.id.
 @MainActor
-final class AgentStateBus: ObservableObject {
-    @Published private(set) var states: [String: AgentState] = [:]
-    @Published private(set) var agentTypes: [String: AgentType] = [:]
+public final class AgentStateBus: ObservableObject {
+    @Published public private(set) var states: [String: AgentState] = [:]
+    @Published public private(set) var agentTypes: [String: AgentType] = [:]
     private let ipc = HookIPC()
     private let codexWatcher = CodexSessionWatcher()
 
-    func start() {
+    public init() {}
+
+    public func start() {
         ipc.onPayload = { [weak self] payload in self?.apply(payload) }
         ipc.start()
         codexWatcher.onPayload = { [weak self] payload in self?.apply(payload) }
         codexWatcher.start()
     }
 
-    func stop() {
+    public func stop() {
         ipc.stop()
         codexWatcher.stop()
     }
 
-    func state(for worktreePath: String) -> AgentState {
+    public func state(for worktreePath: String) -> AgentState {
         if let state = states[worktreePath] { return state }
         return states[canonicalPath(worktreePath)] ?? .idle
     }
 
-    func agentType(for worktreePath: String) -> AgentType {
+    public func agentType(for worktreePath: String) -> AgentType {
         if let type = agentTypes[worktreePath] { return type }
         return agentTypes[canonicalPath(worktreePath)] ?? .claude
     }
 
-    func setAgentType(_ type: AgentType, for worktreePath: String) {
+    public func setAgentType(_ type: AgentType, for worktreePath: String) {
         agentTypes[worktreePath] = type
         let canonical = canonicalPath(worktreePath)
         if canonical != worktreePath { agentTypes[canonical] = type }
     }
 
-    func reset(for worktreePath: String) {
+    public func reset(for worktreePath: String) {
         states[worktreePath] = .idle
         agentTypes.removeValue(forKey: worktreePath)
         let canonical = canonicalPath(worktreePath)

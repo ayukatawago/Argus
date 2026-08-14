@@ -1,3 +1,4 @@
+import AgentStateKit
 import Foundation
 
 /// Tracks which shell panes have a command running and publishes the set of busy

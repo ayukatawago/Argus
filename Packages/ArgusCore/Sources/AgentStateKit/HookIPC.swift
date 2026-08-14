@@ -7,24 +7,26 @@ import Foundation
 /// @unchecked Sendable: all mutable state is @MainActor-protected; the type is passed
 /// into background tasks only as a strong let reference used solely via MainActor.run.
 @MainActor
-final class HookIPC: @unchecked Sendable {
-    nonisolated static var socketPath: String {
+public final class HookIPC: @unchecked Sendable {
+    public nonisolated static var socketPath: String {
         "/private/tmp/argus-\(getuid())-hook.sock"
     }
 
-    nonisolated static var eventLogPath: String {
+    public nonisolated static var eventLogPath: String {
         "/private/tmp/argus-\(getuid())-hook-events.jsonl"
     }
 
-    nonisolated static var shellEventLogPath: String {
+    public nonisolated static var shellEventLogPath: String {
         "/private/tmp/argus-\(getuid())-shell-events.jsonl"
     }
 
-    var onPayload: ((HookPayload) -> Void)?
+    public var onPayload: ((HookPayload) -> Void)?
     private var serverTask: Task<Void, Never>?
     private var fileTask: Task<Void, Never>?
 
-    func start() {
+    public init() {}
+
+    public func start() {
         try? FileManager.default.removeItem(atPath: Self.socketPath)
         try? FileManager.default.removeItem(atPath: Self.eventLogPath)
         let path = Self.socketPath
@@ -44,7 +46,7 @@ final class HookIPC: @unchecked Sendable {
         }
     }
 
-    func stop() {
+    public func stop() {
         serverTask?.cancel()
         serverTask = nil
         fileTask?.cancel()
