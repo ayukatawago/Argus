@@ -1,3 +1,4 @@
+import Monitors
 import SwiftUI
 
 struct DiskStatusView: View {
@@ -12,25 +13,12 @@ struct DiskStatusView: View {
         case size = "Size"
     }
 
-    private static let oneGiB: Int64 = 1_073_741_824
-
     private var visibleCandidates: [CleanupCandidate] {
-        var list = scanner.candidates
-        if hideSmall {
-            list = list.filter { candidate in
-                guard let size = candidate.sizeBytes else { return true }
-                return size >= Self.oneGiB
-            }
-        }
-        switch sortOrder {
-        case .name:
-            return list.sorted { $0.displayName < $1.displayName }
-
-        case .size:
-            return list.sorted {
-                ($0.sizeBytes ?? -1) > ($1.sizeBytes ?? -1)
-            }
-        }
+        CleanupCandidateList.visible(
+            scanner.candidates,
+            hideSmall: hideSmall,
+            sortedBy: sortOrder == .name ? CleanupCandidateList.byName : CleanupCandidateList.bySizeDescending
+        )
     }
 
     var body: some View {
