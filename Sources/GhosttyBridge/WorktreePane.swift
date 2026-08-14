@@ -1,5 +1,6 @@
 import AppKit
 import ArgusConfigKit
+import ArgusSupport
 import GhosttyTerminal
 
 /// The terminal role a pane serves within a worktree.
@@ -32,7 +33,7 @@ final class WorktreePane {
     func view(for role: PaneRole) -> AppTerminalView {
         if let existing = views[role] { return existing }
         let surfaceOptions = TerminalSurfaceOptions(backend: .exec, workingDirectory: workingDirectory)
-        let shell = Self.userLoginShell
+        let shell = LoginShell.current
         let session = sessionName(for: role)
         let tmux = Self.tmuxExecutable
         let command: String
@@ -88,26 +89,6 @@ final class WorktreePane {
         let safe = last.prefix(20).replacingOccurrences(
             of: #"[^a-zA-Z0-9_-]"#, with: "-", options: .regularExpression)
         return "argus-\(type)-\(safe)-\(hash)"
-    }
-
-    /// The user's configured login shell, read from directory services so it is
-    /// correct regardless of what $SHELL the Argus process inherited.
-    static var userLoginShell: String {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/dscl")
-        proc.arguments = [".", "-read", "/Users/\(NSUserName())", "UserShell"]
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = FileHandle.nullDevice
-        guard (try? proc.run()) != nil else {
-            return ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        }
-        proc.waitUntilExit()
-        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let shell =
-            out.components(separatedBy: ": ").last?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return shell.isEmpty ? (ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh") : shell
     }
 
     // Produces "export KEY="value"; " for each configured env var.
