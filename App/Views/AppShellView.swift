@@ -57,7 +57,7 @@ struct AppShellView: View {
                 pool.reloadAgentPane(id: id, workingDirectory: worktree.path)
                 agentBus.reset(for: id)
                 let config = ArgusConfigStore.shared.config
-                let primaryRole = PanePool.primaryAgentRole(layout: config.layout, agent: config.agent)
+                let primaryRole = PaneLayoutResolver.primaryAgentRole(layout: config.layout, agent: config.agent)
                 if primaryRole == .codex {
                     agentBus.setAgentType(.codex, for: worktree.path)
                 }
@@ -211,7 +211,7 @@ struct AppShellView: View {
             pool.applyLayout(id: id, workingDirectory: worktree.path)
         }
         // Clamp focused role to those visible in the new layout.
-        let ordered = PanePool.orderedRoles(layout: layout, agent: configStore.config.agent)
+        let ordered = PaneLayoutResolver.orderedRoles(layout: layout, agent: configStore.config.agent)
         if !ordered.contains(focusedRole) {
             focusedRole = ordered.first ?? .shell
         }
@@ -221,7 +221,7 @@ struct AppShellView: View {
 
     private func stepFocus(direction: Int) {
         let config = configStore.config
-        let ordered = PanePool.orderedRoles(layout: config.layout, agent: config.agent)
+        let ordered = PaneLayoutResolver.orderedRoles(layout: config.layout, agent: config.agent)
         guard !ordered.isEmpty else { return }
         let currentIndex = ordered.firstIndex(of: focusedRole) ?? 0
         let newIndex = max(0, min(ordered.count - 1, currentIndex + direction))
