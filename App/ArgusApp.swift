@@ -18,8 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let config = ArgusConfigStore.shared.config
 
             // Leader key: enter leader mode, or pass through on double press (e.g. for nested tmux).
-            if let (leaderMods, leaderChar) = Self.parseLeaderKey(config.leaderKey),
-                modifiers == leaderMods, char == leaderChar
+            if let chord = LeaderKey.parse(config.leaderKey),
+                modifiers == Self.modifierFlags(from: chord.modifiers), char == chord.character
             {
                 if self.awaitingLeader {
                     self.awaitingLeader = false
@@ -95,20 +95,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Helpers
 
-    private static func parseLeaderKey(_ key: String) -> (NSEvent.ModifierFlags, String)? {
-        let parts = key.lowercased().split(separator: "+").map(String.init)
-        guard let char = parts.last, !char.isEmpty else { return nil }
+    private static func modifierFlags(from modifiers: Set<LeaderChord.Modifier>) -> NSEvent.ModifierFlags {
         var flags: NSEvent.ModifierFlags = []
-        for part in parts.dropLast() {
-            switch part {
-            case "ctrl": flags.insert(.control)
-            case "cmd", "command": flags.insert(.command)
-            case "opt", "option", "alt": flags.insert(.option)
-            case "shift": flags.insert(.shift)
-            default: break
-            }
-        }
-        return (flags, char)
+        if modifiers.contains(.control) { flags.insert(.control) }
+        if modifiers.contains(.command) { flags.insert(.command) }
+        if modifiers.contains(.option) { flags.insert(.option) }
+        if modifiers.contains(.shift) { flags.insert(.shift) }
+        return flags
     }
 
     private static func notificationMap(from bindings: ArgusConfig.KeyBindings) -> [String: Notification.Name] {
