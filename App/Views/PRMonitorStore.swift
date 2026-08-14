@@ -54,6 +54,7 @@ struct GitHubPR: Decodable, Identifiable {
 }
 
 extension GitHubPR: CategorizablePullRequest {}
+extension GitHubPR: ApprovalTrackable {}
 
 private struct GitHubAuthUser: Decodable {
     let login: String
@@ -87,10 +88,6 @@ private struct PREnrichment: Sendable {
     var approvedBy: [String] = []
 }
 
-private struct PRSnapshot: Equatable {
-    var approvedBy: [String]
-}
-
 enum PRMonitorError: Error, LocalizedError {
     case badURL
     case missingCredentials
@@ -122,8 +119,7 @@ final class PRMonitorStore: ObservableObject {
 
     private var pollTask: Task<Void, Never>?
     private var resolvedUsername: String?
-    private var knownPRSnapshots: [Int: PRSnapshot] = [:]
-    private var hasCompletedInitialFetch = false
+    private let highlightTracker = PRHighlightTracker()
 
     var hasAnyPRs: Bool {
         !myOpenPRs.isEmpty || !myDraftPRs.isEmpty || !reviewRequestedPRs.isEmpty || !doNotMergePRs.isEmpty
@@ -149,7 +145,8 @@ final class PRMonitorStore: ObservableObject {
     }
 
     func dismissHighlight(prID: Int) {
-        highlightedPRIDs.remove(prID)
+        highlightTracker.dismiss(id: prID)
+        highlightedPRIDs = highlightTracker.highlightedIDs
     }
 
     func refresh() async {
@@ -206,28 +203,8 @@ final class PRMonitorStore: ObservableObject {
         myDraftPRs = categorized.myDraftPRs
         reviewRequestedPRs = categorized.reviewRequestedPRs
         doNotMergePRs = categorized.doNotMergePRs
-        updateHighlights(trackable: myOpenPRs + reviewRequestedPRs)
-    }
-
-    private func updateHighlights(trackable: [GitHubPR]) {
-        let trackableIDs = Set(trackable.map(\.id))
-        if hasCompletedInitialFetch {
-            for pullRequest in trackable where !pullRequest.approvedByMe {
-                let snapshot = PRSnapshot(approvedBy: pullRequest.approvedBy)
-                if knownPRSnapshots[pullRequest.id] != snapshot {
-                    highlightedPRIDs.insert(pullRequest.id)
-                }
-            }
-        }
-        for pullRequest in trackable {
-            knownPRSnapshots[pullRequest.id] = PRSnapshot(approvedBy: pullRequest.approvedBy)
-        }
-        knownPRSnapshots = knownPRSnapshots.filter { trackableIDs.contains($0.key) }
-        highlightedPRIDs = highlightedPRIDs.filter { id in
-            guard trackableIDs.contains(id) else { return false }
-            return !(trackable.first { $0.id == id }?.approvedByMe ?? false)
-        }
-        hasCompletedInitialFetch = true
+        highlightTracker.update(trackable: myOpenPRs + reviewRequestedPRs)
+        highlightedPRIDs = highlightTracker.highlightedIDs
     }
 
     private func enrichDetails(for prs: [GitHubPR], config: ArgusConfig.GitHub) async -> [Int: PREnrichment] {
