@@ -10,16 +10,23 @@
 
 ## Module boundaries
 
-Each folder under `Sources/` is a logical module. The rule:
+Each target under `Packages/ArgusCore` and each folder under `Sources/` is a logical module. The rule:
 
 | Module | Allowed to import |
 | --- | --- |
-| `AgentState` | Foundation, Darwin |
-| `Workspaces` | Foundation, CoreServices |
-| `GhosttyBridge` | AppKit, GhosttyTerminal (the C library), Foundation, Darwin |
+| `ArgusSupport` | Foundation |
+| `ArgusConfigKit` | Foundation, Combine |
+| `AgentStateKit` | Foundation, Darwin, `ArgusSupport` |
+| `Workspaces` | Foundation, CoreServices, `ArgusSupport` |
+| `Monitors` | Foundation, `ArgusSupport` |
+| `GhosttyBridge` | AppKit, GhosttyTerminal (the C library), Foundation, Darwin, `ArgusConfigKit`, `ArgusSupport` |
 | App target (`App/`) | All of the above + SwiftUI + AppKit |
 
+`ArgusConfigKit`, `AgentStateKit`, `Workspaces`, and `Monitors` each depend only on `ArgusSupport` — there are no edges between those four, so any pair can be worked on independently.
+
 **Only `GhosttyBridge` imports `GhosttyTerminal`.** All other modules interact with the terminal engine through `GhosttyBridge` types.
+
+`GhosttyBridge` importing `ArgusConfigKit`/`ArgusSupport` is a real, intentional exception, not an oversight: `WorktreePane` reads the global `ArgusConfigStore` (launch commands, environment variables) and calls `LoginShell`/`EnvExportPreamble` directly when building each pane's tmux command. Untangling that — e.g. by injecting config instead of reaching for the singleton — is future work, not something the `Sources/` → `Packages/ArgusCore` extraction attempted.
 
 ## Concurrency
 
