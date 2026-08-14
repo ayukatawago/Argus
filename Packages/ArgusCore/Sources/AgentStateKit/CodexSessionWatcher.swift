@@ -1,3 +1,4 @@
+import ArgusSupport
 import Foundation
 
 /// Watches ~/.codex/sessions/ for Codex agent state changes by polling the JSONL
@@ -13,12 +14,16 @@ public final class CodexSessionWatcher: @unchecked Sendable {
     public init() {}
 
     public func start() {
-        pollTask = Task.detached(priority: .utility) { [weak self] in
-            guard let watcher = self else { return }
-            await Self.pollSessions { payload in
-                await MainActor.run { watcher.onPayload?(payload) }
+        let state = PollState()
+        pollTask = PollingTask.repeating(
+            order: .actThenSleep,
+            interval: { 500_000_000 },
+            action: { [weak self] in
+                await Self.scanOnce(state: state) { payload in
+                    await MainActor.run { self?.onPayload?(payload) }
+                }
             }
-        }
+        )
     }
 
     public func stop() {
@@ -26,58 +31,61 @@ public final class CodexSessionWatcher: @unchecked Sendable {
         pollTask = nil
     }
 
-    private nonisolated static func pollSessions(
-        handler: @Sendable @escaping (HookPayload) async -> Void
-    ) async {
+    /// Cross-poll mutable state (last-seen mtimes / last-emitted state per cwd), threaded through
+    /// scanOnce by PollingTask's action closure rather than captured `var`s in a loop. Deliberately
+    /// not actor-isolated: PollingTask calls the action strictly sequentially — one call finishes
+    /// before the next starts — so plain mutation here needs no lock or actor.
+    private final class PollState: @unchecked Sendable {
         var lastMtimes: [URL: Date] = [:]
         // cwd -> last state string we emitted, used to suppress duplicate emissions
         var lastEmitted: [String: String] = [:]
+    }
 
-        while !Task.isCancelled {
-            let sessionFiles = recentSessionFiles()
-            let now = Date()
+    private nonisolated static func scanOnce(
+        state: PollState,
+        handler: @Sendable (HookPayload) async -> Void
+    ) async {
+        let sessionFiles = recentSessionFiles()
+        let now = Date()
 
-            for fileURL in sessionFiles {
-                guard
-                    let attrs = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]),
-                    let mtime = attrs.contentModificationDate
-                else { continue }
+        for fileURL in sessionFiles {
+            guard
+                let attrs = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]),
+                let mtime = attrs.contentModificationDate
+            else { continue }
 
-                // Skip files older than 120 seconds
-                guard now.timeIntervalSince(mtime) < 120 else {
-                    lastMtimes.removeValue(forKey: fileURL)
-                    continue
-                }
-
-                let prevMtime = lastMtimes[fileURL]
-                lastMtimes[fileURL] = mtime
-
-                // Only reparse if the file actually changed
-                guard prevMtime.map({ mtime > $0 }) ?? true else { continue }
-
-                guard let (cwd, state) = parseSessionFile(at: fileURL) else { continue }
-
-                if lastEmitted[cwd] != state {
-                    lastEmitted[cwd] = state
-                    let payload = HookPayload(worktreePath: cwd, state: state, agent: "codex")
-                    await handler(payload)
-                }
+            // Skip files older than 120 seconds
+            guard now.timeIntervalSince(mtime) < 120 else {
+                state.lastMtimes.removeValue(forKey: fileURL)
+                continue
             }
 
-            // Clean up cache entries for cwds whose files are no longer recent
-            let activeCwds = Set(
-                sessionFiles.compactMap { url -> String? in
-                    guard
-                        let attrs = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
-                        let mtime = attrs.contentModificationDate,
-                        now.timeIntervalSince(mtime) < 120
-                    else { return nil }
-                    return parseCwd(at: url)
-                })
-            lastEmitted = lastEmitted.filter { activeCwds.contains($0.key) }
+            let prevMtime = state.lastMtimes[fileURL]
+            state.lastMtimes[fileURL] = mtime
 
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            // Only reparse if the file actually changed
+            guard prevMtime.map({ mtime > $0 }) ?? true else { continue }
+
+            guard let (cwd, sessionState) = parseSessionFile(at: fileURL) else { continue }
+
+            if state.lastEmitted[cwd] != sessionState {
+                state.lastEmitted[cwd] = sessionState
+                let payload = HookPayload(worktreePath: cwd, state: sessionState, agent: "codex")
+                await handler(payload)
+            }
         }
+
+        // Clean up cache entries for cwds whose files are no longer recent
+        let activeCwds = Set(
+            sessionFiles.compactMap { url -> String? in
+                guard
+                    let attrs = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
+                    let mtime = attrs.contentModificationDate,
+                    now.timeIntervalSince(mtime) < 120
+                else { return nil }
+                return parseCwd(at: url)
+            })
+        state.lastEmitted = state.lastEmitted.filter { activeCwds.contains($0.key) }
     }
 
     // MARK: - File helpers

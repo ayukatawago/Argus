@@ -16,11 +16,14 @@ public enum PollingTask {
     ///
     /// - Parameter interval: Called fresh before every sleep, not just once — a caller whose
     ///   interval comes from a live, mutable config (e.g. `ArgusConfigStore.shared.config...`)
-    ///   picks up changes on the next cycle without restarting the task.
+    ///   picks up changes on the next cycle without restarting the task. `async` rather than a
+    ///   plain `@Sendable () -> UInt64` specifically so a caller can read `@MainActor`-isolated
+    ///   state (as the config store is) without ArgusSupport itself needing to know about
+    ///   `@MainActor` — a synchronous closure still converts to this type automatically.
     public static func repeating(
         priority: TaskPriority? = nil,
         order: Order = .actThenSleep,
-        interval: @escaping @Sendable () -> UInt64,
+        interval: @escaping @Sendable () async -> UInt64,
         action: @escaping @Sendable () async -> Void
     ) -> Task<Void, Never> {
         Task(priority: priority) {
@@ -28,10 +31,10 @@ public enum PollingTask {
                 switch order {
                 case .actThenSleep:
                     await action()
-                    try? await Task.sleep(nanoseconds: interval())
+                    try? await Task.sleep(nanoseconds: await interval())
 
                 case .sleepThenAct:
-                    try? await Task.sleep(nanoseconds: interval())
+                    try? await Task.sleep(nanoseconds: await interval())
                     await action()
                 }
             }

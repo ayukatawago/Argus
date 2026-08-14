@@ -28,12 +28,11 @@ final class ShellStateBus: ObservableObject {
             try? FileManager.default.removeItem(atPath: HookIPC.shellEventLogPath)
             pollTask = Task { [weak self] in await self?.tailShellEvents() }
         } else {
-            pollTask = Task { [weak self] in
-                while !Task.isCancelled {
-                    await self?.poll()
-                    try? await Task.sleep(nanoseconds: 400_000_000)
-                }
-            }
+            pollTask = PollingTask.repeating(
+                order: .actThenSleep,
+                interval: { 400_000_000 },
+                action: { [weak self] in await self?.poll() }
+            )
         }
     }
 

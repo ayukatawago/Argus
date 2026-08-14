@@ -1,4 +1,5 @@
 import ArgusConfigKit
+import ArgusSupport
 import Foundation
 
 // MARK: - Models
@@ -128,13 +129,14 @@ final class PRMonitorStore: ObservableObject {
     func start() {
         guard pollTask == nil else { return }
         Task { await refresh() }
-        pollTask = Task { [weak self] in
-            while !Task.isCancelled {
-                let interval = ArgusConfigStore.shared.config.github.refreshIntervalSeconds
-                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
-                await self?.refresh()
-            }
-        }
+        pollTask = PollingTask.repeating(
+            order: .sleepThenAct,
+            interval: {
+                let seconds = await ArgusConfigStore.shared.config.github.refreshIntervalSeconds
+                return UInt64(seconds * 1_000_000_000)
+            },
+            action: { [weak self] in await self?.refresh() }
+        )
     }
 
     func stop() {
