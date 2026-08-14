@@ -1,5 +1,6 @@
 import AgentStateKit
 import ArgusConfigKit
+import ArgusSupport
 import SwiftUI
 import Workspaces
 
