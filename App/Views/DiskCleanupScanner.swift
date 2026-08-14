@@ -1,4 +1,5 @@
 import AppKit
+import ArgusConfigKit
 import Foundation
 
 struct CleanupCandidate: Identifiable {

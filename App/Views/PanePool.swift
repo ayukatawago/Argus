@@ -1,3 +1,4 @@
+import ArgusConfigKit
 import GhosttyTerminal
 import SwiftUI
 
