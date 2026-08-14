@@ -3,13 +3,6 @@ import ArgusConfigKit
 import ArgusSupport
 import GhosttyTerminal
 
-/// The terminal role a pane serves within a worktree.
-enum PaneRole {
-    case shell
-    case claude
-    case codex
-}
-
 /// Owns the terminal stack for one worktree — a shell pane (always eager) and
 /// optional agent panes (created lazily on first request). All sessions are
 /// backed by named tmux sessions so they persist across worktree release and
