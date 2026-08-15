@@ -50,6 +50,27 @@ constraint explicit at compile time via Swift 6 strict concurrency.
 Co-authored-by: Claude Code <claude@anthropic.com>
 ```
 
+## Split by concern: code, test, docs
+
+Default to **separate commits per concern**, not one commit mixing them. Classify every staged
+file into exactly one bucket:
+
+- **docs** — `*.md` files that document the codebase/product (`CLAUDE.md`, `README.md`, `CONVENTIONS.md`, `UI.md`, `docs/**`)
+- **test** — files under a `Tests/` directory, or named `*Tests.swift`
+- **code** — everything else, including production Swift, `project.yml`, entitlements, scripts, and tooling/config markdown such as `.claude/**` (skills, commands, agent definitions) — these aren't documentation *about* the codebase, they're config, so they take whichever type actually fits (usually `chore`, occasionally `feat`/`fix`), never `docs`
+
+Only split when **more than one bucket is actually present** in the staged changes. A change
+confined to a single bucket (a docs-only fix, a test-only addition) is just one commit — don't
+force an empty split.
+
+When more than one bucket is present, commit them in this order: **code → test → docs**. This
+keeps every intermediate commit in a buildable state — production code lands before the tests that
+exercise it, and docs land last since they describe the finished behavior.
+
+This is a distinct concern from step 5 below (splitting *within* a bucket when it mixes unrelated
+features/fixes) — apply both: first split by bucket, then, within the code bucket, check whether it
+still mixes unrelated concerns.
+
 ## Workflow
 
 1. Run `git status` and `git diff --cached` to inspect staged changes.
@@ -65,14 +86,17 @@ Co-authored-by: Claude Code <claude@anthropic.com>
    - If any Swift compiler **warnings** appear, stop and fix them before committing.
    - If the build itself fails (errors), stop and fix before committing.
    - Only proceed when the output of the above command is empty.
-4. Analyse the diff to determine:
-   - The appropriate **type** from the table above
+   - Run this once against the full staged set — not per bucket. Splitting the actual `git add`/`git commit` calls happens later in step 6; there's no need to lint/build each slice separately.
+4. Classify the staged files into the code/test/docs buckets above.
+5. Within the **code** bucket specifically, check whether it still mixes unrelated concerns (e.g. two unrelated bug fixes, or a feature plus an incidental refactor). If so, propose splitting further and ask the user; otherwise treat the code bucket as one commit.
+6. For each non-empty bucket, in **code → test → docs** order, analyse that bucket's diff alone to determine:
+   - The appropriate **type** from the table above (a docs bucket is always `docs`; a test bucket is always `test`; the code bucket is whatever `feat`/`fix`/`chore`/`refactor`/`ci` fits)
    - A concise **description** in imperative mood that says *what changed and why*, not just *what files changed*
-5. If the change is large or spans multiple concerns, propose splitting into separate commits and ask the user.
-6. Show the proposed commit message to the user before creating it.
-7. Create the commit:
+7. Show the user the **full list of proposed commits** (message for each bucket, in commit order) before creating any of them.
+8. Create each commit in order — stage only that bucket's files, then commit:
 
 ```
+git add <bucket files>
 git commit -m "$(cat <<'EOF'
 type: description
 
@@ -81,15 +105,20 @@ EOF
 )"
 ```
 
-8. Confirm success by showing the one-line git log entry.
+9. Confirm success by showing `git log --oneline` for the new commits (one line per bucket committed).
 
 ## Examples
 
+Single-bucket change (no split needed):
+
 ```
-feat: embed libghostty with single interactive terminal surface
-fix: restore keyboard focus after Canvas overlay is dismissed
-chore: vendor libghostty.a at ghostty commit abc1234
-refactor: replace DispatchQueue calls with async/await in WorkspaceStore
-test: add OSCParser round-trip tests for BEL and ST terminators
 docs: document worktree management workflow in README
+```
+
+Multi-bucket change (split code → test → docs):
+
+```
+fix: infer idle state correctly after /compact completes
+test: cover /compact's isCompactSummary idle mapping
+docs: document codex session-state inference rules
 ```
