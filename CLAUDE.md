@@ -104,6 +104,31 @@ approval needed" purely from the transcript. Treating it as `running` would race
 dialog is still open — so the watcher stays quiet on that line instead, and the next unambiguous
 `tool_result` re-asserts `running` once the ambiguity resolves.
 
+### Codex session inference (`CodexSessionWatcher` + `CodexSessionParser`)
+
+Codex state is inferred the same way, polling `~/.codex/sessions/<year>/<month>/<day>/*.jsonl`
+(today + yesterday only) every 500ms and reading each session's `event_msg.payload.type`:
+
+| `payload.type` | State |
+|---|---|
+| `task_started` / `turn_started` | `running` |
+| `task_complete` / `turn_complete` | `done` |
+| `turn_aborted` (Codex's Esc-abort) | `idle` — aligned with Claude's interrupt-to-idle behavior |
+| `exec_approval_request` / `apply_patch_approval_request` / `request_user_input` / `elicitation_request` | `waitingForApproval` |
+| Session file untouched for 5 minutes | `idle`, same rationale/timeout as Claude |
+
+The `waitingForApproval` mapping is transcript-inferred and **unverified** — this codebase's Codex
+projects are all `trust_level = "trusted"`, so no approval prompt has ever been observed in a real
+rollout file; the event names come from Codex's `EventMsg` enum, recovered from the binary. Unlike
+Claude's, there is no Codex hook backing this state. Codex also has a `.codex/hooks/hooks.json`
+`PermissionRequest` hook available (Claude-compatible shape) as a fallback if the transcript route
+turns out not to persist these events.
+
+Codex writes one rollout file per **subagent** as well as the top-level session, all sharing the
+parent's `cwd`. `CodexSessionWatcher` reads each file's `thread_source` from its `session_meta`
+header and skips any file where it's `"subagent"` — only the top-level thread drives worktree state,
+otherwise every subagent spawn/finish would flap the sidebar dot.
+
 ### IPC path (PermissionRequest only)
 
 The one remaining hook script lives at `~/Library/Application Support/argus/hooks/claude-waiting-approval.sh`, written once on first pane open. It appends JSON lines to `/private/tmp/argus-$UID-hook-events.jsonl` (`HookIPC.eventLogPath`) because sandboxed Codex hook processes cannot connect to Argus's Unix socket. Argus still opens `/private/tmp/argus-$UID-hook.sock` (`HookIPC.socketPath`) for best-effort direct IPC.
