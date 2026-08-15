@@ -29,6 +29,25 @@ struct CodexSessionParserTests {
         #expect(CodexSessionParser.extractCwd(from: #"{"cwd":"/Users/taku/trunc"#) == nil)
     }
 
+    // MARK: - extractThreadSource
+
+    @Test("extracts thread_source from a realistic padded header")
+    func extractsThreadSourceUser() {
+        let header = #"{"type":"session_meta","payload":{"cwd":"/x","thread_source":"user","#
+        let padding = String(repeating: "x", count: max(0, 512 - header.count))
+        #expect(CodexSessionParser.extractThreadSource(from: header + padding) == "user")
+    }
+
+    @Test("extracts thread_source of subagent")
+    func extractsThreadSourceSubagent() {
+        #expect(CodexSessionParser.extractThreadSource(from: #"{"thread_source":"subagent"}"#) == "subagent")
+    }
+
+    @Test("returns nil when thread_source key is absent")
+    func missingThreadSourceReturnsNil() {
+        #expect(CodexSessionParser.extractThreadSource(from: #"{"cwd":"/x"}"#) == nil)
+    }
+
     // MARK: - inferState
 
     @Test("the last task_complete wins over an earlier task_started")
@@ -49,16 +68,45 @@ struct CodexSessionParserTests {
         #expect(CodexSessionParser.inferState(from: tail) == "running")
     }
 
-    @Test("turn_aborted maps to done")
-    func turnAbortedMapsToDone() {
+    @Test("turn_aborted maps to idle, matching Claude's Escape-interrupt behavior")
+    func turnAbortedMapsToIdle() {
         let tail = #"{"type":"event_msg","payload":{"type":"turn_aborted"}}"#
+        #expect(CodexSessionParser.inferState(from: tail) == "idle")
+    }
+
+    @Test("turn_started / turn_complete aliases map the same as task_started / task_complete")
+    func turnAliasesMapCorrectly() {
+        #expect(
+            CodexSessionParser.inferState(from: #"{"type":"event_msg","payload":{"type":"turn_started"}}"#)
+                == "running")
+        #expect(
+            CodexSessionParser.inferState(from: #"{"type":"event_msg","payload":{"type":"turn_complete"}}"#)
+                == "done")
+    }
+
+    @Test(
+        "each approval/input-request event maps to waitingForApproval",
+        arguments: [
+            "exec_approval_request", "apply_patch_approval_request", "request_user_input", "elicitation_request",
+        ])
+    func approvalEventsMapToWaitingForApproval(eventType: String) {
+        let tail = #"{"type":"event_msg","payload":{"type":"\#(eventType)"}}"#
+        #expect(CodexSessionParser.inferState(from: tail) == "waitingForApproval")
+    }
+
+    @Test("a later task_complete after an approval request wins (reverse scan takes the newest)")
+    func laterTaskCompleteWinsOverEarlierApproval() {
+        let tail = """
+            {"type":"event_msg","payload":{"type":"exec_approval_request"}}
+            {"type":"event_msg","payload":{"type":"task_complete"}}
+            """
         #expect(CodexSessionParser.inferState(from: tail) == "done")
     }
 
-    @Test("no event_msg lines at all defaults to running")
-    func noEventMsgDefaultsToRunning() {
+    @Test("no event_msg lines at all is non-decisive")
+    func noEventMsgIsNonDecisive() {
         let tail = #"{"type":"something_else","payload":{}}"#
-        #expect(CodexSessionParser.inferState(from: tail) == "running")
+        #expect(CodexSessionParser.inferState(from: tail) == nil)
     }
 
     @Test("an unrecognized event type is skipped in favor of an earlier recognized one")
@@ -70,6 +118,15 @@ struct CodexSessionParserTests {
         #expect(CodexSessionParser.inferState(from: tail) == "done")
     }
 
+    @Test("a sub_agent_activity line is skipped in favor of an earlier decisive event")
+    func subAgentActivityIsSkipped() {
+        let tail = """
+            {"type":"event_msg","payload":{"type":"task_started"}}
+            {"type":"event_msg","payload":{"type":"sub_agent_activity"}}
+            """
+        #expect(CodexSessionParser.inferState(from: tail) == "running")
+    }
+
     @Test("malformed JSON lines are skipped rather than throwing")
     func malformedLinesAreSkipped() {
         let tail = """
@@ -79,8 +136,8 @@ struct CodexSessionParserTests {
         #expect(CodexSessionParser.inferState(from: tail) == "running")
     }
 
-    @Test("empty tail text defaults to running")
-    func emptyTailDefaultsToRunning() {
-        #expect(CodexSessionParser.inferState(from: "") == "running")
+    @Test("empty tail text is non-decisive")
+    func emptyTailIsNonDecisive() {
+        #expect(CodexSessionParser.inferState(from: "") == nil)
     }
 }
