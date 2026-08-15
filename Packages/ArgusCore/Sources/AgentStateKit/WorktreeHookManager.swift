@@ -14,36 +14,34 @@ public enum WorktreeHookManager {
         LoginShell.current.hasSuffix("/fish")
     }
 
-    /// Idempotent: writes the shared hook scripts once and merges argus's hook
-    /// entries into the worktree's .claude/settings.local.json.
+    /// Scripts an older Argus version wrote for hook events that are now inferred from the
+    /// transcript by ClaudeTranscriptWatcher instead. Removed on install so upgraded machines
+    /// don't keep dead scripts around (harmless since ClaudeSettingsPatcher no longer references
+    /// them, but they'd otherwise linger forever and keep appending to the retired event log).
+    private static let obsoleteScriptNames = [
+        "claude-running.sh", "claude-done.sh", "claude-user-prompt.sh", "claude-pre-compact.sh",
+        "claude-post-compact.sh", "claude-post-tool-use.sh", "claude-session-end.sh",
+    ]
+
+    /// Idempotent: writes the one remaining hook script and merges argus's hook
+    /// entry into the worktree's .claude/settings.local.json.
     public static func install(worktreePath: String) throws {
         installFishHooksIfNeeded()
         let hooksDir = try argusHooksDir()
         let eventLogPath = HookIPC.eventLogPath
-        let paths = ClaudeHookPaths(
-            running: hooksDir.appendingPathComponent("claude-running.sh"),
-            done: hooksDir.appendingPathComponent("claude-done.sh"),
-            approval: hooksDir.appendingPathComponent("claude-waiting-approval.sh"),
-            userPrompt: hooksDir.appendingPathComponent("claude-user-prompt.sh"),
-            preCompact: hooksDir.appendingPathComponent("claude-pre-compact.sh"),
-            postCompact: hooksDir.appendingPathComponent("claude-post-compact.sh"),
-            postToolUse: hooksDir.appendingPathComponent("claude-post-tool-use.sh"),
-            sessionEnd: hooksDir.appendingPathComponent("claude-session-end.sh")
-        )
-        try writeExecutable(at: paths.running, content: hookScript(state: "running", eventLogPath: eventLogPath))
-        try writeExecutable(at: paths.done, content: hookScript(state: "done", eventLogPath: eventLogPath))
+        let paths = ClaudeHookPaths(approval: hooksDir.appendingPathComponent("claude-waiting-approval.sh"))
         try writeExecutable(
             at: paths.approval,
             content: hookScript(state: "waitingForApproval", eventLogPath: eventLogPath)
         )
-        try writeExecutable(at: paths.userPrompt, content: hookScript(state: "running", eventLogPath: eventLogPath))
-        try writeExecutable(at: paths.preCompact, content: hookScript(state: "running", eventLogPath: eventLogPath))
-        try writeExecutable(at: paths.postCompact, content: hookScript(state: "done", eventLogPath: eventLogPath))
-        // PostToolUse keeps the timestamp fresh so long-running tools don't trip the staleness monitor.
-        try writeExecutable(at: paths.postToolUse, content: hookScript(state: "running", eventLogPath: eventLogPath))
-        // SessionEnd fires when the session terminates (e.g. /exit, window close).
-        try writeExecutable(at: paths.sessionEnd, content: hookScript(state: "idle", eventLogPath: eventLogPath))
+        removeObsoleteScripts(in: hooksDir)
         try patchLocalSettings(worktreePath: worktreePath, paths: paths)
+    }
+
+    private static func removeObsoleteScripts(in hooksDir: URL) {
+        for name in obsoleteScriptNames {
+            try? FileManager.default.removeItem(at: hooksDir.appendingPathComponent(name))
+        }
     }
 
     private static func argusHooksDir() throws -> URL {
