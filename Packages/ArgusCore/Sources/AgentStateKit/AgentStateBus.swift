@@ -8,6 +8,7 @@ public final class AgentStateBus: ObservableObject {
     @Published public private(set) var agentTypes: [String: AgentType] = [:]
     private let ipc = HookIPC()
     private let codexWatcher = CodexSessionWatcher()
+    private let claudeTranscriptWatcher = ClaudeTranscriptWatcher()
 
     public init() {}
 
@@ -16,11 +17,14 @@ public final class AgentStateBus: ObservableObject {
         ipc.start()
         codexWatcher.onPayload = { [weak self] payload in self?.apply(payload) }
         codexWatcher.start()
+        claudeTranscriptWatcher.onPayload = { [weak self] payload in self?.apply(payload) }
+        claudeTranscriptWatcher.start()
     }
 
     public func stop() {
         ipc.stop()
         codexWatcher.stop()
+        claudeTranscriptWatcher.stop()
     }
 
     public func state(for worktreePath: String) -> AgentState {
