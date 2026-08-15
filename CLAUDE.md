@@ -67,7 +67,12 @@ Cross-module import rule: only `App/` imports everything; other modules may only
 
 ## Agent state system
 
-Claude Code hooks write JSON payloads to a Unix socket; Argus reads them and updates per-worktree state.
+Claude Code state is inferred by polling the session transcript JSONL files Claude Code writes
+unconditionally under `~/.claude/projects/*/*.jsonl` (`ClaudeTranscriptWatcher`, 500ms poll,
+`Packages/ArgusCore/Sources/AgentStateKit/ClaudeTranscriptWatcher.swift` +
+`ClaudeTranscriptParser.swift`) — the same no-hook-trust approach `CodexSessionWatcher` already
+used for Codex. One hook remains: `PermissionRequest`, because nothing is written to the transcript
+while a permission dialog is open. Both feed `AgentStateBus.apply(_:)`.
 
 ### States (`Packages/ArgusCore/Sources/AgentStateKit/AgentState.swift`)
 
@@ -80,29 +85,30 @@ Claude Code hooks write JSON payloads to a Unix socket; Argus reads them and upd
 
 `done` and `waitingForApproval` borders dismiss when the user interacts with the workspace (click or keypress). `waitingForApproval` also clears automatically when the agent resumes.
 
-### Hook → state mapping (`Packages/ArgusCore/Sources/AgentStateKit/WorktreeHookManager.swift`)
+### Transcript → state inference (`ClaudeTranscriptParser.inferState`)
 
-| Claude Code hook | State sent | Script |
-|---|---|---|
-| `PreToolUse` | `running` | `claude-running.sh` |
-| `PostToolUse` | `running` | `claude-post-tool-use.sh` |
-| `Stop` | `done` | `claude-done.sh` |
-| `StopFailure` | `done` | `claude-done.sh` |
-| `PermissionRequest` | `waitingForApproval` | `claude-waiting-approval.sh` |
-| `UserPromptSubmit` | `running` | `claude-user-prompt.sh` |
-| `PreCompact` | `running` | `claude-pre-compact.sh` |
-| `PostCompact` | `done` | `claude-post-compact.sh` |
-| `SessionEnd` | `idle` | `claude-session-end.sh` |
+| Transcript signal | State |
+|---|---|
+| A `user`-type entry (a real prompt, or a tool_result) | `running` |
+| `assistant` entry with `stop_reason` `end_turn`/`stop_sequence` | `done` |
+| The synthetic `[Request interrupted by user…]` entry Claude Code writes on Escape | `idle` |
+| Transcript untouched for 5 minutes (crash, `kill -9`, or a normal `/exit` — no hook covers either) | `idle` |
 
-Note: `Stop` does **not** fire when `/compact` finishes — `PostCompact` covers that case.
+`assistant` entries with `stop_reason: tool_use` (or unset — a message still being generated) are
+deliberately **not** decisive. Every content block of one assistant message — thinking, text,
+tool_use — is written with the same final `stop_reason` already attached, all at once, once the
+whole message resolves. So a freshly-written `stop_reason: tool_use` line lands at exactly the
+instant a permission check may or may not happen, indistinguishable from "already executing, no
+approval needed" purely from the transcript. Treating it as `running` would race the
+`PermissionRequest` hook and could silently clobber `waitingForApproval` back to `running` while the
+dialog is still open — so the watcher stays quiet on that line instead, and the next unambiguous
+`tool_result` re-asserts `running` once the ambiguity resolves.
 
-Note: There is **no hook for Escape/interrupt**. When the user interrupts Claude mid-thinking, `Stop` does not fire and the indicator stays `running` until the user next interacts (sends a message → `UserPromptSubmit`) or exits the session (`SessionEnd`). `PostToolUse` keeps the `running` state alive during long-running tool calls.
+### IPC path (PermissionRequest only)
 
-### IPC path
+The one remaining hook script lives at `~/Library/Application Support/argus/hooks/claude-waiting-approval.sh`, written once on first pane open. It appends JSON lines to `/private/tmp/argus-$UID-hook-events.jsonl` (`HookIPC.eventLogPath`) because sandboxed Codex hook processes cannot connect to Argus's Unix socket. Argus still opens `/private/tmp/argus-$UID-hook.sock` (`HookIPC.socketPath`) for best-effort direct IPC.
 
-Scripts live in `~/Library/Application Support/argus/hooks/` and are written once on first pane open. They append JSON lines to `/private/tmp/argus-$UID-hook-events.jsonl` (`HookIPC.eventLogPath`) because sandboxed Codex hook processes cannot connect to Argus's Unix socket. Argus still opens `/private/tmp/argus-$UID-hook.sock` (`HookIPC.socketPath`) for best-effort direct IPC.
-
-`WorktreeHookManager.install(worktreePath:)` is idempotent: it overwrites the scripts and delegates the `.claude/settings.local.json` merge to `ClaudeSettingsPatcher`, which upserts Argus's entries without disturbing other hook entries. That file is gitignored.
+`WorktreeHookManager.install(worktreePath:)` is idempotent: it overwrites the script, removes the eight scripts an older Argus version wrote for events now inferred from the transcript, and delegates the `.claude/settings.local.json` merge to `ClaudeSettingsPatcher`, which upserts the PermissionRequest entry and prunes those eight retired events without disturbing other hook entries. That file is gitignored.
 
 ## Window layout & pane pool
 
@@ -148,8 +154,9 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 | `App/Views/SettingsWindow.swift` | Settings UI — Agent page (agent picker + commands) and GitHub/Environment pages |
 | `App/Views/KeyboardSettingsView.swift` | Settings UI — Keyboard page (key bindings + popup terminal shortcuts editor) |
 | `App/ShellStateBus.swift` | Shell-busy tracking (fish hooks / tmux fallback) → sidebar border |
-| `Packages/ArgusCore/Sources/AgentStateKit/AgentStateBus.swift` | `@MainActor` ObservableObject, socket reader |
-| `Packages/ArgusCore/Sources/AgentStateKit/WorktreeHookManager.swift` | Hook script writer; delegates the settings.local.json merge to `ClaudeSettingsPatcher` |
+| `Packages/ArgusCore/Sources/AgentStateKit/AgentStateBus.swift` | `@MainActor` ObservableObject; owns the socket/JSONL hook reader, `CodexSessionWatcher`, and `ClaudeTranscriptWatcher` |
+| `Packages/ArgusCore/Sources/AgentStateKit/ClaudeTranscriptWatcher.swift` / `ClaudeTranscriptParser.swift` | Polls `~/.claude/projects/*/*.jsonl` to infer running/done/interrupted-idle/stale-idle without hooks |
+| `Packages/ArgusCore/Sources/AgentStateKit/WorktreeHookManager.swift` | Writes the one remaining hook script (PermissionRequest); delegates the settings.local.json merge to `ClaudeSettingsPatcher` |
 | `Packages/ArgusCore/Sources/ArgusConfigKit/ArgusConfig.swift` | `ArgusConfig` struct, `ArgusConfigStore`, `AgentSelection`/`WindowLayout` enums, `github`/`diskMonitor`/`environmentVariables`/`popupShortcuts` config blocks; persistence itself is `ArgusConfigFile.swift` (`~/.config/argus/argus.json`) |
 | `Packages/ArgusCore/Sources/Workspaces/WorkspaceStore.swift` | Repo/worktree scanning orchestrator; parsing (`WorktreeListParser`) and discovery (`RepoScanner`) are separate testable files in the same target |
 | `Packages/ArgusCore/Package.swift` | ArgusCore's five targets + their internal dependency graph — edit this to add a file to a new target |
