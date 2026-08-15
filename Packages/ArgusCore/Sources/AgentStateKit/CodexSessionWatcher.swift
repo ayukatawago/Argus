@@ -11,6 +11,12 @@ public final class CodexSessionWatcher: @unchecked Sendable {
     public var onPayload: ((HookPayload) -> Void)?
     private var pollTask: Task<Void, Never>?
 
+    /// A worktree whose session file hasn't grown in this long is treated as abandoned (crash,
+    /// `kill -9`, or a normal exit — Codex fires no hook for either) and cleared to idle. Shares
+    /// Claude's 300s rationale (see ClaudeTranscriptWatcher.staleTimeout): comfortably above any
+    /// observed tool-call gap, so a genuinely busy agent never trips it.
+    private nonisolated static let staleTimeout: TimeInterval = 300
+
     public init() {}
 
     public func start() {
@@ -31,12 +37,14 @@ public final class CodexSessionWatcher: @unchecked Sendable {
         pollTask = nil
     }
 
-    /// Cross-poll mutable state (last-seen mtimes / last-emitted state per cwd), threaded through
-    /// scanOnce by PollingTask's action closure rather than captured `var`s in a loop. Deliberately
-    /// not actor-isolated: PollingTask calls the action strictly sequentially — one call finishes
-    /// before the next starts — so plain mutation here needs no lock or actor.
+    /// Cross-poll mutable state, threaded through scanOnce by PollingTask's action closure rather
+    /// than captured `var`s in a loop. Deliberately not actor-isolated: PollingTask calls the
+    /// action strictly sequentially — one call finishes before the next starts — so plain mutation
+    /// here needs no lock or actor (same reasoning as ClaudeTranscriptWatcher.PollState).
     private final class PollState: @unchecked Sendable {
         var lastMtimes: [URL: Date] = [:]
+        // Worktree cwd a tracked session file is bound to, so the stale branch knows what to clear.
+        var cwds: [URL: String] = [:]
         // cwd -> last state string we emitted, used to suppress duplicate emissions
         var lastEmitted: [String: String] = [:]
     }
@@ -45,18 +53,17 @@ public final class CodexSessionWatcher: @unchecked Sendable {
         state: PollState,
         handler: @Sendable (HookPayload) async -> Void
     ) async {
-        let sessionFiles = recentSessionFiles()
         let now = Date()
 
-        for fileURL in sessionFiles {
+        for fileURL in recentSessionFiles() {
             guard
                 let attrs = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]),
                 let mtime = attrs.contentModificationDate
             else { continue }
 
-            // Skip files older than 120 seconds
-            guard now.timeIntervalSince(mtime) < 120 else {
+            guard now.timeIntervalSince(mtime) < staleTimeout else {
                 state.lastMtimes.removeValue(forKey: fileURL)
+                await clearIfTracked(fileURL, state: state, handler: handler)
                 continue
             }
 
@@ -66,26 +73,39 @@ public final class CodexSessionWatcher: @unchecked Sendable {
             // Only reparse if the file actually changed
             guard prevMtime.map({ mtime > $0 }) ?? true else { continue }
 
-            guard let (cwd, sessionState) = parseSessionFile(at: fileURL) else { continue }
+            guard let parsed = parseSessionFile(at: fileURL) else { continue }
+            // Subagent rollouts carry their parent's cwd but track a different unit of work —
+            // treating them as peers of the top-level session flaps the indicator on every
+            // subagent spawn/finish. Only the top-level ("user") thread drives worktree state.
+            guard parsed.threadSource != "subagent" else { continue }
+            state.cwds[fileURL] = parsed.cwd
 
-            if state.lastEmitted[cwd] != sessionState {
-                state.lastEmitted[cwd] = sessionState
-                let payload = HookPayload(worktreePath: cwd, state: sessionState, agent: "codex")
-                await handler(payload)
-            }
+            guard let sessionState = parsed.state else { continue }
+            await emit(cwd: parsed.cwd, sessionState: sessionState, state: state, handler: handler)
         }
+    }
 
-        // Clean up cache entries for cwds whose files are no longer recent
-        let activeCwds = Set(
-            sessionFiles.compactMap { url -> String? in
-                guard
-                    let attrs = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
-                    let mtime = attrs.contentModificationDate,
-                    now.timeIntervalSince(mtime) < 120
-                else { return nil }
-                return parseCwd(at: url)
-            })
-        state.lastEmitted = state.lastEmitted.filter { activeCwds.contains($0.key) }
+    /// A file we were never tracking is just an old, already-finished (or subagent) session —
+    /// nothing to do. One we *were* tracking just went quiet (crash, `kill -9`, or a normal exit —
+    /// no hook covers either): clear its worktree to idle and stop tracking it.
+    private nonisolated static func clearIfTracked(
+        _ fileURL: URL,
+        state: PollState,
+        handler: @Sendable (HookPayload) async -> Void
+    ) async {
+        guard let cwd = state.cwds.removeValue(forKey: fileURL) else { return }
+        await emit(cwd: cwd, sessionState: "idle", state: state, handler: handler)
+    }
+
+    private nonisolated static func emit(
+        cwd: String,
+        sessionState: String,
+        state: PollState,
+        handler: @Sendable (HookPayload) async -> Void
+    ) async {
+        guard state.lastEmitted[cwd] != sessionState else { return }
+        state.lastEmitted[cwd] = sessionState
+        await handler(HookPayload(worktreePath: cwd, state: sessionState, agent: "codex"))
     }
 
     // MARK: - File helpers
@@ -117,38 +137,43 @@ public final class CodexSessionWatcher: @unchecked Sendable {
         return results
     }
 
-    /// Returns the `cwd` from the first `session_meta` line of the file, without reading the whole file.
-    private nonisolated static func parseCwd(at url: URL) -> String? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-        // cwd appears at ~byte 156; 512 bytes is always enough regardless of system-prompt length
-        let data = handle.readData(ofLength: 512)
-        guard let text = String(data: data, encoding: .utf8) else { return nil }
-        return CodexSessionParser.extractCwd(from: text)
+    private struct ParsedSession {
+        let cwd: String
+        let threadSource: String?
+        let state: String?
     }
 
-    /// Reads the session file and returns `(cwd, state)` by parsing the header and tail.
-    private nonisolated static func parseSessionFile(at url: URL) -> (cwd: String, state: String)? {
+    /// Reads the session file's header and tail in a single open. cwd appears at ~byte 156 and
+    /// thread_source at ~byte 270-618; 2048 bytes is always enough regardless of system-prompt
+    /// length. `state` is `nil` when the tail contains no decisive event (empty file, or the file
+    /// grew but nothing relevant landed in the last 4096 bytes).
+    ///
+    /// Deliberately uses `String(decoding:as:)`, not the failable `String(bytes:encoding:)`: a
+    /// fixed-size read can cut a UTF-8 codepoint in half, and a nil result previously made the
+    /// caller fall back to reporting "running" outright (a real session could be long done).
+    /// `String(decoding:as:)` never fails — the split codepoint becomes U+FFFD, corrupting only the
+    /// one already-partial line, which the per-line JSON guard in CodexSessionParser.inferState
+    /// skips anyway.
+    private nonisolated static func parseSessionFile(at url: URL) -> ParsedSession? {
+        // swiftlint:disable optional_data_string_conversion
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
 
-        // cwd appears at ~byte 156; 512 bytes is always enough regardless of system-prompt length
-        let headerData = handle.readData(ofLength: 512)
-        guard let headerText = String(data: headerData, encoding: .utf8) else { return nil }
+        let headerData = handle.readData(ofLength: 2_048)
+        let headerText = String(decoding: headerData, as: UTF8.self)
         guard let cwd = CodexSessionParser.extractCwd(from: headerText) else { return nil }
+        let threadSource = CodexSessionParser.extractThreadSource(from: headerText)
 
-        // Seek to tail to find the last relevant event_msg entries
         guard
             let size = try? handle.seekToEnd(),
             size > 0
-        else { return (cwd, "running") }
+        else { return ParsedSession(cwd: cwd, threadSource: threadSource, state: nil) }
 
         let tailSize: UInt64 = min(size, 4_096)
         try? handle.seek(toOffset: size - tailSize)
         let tailData = handle.readDataToEndOfFile()
-        guard let tailText = String(data: tailData, encoding: .utf8) else { return (cwd, "running") }
-
-        let state = CodexSessionParser.inferState(from: tailText)
-        return (cwd, state)
+        let tailText = String(decoding: tailData, as: UTF8.self)
+        // swiftlint:enable optional_data_string_conversion
+        return ParsedSession(cwd: cwd, threadSource: threadSource, state: CodexSessionParser.inferState(from: tailText))
     }
 }
