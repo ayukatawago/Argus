@@ -1,0 +1,160 @@
+import Testing
+
+@testable import AgentStateKit
+
+@Suite("ClaudeTranscriptParser")
+struct ClaudeTranscriptParserTests {
+    // MARK: - extractCwd
+
+    @Test("finds cwd on the first line that carries one, skipping earlier bookkeeping lines")
+    func findsCwdSkippingBookkeepingLines() {
+        let header = """
+            {"type":"mode","mode":"normal","sessionId":"abc"}
+            {"type":"permission-mode","permissionMode":"default","sessionId":"abc"}
+            {"type":"user","message":{"role":"user","content":"hi"},"cwd":"/Users/taku/workspace/app/Argus"}
+            """
+        #expect(ClaudeTranscriptParser.extractCwd(from: header) == "/Users/taku/workspace/app/Argus")
+    }
+
+    @Test("returns nil when no line carries a cwd")
+    func noCwdReturnsNil() {
+        let header = #"{"type":"mode","mode":"normal","sessionId":"abc"}"#
+        #expect(ClaudeTranscriptParser.extractCwd(from: header) == nil)
+    }
+
+    // MARK: - isInterrupt
+
+    @Test("recognizes the plain interrupt marker, including interruptedMessageId when present")
+    func recognizesPlainInterruptMarker() {
+        let line = """
+            {"parentUuid":"9ea2cbf3","isSidechain":false,"type":"user","message":{"role":"user",\
+            "content":[{"type":"text","text":"[Request interrupted by user]"}]},\
+            "uuid":"9ea2cbf3-c51c-4b40-890f-f43868af16c6","interruptedMessageId":"msg_011Ce1tEoywtkEAC6S17dnHN",\
+            "cwd":"/Users/taku/workspace/kobito"}
+            """
+        #expect(ClaudeTranscriptParser.isInterrupt(line: line))
+    }
+
+    @Test("recognizes the \"for tool use\" interrupt variant, which lacks interruptedMessageId")
+    func recognizesForToolUseInterruptVariant() {
+        let line = """
+            {"parentUuid":"27426611","isSidechain":false,"type":"user","message":{"role":"user",\
+            "content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]},\
+            "uuid":"4e99dc67-ba1b-458b-ae63-3011b4f980c6","cwd":"/Users/taku/workspace/kobito"}
+            """
+        #expect(ClaudeTranscriptParser.isInterrupt(line: line))
+    }
+
+    @Test("an assistant message that merely quotes the marker is not an interrupt")
+    func assistantQuotingMarkerIsNotInterrupt() {
+        let line = """
+            {"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn",\
+            "content":[{"type":"text","text":"The previous turn ended with [Request interrupted by user] logged."}]}}
+            """
+        #expect(!ClaudeTranscriptParser.isInterrupt(line: line))
+    }
+
+    @Test("a user message that mentions the marker without it being a prefix is not an interrupt")
+    func userMentioningMarkerWithoutPrefixIsNotInterrupt() {
+        let line = """
+            {"type":"user","message":{"role":"user",\
+            "content":[{"type":"text","text":"I saw '[Request interrupted by user]' in the logs, please continue."}]}}
+            """
+        #expect(!ClaudeTranscriptParser.isInterrupt(line: line))
+    }
+
+    @Test("a tool_result that merely nests the marker text is not an interrupt")
+    func toolResultNestingMarkerIsNotInterrupt() {
+        let line = """
+            {"type":"user","message":{"role":"user","content":[{"type":"tool_result",\
+            "tool_use_id":"toolu_01","content":[{"type":"text",\
+            "text":"grep found: [Request interrupted by user] in file.log"}]}]}}
+            """
+        #expect(!ClaudeTranscriptParser.isInterrupt(line: line))
+    }
+
+    @Test("malformed JSON is not an interrupt")
+    func malformedJSONIsNotInterrupt() {
+        #expect(!ClaudeTranscriptParser.isInterrupt(line: "not json [Request interrupted by user]"))
+    }
+
+    // MARK: - inferState
+
+    @Test("the interrupt marker maps to idle")
+    func interruptMarkerMapsToIdle() {
+        let tail = """
+            {"type":"user","message":{"role":"user",\
+            "content":[{"type":"text","text":"[Request interrupted by user]"}]}}
+            """
+        #expect(ClaudeTranscriptParser.inferState(fromTail: tail) == "idle")
+    }
+
+    @Test("stop_reason end_turn maps to done")
+    func endTurnMapsToDone() {
+        let tail = #"{"type":"assistant","message":{"stop_reason":"end_turn"}}"#
+        #expect(ClaudeTranscriptParser.inferState(fromTail: tail) == "done")
+    }
+
+    @Test("stop_reason stop_sequence maps to done")
+    func stopSequenceMapsToDone() {
+        let tail = #"{"type":"assistant","message":{"stop_reason":"stop_sequence"}}"#
+        #expect(ClaudeTranscriptParser.inferState(fromTail: tail) == "done")
+    }
+
+    @Test("a plain (non-interrupt) user entry maps to running")
+    func plainUserEntryMapsToRunning() {
+        let tail = #"{"type":"user","message":{"role":"user","content":"go ahead"}}"#
+        #expect(ClaudeTranscriptParser.inferState(fromTail: tail) == "running")
+    }
+
+    @Test(
+        """
+        stop_reason tool_use is deliberately not decisive: every content block of a message shares \
+        its final stop_reason, so a freshly-written tool_use line is the same instant a \
+        PermissionRequest hook may fire, and treating it as decisive would race the hook and could \
+        clobber waitingForApproval back to running
+        """
+    )
+    func toolUseAloneIsNotDecisive() {
+        let tail = #"{"type":"assistant","message":{"stop_reason":"tool_use"}}"#
+        #expect(ClaudeTranscriptParser.inferState(fromTail: tail) == nil)
+    }
+
+    @Test("a null stop_reason (message still being generated) is not decisive")
+    func nullStopReasonIsNotDecisive() {
+        let tail = #"{"type":"assistant","message":{"stop_reason":null}}"#
+        #expect(ClaudeTranscriptParser.inferState(fromTail: tail) == nil)
+    }
+
+    @Test("a tool_use line followed by its tool_result resolves to running")
+    func toolResultAfterToolUseResolvesToRunning() {
+        let tail = """
+            {"type":"assistant","message":{"stop_reason":"tool_use"}}
+            {"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}
+            """
+        #expect(ClaudeTranscriptParser.inferState(fromTail: tail) == "running")
+    }
+
+    @Test("only bookkeeping entries (mode, permission-mode) are not decisive")
+    func onlyBookkeepingEntriesAreNotDecisive() {
+        let tail = """
+            {"type":"mode","mode":"normal"}
+            {"type":"permission-mode","permissionMode":"plan"}
+            """
+        #expect(ClaudeTranscriptParser.inferState(fromTail: tail) == nil)
+    }
+
+    @Test("empty tail text is not decisive")
+    func emptyTailIsNotDecisive() {
+        #expect(ClaudeTranscriptParser.inferState(fromTail: "") == nil)
+    }
+
+    @Test("malformed lines are skipped rather than throwing")
+    func malformedLinesAreSkipped() {
+        let tail = """
+            not json at all
+            {"type":"assistant","message":{"stop_reason":"end_turn"}}
+            """
+        #expect(ClaudeTranscriptParser.inferState(fromTail: tail) == "done")
+    }
+}
