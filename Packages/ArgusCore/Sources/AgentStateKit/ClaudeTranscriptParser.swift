@@ -13,14 +13,18 @@ public enum ClaudeTranscriptParser {
     /// the text prefix is the signal matched on.
     static let interruptMarker = "[Request interrupted by user"
 
-    /// Prefix of the synthetic `user`-type entry Claude Code's CLI writes for every local slash
-    /// command (`/clear`, `/compact`, `/model`, `/exit`, …) — content looks like
-    /// `<command-name>/clear</command-name>\n  <command-message>clear</command-message>…`. These
-    /// never start an agent turn, so without this check `inferState`'s plain `case "user": return
-    /// "running"` misfires on them — most visibly on `/clear`, which leaves the pane stuck showing
-    /// `running` (or whatever state preceded it) until the 5-minute stale timeout, since no
-    /// decisive entry ever follows to correct it.
-    static let localCommandMarker = "<command-name>"
+    /// Prefixes of the synthetic `user`-type entries Claude Code's CLI writes across the lifecycle
+    /// of a local slash command (`/clear`, `/compact`, `/model`, `/exit`, …): the invocation itself
+    /// (`<command-name>/clear</command-name>\n  <command-message>clear</command-message>…`), the
+    /// caveat wrapper telling the model to ignore the replay (`<local-command-caveat>…`), and the
+    /// command's own stdout echoed back for the transcript (`<local-command-stdout>…`). None of
+    /// these start an agent turn, so without this check `inferState`'s plain `case "user": return
+    /// "running"` misfires on them. `/clear` leaves the pane stuck on `running` because its
+    /// `<command-name>` entry is the last line written. `/compact` is worse: it writes all three
+    /// wrapper entries, and `<local-command-stdout>` — unmatched before this fix — lands last in
+    /// file order (after the `isCompactSummary` entry, which is inserted earlier despite a similar
+    /// timestamp), so the pane stayed on `running` even once compaction had fully finished.
+    static let localCommandMarkers = ["<command-name>", "<local-command-caveat>", "<local-command-stdout>"]
 
     /// Extracts the `cwd` recorded on the first transcript line that carries one. Some leading
     /// lines (`{"type":"mode",…}`, `{"type":"permission-mode",…}`) carry only `type`/`sessionId`
@@ -53,24 +57,41 @@ public enum ClaudeTranscriptParser {
         return firstText(in: obj["message"] as? [String: Any])?.hasPrefix(interruptMarker) == true
     }
 
-    /// True if `line` is the synthetic user entry Claude Code's CLI writes for a local slash
-    /// command. Requires a decoded `type == "user"` entry whose text content starts with the
-    /// marker, mirroring `isInterrupt`'s decode-then-check shape so a tool result or assistant
-    /// text that merely quotes `<command-name>` can't misfire.
+    /// True if `line` is one of the synthetic user entries Claude Code's CLI writes across a local
+    /// slash command's lifecycle. Requires a decoded `type == "user"` entry whose text content
+    /// starts with one of `localCommandMarkers`, mirroring `isInterrupt`'s decode-then-check shape
+    /// so a tool result or assistant text that merely quotes one of the tags can't misfire.
     public static func isLocalCommand(line: String) -> Bool {
-        guard line.contains(localCommandMarker) else { return false }
+        guard localCommandMarkers.contains(where: { line.contains($0) }) else { return false }
+        guard
+            let data = line.data(using: .utf8),
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            obj["type"] as? String == "user",
+            let text = firstText(in: obj["message"] as? [String: Any])
+        else { return false }
+        return localCommandMarkers.contains { text.hasPrefix($0) }
+    }
+
+    /// True if `line` is the `isCompactSummary` entry `/compact` seeds the new context with — the
+    /// prior conversation's summary, replayed as a `user`-role message so the model can read it.
+    /// It carries no `<command-name>`-style text marker (its content is the freeform summary), so
+    /// it needs its own field-based check; without it, a poll window that ends right after this
+    /// entry (before the trailing `<local-command-stdout>` line lands) would still misfire the
+    /// generic `case "user": return "running"` branch.
+    public static func isCompactSummary(line: String) -> Bool {
+        guard line.contains("\"isCompactSummary\"") else { return false }
         guard
             let data = line.data(using: .utf8),
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             obj["type"] as? String == "user"
         else { return false }
-        return firstText(in: obj["message"] as? [String: Any])?.hasPrefix(localCommandMarker) == true
+        return obj["isCompactSummary"] as? Bool == true
     }
 
     /// Scans tail lines in reverse and returns the first decisive state, or `nil` if nothing in
     /// the given text is decisive.
     /// - interrupt marker -> "idle"
-    /// - local slash command entry -> "idle"
+    /// - local slash command entry (invocation, caveat, stdout, or compact summary) -> "idle"
     /// - assistant entry whose `stop_reason` is `end_turn`/`stop_sequence` -> "done"
     /// - any other (non-interrupt, non-command) user entry -> "running"
     ///
@@ -91,6 +112,7 @@ public enum ClaudeTranscriptParser {
             let lineStr = String(line)
             if isInterrupt(line: lineStr) { return "idle" }
             if isLocalCommand(line: lineStr) { return "idle" }
+            if isCompactSummary(line: lineStr) { return "idle" }
 
             guard
                 let data = lineStr.data(using: .utf8),
