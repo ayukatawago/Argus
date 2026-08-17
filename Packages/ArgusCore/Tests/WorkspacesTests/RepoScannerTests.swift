@@ -27,9 +27,10 @@ struct RepoScannerTests {
         defer { try? FileManager.default.removeItem(at: root) }
         try Self.markAsGitRepo(root)
 
-        let repos = await RepoScanner.findRepos(under: root.path, excluding: []) { path in
-            Self.stubWorktree(for: path)
-        }
+        let repos = try #require(
+            await RepoScanner.findRepos(under: root.path, excluding: []) { path in
+                Self.stubWorktree(for: path)
+            })
         #expect(repos.count == 1)
         #expect(repos[0].mainPath == root.path)
         #expect(repos[0].isGitRepo == true)
@@ -45,7 +46,7 @@ struct RepoScannerTests {
         let repos = await RepoScanner.findRepos(under: root.path, excluding: [root.path]) { path in
             Self.stubWorktree(for: path)
         }
-        #expect(repos.isEmpty)
+        #expect(repos?.isEmpty == true)
     }
 
     @Test("a git repo root whose worktree lister returns nothing is treated as not found")
@@ -55,7 +56,7 @@ struct RepoScannerTests {
         try Self.markAsGitRepo(root)
 
         let repos = await RepoScanner.findRepos(under: root.path, excluding: []) { _ in [] }
-        #expect(repos.isEmpty)
+        #expect(repos?.isEmpty == true)
     }
 
     @Test("only git-repo subdirectories are returned, sorted by name")
@@ -67,9 +68,10 @@ struct RepoScannerTests {
         try FileManager.default.createDirectory(
             at: root.appendingPathComponent("not-a-repo"), withIntermediateDirectories: true)
 
-        let repos = await RepoScanner.findRepos(under: root.path, excluding: []) { path in
-            Self.stubWorktree(for: path)
-        }
+        let repos = try #require(
+            await RepoScanner.findRepos(under: root.path, excluding: []) { path in
+                Self.stubWorktree(for: path)
+            })
         #expect(repos.map(\.name) == ["alpha", "zebra"])
     }
 
@@ -80,12 +82,13 @@ struct RepoScannerTests {
         try Self.markAsGitRepo(root.appendingPathComponent("keep"))
         try Self.markAsGitRepo(root.appendingPathComponent("skip"))
 
-        let repos = await RepoScanner.findRepos(
-            under: root.path,
-            excluding: [root.appendingPathComponent("skip").path]
-        ) { path in
-            Self.stubWorktree(for: path)
-        }
+        let repos = try #require(
+            await RepoScanner.findRepos(
+                under: root.path,
+                excluding: [root.appendingPathComponent("skip").path]
+            ) { path in
+                Self.stubWorktree(for: path)
+            })
         #expect(repos.map(\.name) == ["keep"])
     }
 
@@ -96,7 +99,7 @@ struct RepoScannerTests {
         try FileManager.default.createDirectory(
             at: root.appendingPathComponent("plain-file-tree"), withIntermediateDirectories: true)
 
-        let repos = await RepoScanner.findRepos(under: root.path, excluding: []) { _ in [] }
+        let repos = try #require(await RepoScanner.findRepos(under: root.path, excluding: []) { _ in [] })
         #expect(repos.count == 1)
         #expect(repos[0].mainPath == root.path)
         #expect(repos[0].isGitRepo == false)
@@ -109,12 +112,25 @@ struct RepoScannerTests {
         defer { try? FileManager.default.removeItem(at: root) }
 
         let repos = await RepoScanner.findRepos(under: root.path, excluding: [root.path]) { _ in [] }
-        #expect(repos.isEmpty)
+        #expect(repos?.isEmpty == true)
     }
 
-    @Test("a nonexistent root returns no repos")
+    @Test("a nonexistent root returns no repos (definite, not undetermined)")
     func nonexistentRootReturnsNoRepos() async {
         let repos = await RepoScanner.findRepos(under: "/no/such/path/at/all", excluding: []) { _ in [] }
-        #expect(repos.isEmpty)
+        #expect(repos?.isEmpty == true)
+    }
+
+    @Test("a root that exists but can't be listed returns nil (undetermined), not empty")
+    func unreadableRootReturnsNil() async throws {
+        let root = try Self.makeTempDir()
+        defer {
+            chmod(root.path, 0o755)
+            try? FileManager.default.removeItem(at: root)
+        }
+        chmod(root.path, 0)
+
+        let repos = await RepoScanner.findRepos(under: root.path, excluding: []) { _ in [] }
+        #expect(repos == nil)
     }
 }
