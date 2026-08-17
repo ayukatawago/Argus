@@ -9,7 +9,9 @@ struct WorktreeContentView: View {
     @ObservedObject var shellHost: TerminalHost
     @ObservedObject var claudeHost: TerminalHost
     @ObservedObject var codexHost: TerminalHost
+    @ObservedObject var tabsStore: TerminalTabsStore
     var agentState: AgentState = .idle
+    var onShellActivated: () -> Void = {}
 
     var body: some View {
         switch layout {
@@ -31,8 +33,7 @@ struct WorktreeContentView: View {
     private var terminalAgentLayout: some View {
         let agentHost = agent == .codex ? codexHost : claudeHost
         HSplitView {
-            TerminalHostView(host: shellHost)
-                .overlay(focusBorder(isFocused: shellHost.hasFocus))
+            shellPane
                 .frame(minWidth: 200)
             TerminalHostView(host: agentHost)
                 .overlay(focusBorder(isFocused: agentHost.hasFocus))
@@ -56,8 +57,7 @@ struct WorktreeContentView: View {
                     .frame(minWidth: 200)
             }
         } bottom: {
-            TerminalHostView(host: shellHost)
-                .overlay(focusBorder(isFocused: shellHost.hasFocus))
+            shellPane
         }
     }
 
@@ -65,8 +65,7 @@ struct WorktreeContentView: View {
     @ViewBuilder
     private var terminalClaudeCodexLayout: some View {
         HSplitView {
-            TerminalHostView(host: shellHost)
-                .overlay(focusBorder(isFocused: shellHost.hasFocus))
+            shellPane
                 .frame(minWidth: 200)
             TerminalHostView(host: claudeHost)
                 .overlay(focusBorder(isFocused: claudeHost.hasFocus))
@@ -76,6 +75,23 @@ struct WorktreeContentView: View {
                 .overlay(focusBorder(isFocused: codexHost.hasFocus))
                 .frame(minWidth: 200)
         }
+    }
+
+    /// The shell column: its tmux windows as a tab bar, above the terminal itself. Extracted so
+    /// all three layouts pick up the bar from one place. The focus border deliberately stays
+    /// scoped to the terminal, not the tab bar above it.
+    @ViewBuilder
+    private var shellPane: some View {
+        VStack(spacing: 0) {
+            TerminalTabBarView(store: tabsStore, onActivate: activateShell)
+            TerminalHostView(host: shellHost)
+                .overlay(focusBorder(isFocused: shellHost.hasFocus))
+        }
+    }
+
+    private func activateShell() {
+        onShellActivated()
+        shellHost.focusActiveTerminal()
     }
 
     // MARK: - Borders

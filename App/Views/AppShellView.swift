@@ -12,6 +12,7 @@ struct AppShellView: View {
     @StateObject private var markdownPreview = MarkdownPreviewWindow()
     @StateObject private var agentBus = AgentStateBus()
     @StateObject private var shellStateBus = ShellStateBus()
+    @StateObject private var terminalTabs = TerminalTabsStore()
     @StateObject private var diskMonitor = DiskMonitorStore()
     @StateObject private var diskScanner = DiskCleanupScanner()
     @StateObject private var prMonitor = PRMonitorStore()
@@ -71,6 +72,7 @@ struct AppShellView: View {
                 else { return }
                 diffReview.open(worktreePath: worktree.path, agent: configStore.config.agent)
             }
+            .onReceiveTerminalTabBindings(terminalTabs: terminalTabs, runAction: runTerminalTabAction)
             .onReceive(NotificationCenter.default.publisher(for: .openDiffReviewForPath)) { notification in
                 // CLI-originated (`argus diff`) request — the path is used as-is, independent of
                 // whether it's a workspace `store` already tracks in the sidebar.
@@ -141,6 +143,7 @@ struct AppShellView: View {
             agentBus.start()
             shellStateBus.updateActivePaths(pool.activeIDs)
             shellStateBus.start()
+            terminalTabs.start()
             diskMonitor.start()
             diskScanner.start()
             prMonitor.start()
@@ -152,6 +155,7 @@ struct AppShellView: View {
         }
         .onDisappear {
             shellStateBus.stop()
+            terminalTabs.stop()
             diskMonitor.stop()
             diskScanner.stop()
             prMonitor.stop()
@@ -173,8 +177,12 @@ struct AppShellView: View {
             pool.activate(id: newID)
             guard let id = newID,
                 let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
-            else { return }
+            else {
+                terminalTabs.setWorktree(path: nil)
+                return
+            }
             pool.getOrCreate(id: id, workingDirectory: worktree.path)
+            terminalTabs.setWorktree(path: worktree.path)
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusPaneLeft)) { _ in
             stepFocus(direction: -1)
@@ -261,7 +269,9 @@ struct AppShellView: View {
                 shellHost: pool.shellHost,
                 claudeHost: pool.claudeHost,
                 codexHost: pool.codexHost,
-                agentState: currentAgentState
+                tabsStore: terminalTabs,
+                agentState: currentAgentState,
+                onShellActivated: { focusedRole = .shell }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(terminalBackground)
@@ -320,6 +330,16 @@ extension AppShellView {
 
     // MARK: - Directional focus
 
+    /// Shared tail for leader-key terminal-tab actions: waits for the tmux command to finish,
+    /// then focuses the shell pane, matching what `TerminalTabBarView`'s mouse actions do.
+    fileprivate func runTerminalTabAction(_ task: Task<Void, Never>) {
+        focusedRole = .shell
+        Task {
+            await task.value
+            pool.shellHost.focusActiveTerminal()
+        }
+    }
+
     fileprivate func stepFocus(direction: Int) {
         let config = configStore.config
         let ordered = PaneLayoutResolver.orderedRoles(layout: config.layout, agent: config.agent)
@@ -341,5 +361,28 @@ extension AppShellView {
         }
         selectedWorktreeID = next
         DispatchQueue.main.async { self.pool.host(for: self.focusedRole).focusActiveTerminal() }
+    }
+}
+
+extension View {
+    /// The leader-key bindings for the terminal tab bar (new / next / previous / close),
+    /// factored out of `AppShellView.coreView` to keep its body under SwiftLint's line-count
+    /// limit. `runAction` is `AppShellView.runTerminalTabAction`.
+    fileprivate func onReceiveTerminalTabBindings(
+        terminalTabs: TerminalTabsStore, runAction: @escaping (Task<Void, Never>) -> Void
+    ) -> some View {
+        onReceive(NotificationCenter.default.publisher(for: .newTerminalTab)) { _ in
+            runAction(terminalTabs.newTab())
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .nextTerminalTab)) { _ in
+            runAction(terminalTabs.selectRelative(1))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .previousTerminalTab)) { _ in
+            runAction(terminalTabs.selectRelative(-1))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .closeTerminalTab)) { _ in
+            guard let index = terminalTabs.windows.first(where: \.isActive)?.index else { return }
+            runAction(terminalTabs.close(index: index))
+        }
     }
 }

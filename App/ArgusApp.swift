@@ -210,6 +210,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             bindings.reloadAgentPane: .reloadAgentPane,
             bindings.openDiskStatus: .openDiskStatus,
             bindings.openDiffReview: .openDiffReview,
+            bindings.newTerminalTab: .newTerminalTab,
+            bindings.nextTerminalTab: .nextTerminalTab,
+            bindings.previousTerminalTab: .previousTerminalTab,
+            bindings.closeTerminalTab: .closeTerminalTab,
         ]
     }
 }

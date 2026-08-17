@@ -107,6 +107,10 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
         public var reloadAgentPane: String = "a"
         public var openDiskStatus: String = "d"
         public var openDiffReview: String = "w"
+        public var newTerminalTab: String = "t"
+        public var nextTerminalTab: String = "]"
+        public var previousTerminalTab: String = "["
+        public var closeTerminalTab: String = "x"
 
         // Memberwise init needed because we declare a custom init(from:).
         public init() {}
@@ -137,6 +141,10 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
             reloadAgentPane = read("reloadAgentPane", default: "a")
             openDiskStatus = read("openDiskStatus", default: "d")
             openDiffReview = read("openDiffReview", default: "w")
+            newTerminalTab = read("newTerminalTab", default: "t")
+            nextTerminalTab = read("nextTerminalTab", default: "]")
+            previousTerminalTab = read("previousTerminalTab", default: "[")
+            closeTerminalTab = read("closeTerminalTab", default: "x")
         }
     }
 
