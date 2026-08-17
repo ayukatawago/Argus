@@ -56,6 +56,9 @@ struct KeyboardSettingsView: View {
                 bindingRow("Refresh workspace", key: $config.keyBindings.refreshWorkspace)
                 bindingRow("Open markdown preview", key: $config.keyBindings.openMarkdownPreview)
                 bindingRow("Open settings", key: $config.keyBindings.openSettings)
+                bindingRow("Reload agent pane", key: $config.keyBindings.reloadAgentPane)
+                bindingRow("Open disk status", key: $config.keyBindings.openDiskStatus)
+                bindingRow("Open diff review", key: $config.keyBindings.openDiffReview)
             }
             Text("Press \(config.leaderKey), then the key shown.")
                 .font(.caption)
