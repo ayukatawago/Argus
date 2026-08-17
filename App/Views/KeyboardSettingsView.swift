@@ -59,6 +59,10 @@ struct KeyboardSettingsView: View {
                 bindingRow("Reload agent pane", key: $config.keyBindings.reloadAgentPane)
                 bindingRow("Open disk status", key: $config.keyBindings.openDiskStatus)
                 bindingRow("Open diff review", key: $config.keyBindings.openDiffReview)
+                bindingRow("New terminal tab", key: $config.keyBindings.newTerminalTab)
+                bindingRow("Next terminal tab", key: $config.keyBindings.nextTerminalTab)
+                bindingRow("Previous terminal tab", key: $config.keyBindings.previousTerminalTab)
+                bindingRow("Close terminal tab", key: $config.keyBindings.closeTerminalTab)
             }
             Text("Press \(config.leaderKey), then the key shown.")
                 .font(.caption)
