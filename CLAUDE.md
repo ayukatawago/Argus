@@ -141,6 +141,10 @@ The one remaining hook script lives at `~/Library/Application Support/argus/hook
 
 `App/Views/PanePool.swift` owns all three `TerminalHost`s (shell/claude/codex). Which roles a layout actually needs is decided by `PaneLayoutResolver.requiredRoles(layout:agent:)` (`Packages/ArgusCore/Sources/ArgusConfigKit/PaneLayoutResolver.swift`) — the Codex terminal/session is not spun up unless a layout requires it, so switching into `terminalAgent` with Claude selected never launches Codex. `PaneLayoutResolver.primaryAgentRole(layout:agent:)` determines which agent session the canvas view and `reloadAgentPane` (leader `a`) target.
 
+### Terminal tabs
+
+The shell pane's tmux session (`WorktreePane`'s `.shell` role) runs with `status off`, so its windows are otherwise invisible; `App/Views/TerminalTabBarView.swift` renders them as a tab bar above the shell `TerminalHostView` in every layout, sourced from `App/Views/TerminalTabsStore.swift`. One tmux window = one tab, nothing more — the store is a control surface and mirror over tmux (`list-windows`/`select-window`/`new-window`/`kill-window`), never a second source of truth, so a window opened from inside tmux (`ctrl-b ctrl-b c`) appears on the next poll same as one Argus creates. Tab labels are the current directory's folder name (`TmuxWindow.label` in `Packages/ArgusCore/Sources/Monitors/TmuxWindowParser.swift`, derived from `#{pane_current_path}`), not a process name, and are not renameable. Leader `t`/`]`/`[`/`x` create/next/prev/close a tab; a new tab replays the same `EnvExportPreamble` + `LoginShell` command tab 0 uses so its environment matches.
+
 ## Diff review
 
 `Packages/DiffReviewKit` (a local SPM package) provides a side-by-side diff review UI with PR-style inline comments; `App/Views/DiffReviewWindow.swift` hosts it as a floating popup (95% of the screen) opened via leader `w` or the toolbar's "Review diff" button (`.openDiffReview`), one window per worktree.
@@ -154,7 +158,7 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 `App/ShellStateBus.swift` publishes the set of worktree paths whose shell pane has a foreground command running, which drives an animated sidebar border (`App/Views/SidebarComponents.swift`, accent-tinted when the row is selected). This is independent of the Claude/agent hook system above.
 
 - **Fish login shells (preferred):** `WorktreeHookManager.installFishHooksIfNeeded()` writes `~/.config/fish/conf.d/argus.fish`, registering `fish_preexec`/`fish_postexec` hooks that append JSON lines to `HookIPC.shellEventLogPath` (`/private/tmp/argus-$UID-shell-events.jsonl`); `ShellStateBus` tails that file every 200ms.
-- **Non-fish fallback:** polls `tmux list-panes -a` every 400ms, marking a worktree busy when its shell pane's current command isn't a known shell name.
+- **Non-fish fallback:** polls `tmux list-panes -a` every 400ms, marking a worktree busy when any pane in its shell session (there can be more than one — see Terminal tabs above) has a current command that isn't a known shell name.
 
 ## Sidebar monitors
 
@@ -170,6 +174,9 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 | `App/Views/SidebarView.swift` | Repo/worktree list, `AgentDot`, drag reorder |
 | `App/Views/WorktreeContentView.swift` | Per-worktree layout (terminal/agent panes per `WindowLayout`) |
 | `App/Views/PanePool.swift` | Owns shell/claude/codex `TerminalHost`s; lazy per-layout role registration |
+| `App/Views/TerminalTabsStore.swift` | Polls the selected worktree's shell tmux session's windows; issues select/new/close tmux commands |
+| `App/Views/TerminalTabBarView.swift` | Tab bar UI above the shell pane, one tab per tmux window |
+| `Packages/ArgusCore/Sources/Monitors/TmuxWindowParser.swift` | Parses `tmux list-windows` output into `TmuxWindow` (folder-name label from `pane_current_path`) |
 | `App/Views/PopupTerminalWindow.swift` | User-defined popup terminal windows (key/command/size), incl. lazygit default |
 | `App/Views/NvimWindow.swift` | nvim popup with tmux-persisted session |
 | `App/Views/MarkdownPreviewWindow.swift` | Markdown preview popup (⌘F search, local images, file tree) |
