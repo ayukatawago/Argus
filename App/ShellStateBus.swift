@@ -74,7 +74,7 @@ final class ShellStateBus: ObservableObject {
             tmux, ["list-panes", "-a", "-F", "#{session_name}|#{pane_current_command}"])
 
         let pathBySession = Dictionary(
-            uniqueKeysWithValues: paths.map { (WorktreePane.sessionName("s", path: $0), $0) })
+            paths.map { (WorktreePane.sessionName("s", path: $0), $0) }, uniquingKeysWith: { first, _ in first })
         let busySessions = TmuxPaneParser.busySessions(
             from: result.standardOutput, activeSessions: Set(pathBySession.keys))
         let next = Set(busySessions.compactMap { pathBySession[$0] })
