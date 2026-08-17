@@ -69,4 +69,28 @@ struct TmuxPaneParserTests {
         let busy = TmuxPaneParser.busySessions(from: "argus-s-repo-a|npm\n", activeSessions: [])
         #expect(busy.isEmpty)
     }
+
+    @Test("a session with a busy pane and an idle pane is busy, regardless of line order")
+    func sessionWithOneBusyPaneAmongIdleOnesIsBusy() {
+        let busyFirst = "argus-s-repo-a|npm\nargus-s-repo-a|fish\n"
+        #expect(TmuxPaneParser.busySessions(from: busyFirst, activeSessions: ["argus-s-repo-a"]) == ["argus-s-repo-a"])
+
+        let busyLast = "argus-s-repo-a|fish\nargus-s-repo-a|npm\n"
+        #expect(TmuxPaneParser.busySessions(from: busyLast, activeSessions: ["argus-s-repo-a"]) == ["argus-s-repo-a"])
+    }
+
+    @Test("a session with only idle panes across multiple windows is not busy")
+    func sessionWithOnlyIdlePanesIsNotBusy() {
+        let output = "argus-s-repo-a|fish\nargus-s-repo-a|zsh\nargus-s-repo-a|fish\n"
+        let busy = TmuxPaneParser.busySessions(from: output, activeSessions: ["argus-s-repo-a"])
+        #expect(busy.isEmpty)
+    }
+
+    @Test("parseSessionCommandLists keeps every pane's command, not just the last")
+    func parseSessionCommandListsKeepsAllCommands() {
+        let output = "argus-s-repo-a|fish\nargus-s-repo-a|npm\nargus-s-repo-b|zsh\n"
+        let commands = TmuxPaneParser.parseSessionCommandLists(from: output)
+        #expect(commands["argus-s-repo-a"] == ["fish", "npm"])
+        #expect(commands["argus-s-repo-b"] == ["zsh"])
+    }
 }
