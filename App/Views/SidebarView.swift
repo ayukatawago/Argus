@@ -349,15 +349,12 @@ private struct WorktreeRow: View {
         .onHover { isHovered = $0 }
     }
 
-    @ViewBuilder
     private var worktreeName: some View {
         let name = URL(fileURLWithPath: worktree.path).lastPathComponent
-        if agentState == .running && agentType == .codex {
-            ShimmerText(text: name, color: .white)
-        } else {
-            Text(name)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
+        return ShimmerText(
+            text: name,
+            color: .primary,
+            isShimmering: agentState == .running && agentType == .codex
+        )
     }
 }

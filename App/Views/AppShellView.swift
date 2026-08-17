@@ -194,7 +194,7 @@ struct AppShellView: View {
             navigateWorktrees(forward: false)
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshWorkspace)) { _ in
-            Task { await store.refresh() }
+            store.requestRefresh()
         }
     }
 

@@ -79,74 +79,96 @@ struct AgentDot: View {
 // MARK: - Row background
 
 /// Provides the colored row background that reflects agent state.
+///
+/// The running-state pulse and the shell-busy rotating border are both driven off the same
+/// `TimelineView`, computing their look as a pure function of wall-clock time rather than
+/// `@State` + `withAnimation(...repeatForever...)`. A state-driven pulse has to be torn down and
+/// restarted every time this view's identity is rebuilt (e.g. a sidebar row disappearing and
+/// reappearing during a worktree rescan) — each restart snapped the opacity because the old code
+/// reset `pulse = false` outside of `withAnimation`. A time-derived value has no in-flight
+/// animation to interrupt: whatever elapsed time this instance is built with, the opacity is
+/// already correct.
 struct AgentStateBackground: View {
     let agentState: AgentState
     let isActive: Bool
     let isSelected: Bool
     var agentType: AgentType = .claude
     var isShellBusy: Bool = false
-    @State private var pulse = false
+
+    private var needsTicking: Bool { agentState == .running || isShellBusy }
 
     var body: some View {
-        ZStack {
-            baseLayer
-            if isShellBusy {
-                TimelineView(.periodic(from: .now, by: 1.0 / 30)) { ctx in
-                    let elapsed = ctx.date.timeIntervalSinceReferenceDate
-                    let angle = elapsed.truncatingRemainder(dividingBy: 2.0) / 2.0 * 360.0
-                    let shellBorderColor: Color = isSelected ? .accentColor : .primary
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(
-                            AngularGradient(
-                                colors: [
-                                    .clear, .clear, shellBorderColor.opacity(0.7),
-                                    shellBorderColor, .clear,
-                                ],
-                                center: .center,
-                                startAngle: .degrees(angle),
-                                endAngle: .degrees(angle + 360)
-                            ),
-                            lineWidth: 2
-                        )
-                }
-            } else if agentState == .done {
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.green.opacity(0.55), lineWidth: 1.5)
-            } else if agentState == .waitingForApproval {
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.orange.opacity(0.7), lineWidth: 2)
-            } else if isSelected {
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.accentColor, lineWidth: 2)
+        if needsTicking {
+            TimelineView(.periodic(from: .now, by: 1.0 / 30)) { ctx in
+                content(elapsed: ctx.date.timeIntervalSinceReferenceDate)
             }
-        }
-        .onAppear { startPulseIfNeeded() }
-        .onChange(of: agentState) { _, state in
-            pulse = false
-            if state == .running { startPulseIfNeeded() }
+        } else {
+            content(elapsed: 0)
         }
     }
 
     @ViewBuilder
-    private var baseLayer: some View {
-        if agentState == .running {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(agentColor(agentType).opacity(runningOpacity))
-        } else if isActive {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.accentColor.opacity(0.1))
-        } else {
-            Color.clear
+    private func content(elapsed: TimeInterval) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 6).fill(fillColor(elapsed: elapsed))
+            border(elapsed: elapsed)
         }
     }
 
-    private func startPulseIfNeeded() {
-        guard agentState == .running else { return }
-        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulse = true }
+    private func fillColor(elapsed: TimeInterval) -> Color {
+        if agentState == .running {
+            return agentColor(agentType).opacity(pulseOpacity(elapsed: elapsed))
+        } else if isActive {
+            return Color.accentColor.opacity(0.1)
+        }
+        return Color.clear
     }
 
-    private var runningOpacity: Double {
-        pulse ? 0.35 : 0.75
+    /// A 2.2s triangle wave eased with smoothstep, ranging 0.75 -> 0.35 -> 0.75 — matches the
+    /// visual shape of the old `.easeInOut(duration: 1.1).repeatForever(autoreverses: true)`.
+    private func pulseOpacity(elapsed: TimeInterval) -> Double {
+        let period = 2.2
+        let phase = elapsed.truncatingRemainder(dividingBy: period) / period
+        let triangle = phase < 0.5 ? phase * 2 : (1 - phase) * 2
+        let eased = triangle * triangle * (3 - 2 * triangle)
+        return 0.75 - eased * 0.4
+    }
+
+    @ViewBuilder
+    private func border(elapsed: TimeInterval) -> some View {
+        if isShellBusy {
+            let angle = elapsed.truncatingRemainder(dividingBy: 2.0) / 2.0 * 360.0
+            let shellBorderColor: Color = isSelected ? .accentColor : .primary
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(
+                    AngularGradient(
+                        colors: [
+                            .clear, .clear, shellBorderColor.opacity(0.7),
+                            shellBorderColor, .clear,
+                        ],
+                        center: .center,
+                        startAngle: .degrees(angle),
+                        endAngle: .degrees(angle + 360)
+                    ),
+                    lineWidth: 2
+                )
+        } else if let style = staticBorderStyle {
+            RoundedRectangle(cornerRadius: 6).strokeBorder(style.color, lineWidth: style.lineWidth)
+        }
+    }
+
+    /// The three static (non-animated) border cases collapsed into one computed value instead of
+    /// separate `if/else` branches, so switching between them (or to no border) no longer changes
+    /// the view's structural type.
+    private var staticBorderStyle: (color: Color, lineWidth: CGFloat)? {
+        if agentState == .done {
+            return (Color.green.opacity(0.55), 1.5)
+        } else if agentState == .waitingForApproval {
+            return (Color.orange.opacity(0.7), 2)
+        } else if isSelected {
+            return (Color.accentColor, 2)
+        }
+        return nil
     }
 }
 
@@ -155,16 +177,24 @@ struct AgentStateBackground: View {
 struct ShimmerText: View {
     let text: String
     let color: Color
+    var isShimmering: Bool = true
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1.0 / 30)) { ctx in
-            let elapsed = ctx.date.timeIntervalSinceReferenceDate
-            let phase = CGFloat(elapsed.truncatingRemainder(dividingBy: 1.8) / 1.8)
-            Text(text)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(shimmerGradient(phase: phase))
+        if isShimmering {
+            TimelineView(.periodic(from: .now, by: 1.0 / 30)) { ctx in
+                let elapsed = ctx.date.timeIntervalSinceReferenceDate
+                let phase = CGFloat(elapsed.truncatingRemainder(dividingBy: 1.8) / 1.8)
+                label.foregroundStyle(shimmerGradient(phase: phase))
+            }
+        } else {
+            label.foregroundStyle(color)
         }
+    }
+
+    private var label: some View {
+        Text(text)
+            .lineLimit(1)
+            .truncationMode(.middle)
     }
 
     private func shimmerGradient(phase: CGFloat) -> LinearGradient {
