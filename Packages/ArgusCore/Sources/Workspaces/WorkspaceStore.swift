@@ -12,9 +12,6 @@ public struct GitWorktree: Identifiable, Hashable, Sendable {
         self.branch = branch
         self.isMain = isMain
     }
-
-    public static func == (lhs: GitWorktree, rhs: GitWorktree) -> Bool { lhs.path == rhs.path }
-    public func hash(into hasher: inout Hasher) { hasher.combine(path) }
 }
 
 public struct GitRepo: Identifiable, Equatable, Sendable {
@@ -40,8 +37,20 @@ public final class WorkspaceStore: ObservableObject {
     private var excludedRepoPaths: Set<String> = []
     private var repoOrder: [String] = []
     private var scanner: WorkspaceScanner?
+    /// The last successfully (or fallback-)resolved repo list per root, keyed by root path. Used
+    /// to keep showing a root's repos when a scan of it can't be completed (see `refresh`).
+    private var lastGoodReposByRoot: [String: [GitRepo]] = [:]
+    private var scanTask: Task<Void, Never>?
+    private var rescanRequested = false
+    /// Injected so tests can drive `refresh()` against a fake without shelling out to git.
+    private let worktreeLister: @Sendable (String, [GitWorktree]?) async -> [GitWorktree]
 
-    public init() {}
+    public init(
+        worktreeLister: @escaping @Sendable (String, [GitWorktree]?) async -> [GitWorktree] =
+            WorkspaceStore.fetchWorktrees
+    ) {
+        self.worktreeLister = worktreeLister
+    }
 
     public func load() {
         let stored = Self.loadConfig()
@@ -50,7 +59,7 @@ public final class WorkspaceStore: ObservableObject {
         excludedRepoPaths = stored.excludedRepoPaths
         repoOrder = stored.repoOrder
         startWatcher()
-        Task { await refresh() }
+        requestRefresh()
     }
 
     public func addRoot(_ path: String) {
@@ -58,14 +67,14 @@ public final class WorkspaceStore: ObservableObject {
         roots.append(path)
         saveConfig()
         startWatcher()
-        Task { await refresh() }
+        requestRefresh()
     }
 
     public func removeRoot(_ path: String) {
         roots.removeAll { $0 == path }
         saveConfig()
         startWatcher()
-        Task { await refresh() }
+        requestRefresh()
     }
 
     public func removeRepo(mainPath: String) {
@@ -76,7 +85,15 @@ public final class WorkspaceStore: ObservableObject {
             excludedRepoPaths.insert(mainPath)
         }
         saveConfig()
-        Task { await refresh() }
+        requestRefresh()
+    }
+
+    // Internal (not private) so tests can seed scan configuration directly via @testable import,
+    // without touching the real on-disk config (`saveConfig`) or starting a real FSEvents watcher
+    // the way `load()`/`addRoot()` do.
+    func configureForTesting(roots: [String], excluding: Set<String> = []) {
+        self.roots = roots
+        excludedRepoPaths = excluding
     }
 
     public func hideWorktree(id: String) {
@@ -98,19 +115,63 @@ public final class WorkspaceStore: ObservableObject {
         saveConfig()
     }
 
+    /// Coalesces bursts of refresh requests (FSEvents callbacks, the manual refresh binding) into a
+    /// single scan at a time: a request that arrives while one is already running just flags
+    /// another pass instead of starting a second, overlapping scan. Overlapping scans could
+    /// otherwise interleave their `git` spawns and publish out of order — a slower, older scan
+    /// landing after a newer one.
+    public func requestRefresh() {
+        rescanRequested = true
+        guard scanTask == nil else { return }
+        scanTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.scanTask = nil }
+            while self.rescanRequested {
+                self.rescanRequested = false
+                await self.refresh()
+            }
+        }
+    }
+
     public func refresh() async {
         let currentRoots = roots
         let currentExcluded = excludedRepoPaths
-        let discovered = await Task.detached(priority: .userInitiated) { () async -> [GitRepo] in
-            var result: [GitRepo] = []
+        let previousWorktreesByPath = Dictionary(
+            repos.map { ($0.mainPath, $0.worktrees) }, uniquingKeysWith: { first, _ in first })
+        let previousReposByRoot = lastGoodReposByRoot
+        let lister = worktreeLister
+
+        let scannedByRoot = await Task.detached(priority: .userInitiated) { () async -> [(String, [GitRepo])] in
+            var result: [(String, [GitRepo])] = []
             for root in currentRoots {
-                result.append(
-                    contentsOf: await RepoScanner.findRepos(
-                        under: root, excluding: currentExcluded, worktreeLister: Self.fetchWorktrees))
+                let scanned = await RepoScanner.findRepos(
+                    under: root,
+                    excluding: currentExcluded,
+                    worktreeLister: { path in await lister(path, previousWorktreesByPath[path]) }
+                )
+                if let scanned {
+                    result.append((root, scanned))
+                } else if let fallback = previousReposByRoot[root] {
+                    // The listing failed transiently (permission blip, unavailable volume) — keep
+                    // whatever this root last resolved to instead of dropping its repos.
+                    result.append((root, fallback))
+                }
             }
             return result
         }.value
-        repos = applyOrder(discovered)
+
+        var newLastGoodReposByRoot: [String: [GitRepo]] = [:]
+        var discovered: [GitRepo] = []
+        for (root, repoList) in scannedByRoot {
+            newLastGoodReposByRoot[root] = repoList
+            discovered.append(contentsOf: repoList)
+        }
+        lastGoodReposByRoot = newLastGoodReposByRoot
+
+        let ordered = applyOrder(discovered)
+        if ordered != repos {
+            repos = ordered
+        }
     }
 
     private func applyOrder(_ discovered: [GitRepo]) -> [GitRepo] {
@@ -120,7 +181,7 @@ public final class WorkspaceStore: ObservableObject {
     private func startWatcher() {
         let watcher = WorkspaceScanner()
         watcher.onChange = { [weak self] in
-            Task { @MainActor [weak self] in await self?.refresh() }
+            Task { @MainActor [weak self] in self?.requestRefresh() }
         }
         watcher.start(paths: roots)
         scanner = watcher
@@ -157,11 +218,18 @@ public final class WorkspaceStore: ObservableObject {
         return [home]
     }
 
-    private nonisolated static func fetchWorktrees(repoPath: String) async -> [GitWorktree] {
-        let result = await ProcessRunner.run("/usr/bin/git", ["-C", repoPath, "worktree", "list", "--porcelain"])
+    /// `fallback`, when present, is the repo's worktree list from the last successful scan. A
+    /// failed or empty result falls back to it instead of collapsing the repo to a single
+    /// synthetic main worktree — a transient `git` failure (spawn pressure from an overlapping
+    /// scan, index-lock contention, ...) would otherwise make every linked worktree vanish from
+    /// the sidebar until the next successful scan.
+    public nonisolated static func fetchWorktrees(repoPath: String, fallback: [GitWorktree]?) async -> [GitWorktree] {
+        let result = await ProcessRunner.run(
+            "/usr/bin/git", ["-C", repoPath, "worktree", "list", "--porcelain"], timeout: 5)
         guard result.succeeded else {
-            return [GitWorktree(path: repoPath, branch: nil, isMain: true)]
+            return fallback ?? [GitWorktree(path: repoPath, branch: nil, isMain: true)]
         }
-        return WorktreeListParser.parse(result.standardOutput)
+        let parsed = WorktreeListParser.parse(result.standardOutput)
+        return parsed.isEmpty ? (fallback ?? []) : parsed
     }
 }

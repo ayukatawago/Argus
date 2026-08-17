@@ -16,7 +16,8 @@ final class ShellStateBus: ObservableObject {
 
     func updateActivePaths(_ paths: Set<String>) {
         activePaths = paths
-        busyPaths = busyPaths.filter { paths.contains($0) }
+        let filtered = busyPaths.filter { paths.contains($0) }
+        if filtered != busyPaths { busyPaths = filtered }
     }
 
     func start() {
@@ -50,19 +51,24 @@ final class ShellStateBus: ObservableObject {
 
     private func applyShellEvent(_ payload: HookPayload) {
         let path = payload.worktreePath
+        var next = busyPaths
         if payload.state == "running" {
-            busyPaths.insert(path)
+            next.insert(path)
         } else {
-            busyPaths.remove(path)
+            next.remove(path)
         }
-        busyPaths = busyPaths.filter { activePaths.contains($0) }
+        next = next.filter { activePaths.contains($0) }
+        if next != busyPaths { busyPaths = next }
     }
 
     // MARK: - Non-fish: tmux polling
 
     private func poll() async {
         let paths = activePaths
-        guard !paths.isEmpty else { busyPaths = []; return }
+        guard !paths.isEmpty else {
+            if !busyPaths.isEmpty { busyPaths = [] }
+            return
+        }
         let tmux = WorktreePane.tmuxExecutable
         let result = await ProcessRunner.run(
             tmux, ["list-panes", "-a", "-F", "#{session_name}|#{pane_current_command}"])
@@ -71,6 +77,7 @@ final class ShellStateBus: ObservableObject {
             uniqueKeysWithValues: paths.map { (WorktreePane.sessionName("s", path: $0), $0) })
         let busySessions = TmuxPaneParser.busySessions(
             from: result.standardOutput, activeSessions: Set(pathBySession.keys))
-        busyPaths = Set(busySessions.compactMap { pathBySession[$0] })
+        let next = Set(busySessions.compactMap { pathBySession[$0] })
+        if next != busyPaths { busyPaths = next }
     }
 }
