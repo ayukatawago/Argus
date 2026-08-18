@@ -47,9 +47,10 @@ Packages/
     ArgusSupport/     Foundation only — ProcessRunner, LoginShell, JSONLTailer, PollingTask,
                        TmuxSessionName, CanvasLayout
     ArgusConfigKit/   Foundation only — ArgusConfig struct, ArgusConfigStore, AgentSelection/
-                       WindowLayout/PaneRole enums, LeaderKey, PaneLayoutResolver
-    AgentStateKit/    Foundation only — agent state enum, IPC bus, hook manager,
-                       ClaudeSettingsPatcher, CodexSessionParser
+                       WindowLayout/PaneRole/AgentPaneMode enums, AgentTabs, LeaderKey,
+                       PaneLayoutResolver
+    AgentStateKit/    Foundation only — AgentState/AgentType/AgentKey, WorktreeAgentState
+                       aggregate, IPC bus, hook manager, ClaudeSettingsPatcher, CodexSessionParser
     Workspaces/       Foundation only — git repo/worktree scanning and store,
                        WorktreeListParser, RepoScanner, RepoOrdering
     Monitors/         Foundation only — PR categorization/highlighting, disk cleanup
@@ -73,6 +74,17 @@ unconditionally under `~/.claude/projects/*/*.jsonl` (`ClaudeTranscriptWatcher`,
 `ClaudeTranscriptParser.swift`) — the same no-hook-trust approach `CodexSessionWatcher` already
 used for Codex. One hook remains: `PermissionRequest`, because nothing is written to the transcript
 while a permission dialog is open. Both feed `AgentStateBus.apply(_:)`.
+
+`AgentStateBus` tracks state per **(worktree, agent)** — `states: [AgentKey: AgentState]` — because
+Claude and Codex can each have an open agent tab at once (see Window layout & pane pool below) and
+each tab's chip needs its own indicator. `state(for:agent:)` reads one agent's state;
+`worktreeState(for:)` collapses both into the single `WorktreeAgentState` a worktree-level indicator
+(sidebar dot/row, canvas card, window tint) shows, via `WorktreeAgentState.aggregate` — highest
+`AgentState.displayPriority` wins (`waitingForApproval > done > running > idle`), ties resolve to
+Claude. `reset(for:)` clears every agent for a worktree (panes released); `reset(for:agent:)` clears
+one (a specific tmux session was killed); `dismissAttentionStates(for:)` is the "user interacted,
+clear the border" path and deliberately downgrades only `.done`/`.waitingForApproval`, never a
+concurrently `.running` agent.
 
 ### States (`Packages/ArgusCore/Sources/AgentStateKit/AgentState.swift`)
 
@@ -137,19 +149,23 @@ The one remaining hook script lives at `~/Library/Application Support/argus/hook
 
 ## Window layout & pane pool
 
-`WindowLayout` (`Packages/ArgusCore/Sources/ArgusConfigKit/ArgusConfig.swift`, config key `layout`) selects one of three per-app layouts, rendered by `App/Views/WorktreeContentView.swift`: `terminalAgent` (single agent + terminal, `AgentSelection` picks Claude or Codex), `agentsOverTerminal` (Codex + Claude side by side on top, terminal full-width below, 70/30 split via `RatioVSplitView`), and `terminalClaudeCodex` (three columns: terminal, Claude, Codex).
+`WindowLayout` (`Packages/ArgusCore/Sources/ArgusConfigKit/ArgusConfig.swift`, config key `layout`) selects one of two per-app layouts, rendered by `App/Views/WorktreeContentView.swift`: `terminalAgent` (terminal | agent view) and `agentsOverTerminal` (agent view / full-width terminal below, 70/30 split via `RatioVSplitView`). There is no longer a "show both agents" layout — that is now the agent view's own display mode (see below), available in both layouts.
 
-`App/Views/PanePool.swift` owns all three `TerminalHost`s (shell/claude/codex). Which roles a layout actually needs is decided by `PaneLayoutResolver.requiredRoles(layout:agent:)` (`Packages/ArgusCore/Sources/ArgusConfigKit/PaneLayoutResolver.swift`) — the Codex terminal/session is not spun up unless a layout requires it, so switching into `terminalAgent` with Claude selected never launches Codex. `PaneLayoutResolver.primaryAgentRole(layout:agent:)` determines which agent session the canvas view and `reloadAgentPane` (leader `a`) target.
+The agent view (`App/Views/AgentPaneView.swift`) is a single pane holding up to two **agent tabs** — Claude and Codex — with its own tab bar (`App/Views/AgentTabBarView.swift`). Only the default agent (`config.agent`) has a tab when a worktree is first selected; the other opens on demand (`+` chip, or leader `t` while the agent pane has focus). `AgentTabsStore` (`App/Views/AgentTabsStore.swift`) owns each worktree's open/active tabs (`ArgusConfigKit.AgentTabs`) and the app-global **display mode** (`ArgusConfigKit.AgentPaneMode`, persisted): `full` shows only the active tab; `split` shows every open tab side by side (Claude left, Codex right), toggled by the toolbar button or leader `s`. Unlike the terminal tab bar below, agent tabs are **not** a tmux mirror — `AgentTabsStore` is the source of truth, and `PanePool` role registration is its projection.
 
-### Terminal tabs
+`App/Views/PanePool.swift` owns all three `TerminalHost`s (shell/claude/codex). `PaneLayoutResolver.requiredRoles(tabs:)` (`Packages/ArgusCore/Sources/ArgusConfigKit/PaneLayoutResolver.swift`) returns every role a worktree's *open* agent tabs need, visible or not — a hidden tab keeps its agent running, like a background tmux window — so the Codex session is never spun up until its tab is opened. `PaneLayoutResolver.visibleAgentRoles(tabs:mode:)` is what the agent view actually renders. There is no more "primary agent role" concept: the canvas view and leader `a` (`reloadAgentPane`) target whichever tab is **active**. Closing an agent tab (`AgentTabsStore.closeTab`) kills that agent's tmux session outright — like the terminal tab bar's `kill-window` — so reopening it starts a fresh `claude --continue` / `codex resume --last` rather than re-attaching; relaunching Argus, by contrast, re-attaches a still-running session because `tmux new-session -A` ignores the launch command on an existing session.
 
-The shell pane's tmux session (`WorktreePane`'s `.shell` role) runs with `status off`, so its windows are otherwise invisible; `App/Views/TerminalTabBarView.swift` renders them as a tab bar above the shell `TerminalHostView` in every layout, sourced from `App/Views/TerminalTabsStore.swift`. One tmux window = one tab, nothing more — the store is a control surface and mirror over tmux (`list-windows`/`select-window`/`new-window`/`kill-window`), never a second source of truth, so a window opened from inside tmux (`ctrl-b ctrl-b c`) appears on the next poll same as one Argus creates. Tab labels are the current directory's folder name (`TmuxWindow.label` in `Packages/ArgusCore/Sources/Monitors/TmuxWindowParser.swift`, derived from `#{pane_current_path}`), not a process name, and are not renameable. Leader `t`/`]`/`[`/`x` create/next/prev/close a tab; a new tab replays the same `EnvExportPreamble` + `LoginShell` command tab 0 uses so its environment matches.
+### Terminal tabs and agent tabs
+
+The shell pane's tmux session (`WorktreePane`'s `.shell` role) runs with `status off`, so its windows are otherwise invisible; `App/Views/TerminalTabBarView.swift` renders them as a tab bar above the shell `TerminalHostView` in every layout, sourced from `App/Views/TerminalTabsStore.swift`. One tmux window = one tab, nothing more — the store is a control surface and mirror over tmux (`list-windows`/`select-window`/`new-window`/`kill-window`), never a second source of truth, so a window opened from inside tmux (`ctrl-b ctrl-b c`) appears on the next poll same as one Argus creates. Tab labels are the current directory's folder name (`TmuxWindow.label` in `Packages/ArgusCore/Sources/Monitors/TmuxWindowParser.swift`, derived from `#{pane_current_path}`), not a process name, and are not renameable. A new tab replays the same `EnvExportPreamble` + `LoginShell` command tab 0 uses so its environment matches.
+
+Leader `t`/`]`/`[`/`x` are **context-sensitive on the focused pane** (`App/Views/AppShellView+TabBindings.swift`): on the shell pane they create/next/prev/close a tmux window as above; on the agent pane they open the other agent's tab, cycle between open tabs, and close the active tab (refused on the last one) instead. Leader `s` toggles the agent view's full/split display mode.
 
 ## Diff review
 
 `Packages/DiffReviewKit` (a local SPM package) provides a side-by-side diff review UI with PR-style inline comments; `App/Views/DiffReviewWindow.swift` hosts it as a floating popup (95% of the screen) opened via leader `w` or the toolbar's "Review diff" button (`.openDiffReview`), one window per worktree.
 
-It always uses the app's single global `AgentSelection` (`.claude`/`.codex`) — there is no per-worktree agent override. Each comment's **Reply** (read-only) and **Apply** (edits + refreshes the diff) button spawns an **independent headless** `$SHELL -l -c` process (`claude -p --output-format stream-json` / `codex exec --json`) — it never attaches to, or shares context with, a live interactive agent pane. A per-comment session id (from the CLI's own stream output) is kept in memory so a follow-up Reply/Apply on the *same* comment resumes that thread; all of this state — comments, replies, session ids — lives only in `DiffReviewModel` and is discarded when the review window closes (no disk persistence).
+It always uses the app's single global `AgentSelection` (`.claude`/`.codex`, i.e. `config.agent` — the *default* agent, unaffected by which agent tabs a worktree happens to have open) — there is no per-worktree agent override. Each comment's **Reply** (read-only) and **Apply** (edits + refreshes the diff) button spawns an **independent headless** `$SHELL -l -c` process (`claude -p --output-format stream-json` / `codex exec --json`) — it never attaches to, or shares context with, a live interactive agent pane. A per-comment session id (from the CLI's own stream output) is kept in memory so a follow-up Reply/Apply on the *same* comment resumes that thread; all of this state — comments, replies, session ids — lives only in `DiffReviewModel` and is discarded when the review window closes (no disk persistence).
 
 Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent` picks the CLI + env, `PromptComposer` builds the per-comment prompt), `Git/` (git exec, diff, revision resolution), `Model/` (parsed diff, review comments, size/test classification, intraline diff), `Syntax/` (highlighting), `UI/` (`DiffReviewView` is the public entry point).
 
@@ -172,10 +188,15 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 | `App/ArgusApp.swift` | App entry, keyboard leader, canvas overlay |
 | `App/Views/AppShellView.swift` | Main split layout, agent state border/tint |
 | `App/Views/SidebarView.swift` | Repo/worktree list, `AgentDot`, drag reorder |
-| `App/Views/WorktreeContentView.swift` | Per-worktree layout (terminal/agent panes per `WindowLayout`) |
-| `App/Views/PanePool.swift` | Owns shell/claude/codex `TerminalHost`s; lazy per-layout role registration |
+| `App/Views/WorktreeContentView.swift` | Per-worktree layout (terminal pane + agent view per `WindowLayout`) |
+| `App/Views/AgentPaneView.swift` | The agent view: tab bar + one (full) or two (split) agent `TerminalHost`s |
+| `App/Views/AgentTabBarView.swift` | Tab bar UI above the agent view, one chip per open agent tab |
+| `App/Views/AgentTabsStore.swift` | Per-worktree open/active agent tabs + the app-global full/split display mode; drives `PanePool` role registration (not a tmux mirror) |
+| `Packages/ArgusCore/Sources/ArgusConfigKit/PaneLayoutResolver.swift` | Pure rules: required/visible/ordered pane roles for a worktree's open agent tabs + display mode |
+| `App/Views/PanePool.swift` | Owns shell/claude/codex `TerminalHost`s; role registration driven by the open agent tabs |
 | `App/Views/TerminalTabsStore.swift` | Polls the selected worktree's shell tmux session's windows; issues select/new/close tmux commands |
 | `App/Views/TerminalTabBarView.swift` | Tab bar UI above the shell pane, one tab per tmux window |
+| `App/Views/AppShellView+TabBindings.swift` | Routes leader `t`/`]`/`[`/`x`/`s` to the terminal or agent tab store based on focused pane |
 | `Packages/ArgusCore/Sources/Monitors/TmuxWindowParser.swift` | Parses `tmux list-windows` output into `TmuxWindow` (folder-name label from `pane_current_path`) |
 | `App/Views/PopupTerminalWindow.swift` | User-defined popup terminal windows (key/command/size), incl. lazygit default |
 | `App/Views/NvimWindow.swift` | nvim popup with tmux-persisted session |
@@ -186,7 +207,8 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 | `App/Views/SettingsWindow.swift` | Settings UI — Agent page (agent picker + commands) and GitHub/Environment pages |
 | `App/Views/KeyboardSettingsView.swift` | Settings UI — Keyboard page (key bindings + popup terminal shortcuts editor) |
 | `App/ShellStateBus.swift` | Shell-busy tracking (fish hooks / tmux fallback) → sidebar border |
-| `Packages/ArgusCore/Sources/AgentStateKit/AgentStateBus.swift` | `@MainActor` ObservableObject; owns the socket/JSONL hook reader, `CodexSessionWatcher`, and `ClaudeTranscriptWatcher` |
+| `Packages/ArgusCore/Sources/AgentStateKit/AgentStateBus.swift` | `@MainActor` ObservableObject; per-(worktree, agent) state, owns the socket/JSONL hook reader, `CodexSessionWatcher`, and `ClaudeTranscriptWatcher` |
+| `Packages/ArgusCore/Sources/AgentStateKit/WorktreeAgentState.swift` | Pure aggregate: collapses a worktree's per-agent states into the single state/agent a sidebar dot or window tint shows |
 | `Packages/ArgusCore/Sources/AgentStateKit/ClaudeTranscriptWatcher.swift` / `ClaudeTranscriptParser.swift` | Polls `~/.claude/projects/*/*.jsonl` to infer running/done/interrupted-idle/stale-idle without hooks |
 | `Packages/ArgusCore/Sources/AgentStateKit/WorktreeHookManager.swift` | Writes the one remaining hook script (PermissionRequest); delegates the settings.local.json merge to `ClaudeSettingsPatcher` |
 | `Packages/ArgusCore/Sources/ArgusConfigKit/ArgusConfig.swift` | `ArgusConfig` struct, `ArgusConfigStore`, `AgentSelection`/`WindowLayout` enums, `github`/`diskMonitor`/`environmentVariables`/`popupShortcuts` config blocks; persistence itself is `ArgusConfigFile.swift` (`~/.config/argus/argus.json`) |

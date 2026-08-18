@@ -9,8 +9,9 @@ Built with Swift + SwiftUI/AppKit, powered by [libghostty](https://github.com/gh
 ### Layout & agents
 
 - Sidebar listing git repos and their worktrees; drag-and-drop reordering of repos
-- Three selectable window layouts (Settings ⌘,): Terminal + Agent, Agents / Terminal (70/30 split), Terminal + Claude + Codex — the Codex pane is spun up lazily, only when a layout needs it
-- Choose the primary AI agent (Claude Code or Codex) with user-editable launch commands via Settings (⌘,)
+- Two selectable window layouts (toolbar): Terminal + Agent, and Agents / Terminal (70/30 split)
+- A single agent view with a Claude tab and a Codex tab — only the default agent's tab opens automatically; the other spins up on demand — shown full-width or side by side (toolbar toggle / leader `s`)
+- Choose the default AI agent (Claude Code or Codex) with user-editable launch commands via Settings (⌘,)
 - Create and force-delete worktrees directly from the sidebar
 - Per-worktree terminal sessions with release button to free resources
 - Restores the last selected worktree on relaunch
@@ -42,6 +43,7 @@ Built with Swift + SwiftUI/AppKit, powered by [libghostty](https://github.com/gh
 ### Shortcuts
 
 - Leader key shortcuts (default `Ctrl+B` prefix): `n`/`p` to cycle worktrees, `h`/`l` to focus panes, `a` to reload the agent pane, `w` diff review, `d` disk status, `m` markdown preview, `v` nvim, `r` refresh workspace, `,` settings
+- `t`/`]`/`[`/`x` act on whichever pane has focus — new/next/previous/close a tmux window in the terminal, or open/cycle/close an agent tab in the agent view; `s` toggles the agent view between full-width and side by side
 - Configurable leader key, timeout, key bindings, and popup terminals via Settings (⌘,); saved to `~/.config/argus/argus.json`
 
 ## Requirements
