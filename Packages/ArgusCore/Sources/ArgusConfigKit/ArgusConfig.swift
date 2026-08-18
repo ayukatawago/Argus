@@ -27,7 +27,6 @@ public enum AgentSelection: String, Codable, CaseIterable, Identifiable, Sendabl
 public enum WindowLayout: String, Codable, CaseIterable, Identifiable, Sendable {
     case terminalAgent
     case agentsOverTerminal
-    case terminalClaudeCodex
 
     public var id: String { rawValue }
 
@@ -35,7 +34,6 @@ public enum WindowLayout: String, Codable, CaseIterable, Identifiable, Sendable 
         switch self {
         case .terminalAgent: "Terminal + Agent"
         case .agentsOverTerminal: "Agents / Terminal"
-        case .terminalClaudeCodex: "Terminal + Claude + Codex"
         }
     }
 
@@ -43,7 +41,6 @@ public enum WindowLayout: String, Codable, CaseIterable, Identifiable, Sendable 
         switch self {
         case .terminalAgent: "rectangle.split.2x1"
         case .agentsOverTerminal: "rectangle.split.1x2"
-        case .terminalClaudeCodex: "rectangle.split.3x1"
         }
     }
 }
@@ -54,6 +51,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
     public var keyBindings = KeyBindings()
     public var agent: AgentSelection = .claude
     public var layout: WindowLayout = .terminalAgent
+    public var agentPaneMode: AgentPaneMode = .full
     public var claudeCommand: String = "claude --continue"
     public var codexCommand: String = "codex resume --last"
     public var diskMonitor = DiskMonitor()
@@ -73,6 +71,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
         keyBindings = (try? container.decodeIfPresent(KeyBindings.self, forKey: .keyBindings)) ?? KeyBindings()
         agent = (try? container.decodeIfPresent(AgentSelection.self, forKey: .agent)) ?? .claude
         layout = (try? container.decodeIfPresent(WindowLayout.self, forKey: .layout)) ?? .terminalAgent
+        agentPaneMode = (try? container.decodeIfPresent(AgentPaneMode.self, forKey: .agentPaneMode)) ?? .full
         claudeCommand = (try? container.decodeIfPresent(String.self, forKey: .claudeCommand)) ?? "claude --continue"
         codexCommand = (try? container.decodeIfPresent(String.self, forKey: .codexCommand)) ?? "codex resume --last"
         diskMonitor = (try? container.decodeIfPresent(DiskMonitor.self, forKey: .diskMonitor)) ?? DiskMonitor()
@@ -84,7 +83,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case leaderKey, leaderTimeoutSeconds, keyBindings, agent, layout
+        case leaderKey, leaderTimeoutSeconds, keyBindings, agent, layout, agentPaneMode
         case claudeCommand, codexCommand, diskMonitor, github, environmentVariables, popupShortcuts
     }
 
@@ -107,10 +106,13 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
         public var reloadAgentPane: String = "a"
         public var openDiskStatus: String = "d"
         public var openDiffReview: String = "w"
+        // These four act on whichever pane has focus: tmux windows in the shell pane, agent tabs
+        // in the agent pane.
         public var newTerminalTab: String = "t"
         public var nextTerminalTab: String = "]"
         public var previousTerminalTab: String = "["
         public var closeTerminalTab: String = "x"
+        public var toggleAgentSplit: String = "s"
 
         // Memberwise init needed because we declare a custom init(from:).
         public init() {}
@@ -145,6 +147,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
             nextTerminalTab = read("nextTerminalTab", default: "]")
             previousTerminalTab = read("previousTerminalTab", default: "[")
             closeTerminalTab = read("closeTerminalTab", default: "x")
+            toggleAgentSplit = read("toggleAgentSplit", default: "s")
         }
     }
 

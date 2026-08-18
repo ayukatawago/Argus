@@ -175,12 +175,13 @@ struct SidebarView: View {
     private func worktreeRows(for repo: GitRepo, visible: [GitWorktree]) -> some View {
         ForEach(visible) { worktree in
             let isActive = activeTerminalIDs.contains(worktree.id)
+            let worktreeState = agentBus.worktreeState(for: worktree.id)
             WorktreeRow(
                 worktree: worktree,
                 isActive: isActive,
                 isSelected: selectedWorktreeID == worktree.id,
-                agentState: agentBus.state(for: worktree.id),
-                agentType: agentBus.agentType(for: worktree.id),
+                agentState: worktreeState.state,
+                agentType: worktreeState.agent,
                 isShellBusy: shellStateBus.busyPaths.contains(worktree.id),
                 onRelease: isActive ? { onRelease(worktree.id) } : nil,
                 onDelete: worktree.isMain ? nil : { deleteWorktree(worktree, in: repo) },

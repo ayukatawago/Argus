@@ -1,11 +1,10 @@
 import Foundation
 
-/// Aggregates agent state events from HookIPC and publishes per-worktree state.
-/// Key is the worktree path, which matches GitWorktree.id.
+/// Aggregates agent state events from HookIPC and publishes per-(worktree, agent) state. Worktree
+/// path matches GitWorktree.id.
 @MainActor
 public final class AgentStateBus: ObservableObject {
-    @Published public private(set) var states: [String: AgentState] = [:]
-    @Published public private(set) var agentTypes: [String: AgentType] = [:]
+    @Published public private(set) var states: [AgentKey: AgentState] = [:]
     private let ipc = HookIPC()
     private let codexWatcher = CodexSessionWatcher()
     private let claudeTranscriptWatcher = ClaudeTranscriptWatcher()
@@ -27,61 +26,82 @@ public final class AgentStateBus: ObservableObject {
         claudeTranscriptWatcher.stop()
     }
 
-    public func state(for worktreePath: String) -> AgentState {
-        if let state = states[worktreePath] { return state }
-        return states[canonicalPath(worktreePath)] ?? .idle
+    // MARK: - Reads
+
+    public func state(for worktreePath: String, agent: AgentType) -> AgentState {
+        let key = AgentKey(worktreePath: worktreePath, agent: agent)
+        if let state = states[key] { return state }
+        let canonicalKey = AgentKey(worktreePath: canonicalPath(worktreePath), agent: agent)
+        return states[canonicalKey] ?? .idle
     }
 
-    public func agentType(for worktreePath: String) -> AgentType {
-        if let type = agentTypes[worktreePath] { return type }
-        return agentTypes[canonicalPath(worktreePath)] ?? .claude
+    public func statesByAgent(for worktreePath: String) -> [AgentType: AgentState] {
+        Dictionary(uniqueKeysWithValues: AgentType.allCases.map { ($0, state(for: worktreePath, agent: $0)) })
     }
 
-    public func setAgentType(_ type: AgentType, for worktreePath: String) {
-        let canonical = canonicalPath(worktreePath)
-        updateAgentType(type, path: worktreePath, canonical: canonical)
+    /// The single state + agent identity a worktree-level indicator shows — see
+    /// `WorktreeAgentState.aggregate`.
+    public func worktreeState(for worktreePath: String) -> WorktreeAgentState {
+        WorktreeAgentState.aggregate(statesByAgent(for: worktreePath))
     }
 
+    // MARK: - Writes
+
+    /// Returns every agent for `worktreePath` to `.idle`. Used when a worktree's panes are
+    /// released — every agent for it is gone.
     public func reset(for worktreePath: String) {
         let canonical = canonicalPath(worktreePath)
-        updateState(.idle, path: worktreePath, canonical: canonical)
-        if agentTypes[worktreePath] != nil { agentTypes.removeValue(forKey: worktreePath) }
-        if canonical != worktreePath, agentTypes[canonical] != nil {
-            agentTypes.removeValue(forKey: canonical)
+        for agent in AgentType.allCases {
+            updateState(
+                .idle, key: AgentKey(worktreePath: worktreePath, agent: agent),
+                canonicalKey: AgentKey(worktreePath: canonical, agent: agent))
+        }
+    }
+
+    /// Returns one agent for `worktreePath` to `.idle`. Used by the leader-`a` reload and agent-tab
+    /// close, both of which kill one specific agent's tmux session and must not disturb the other.
+    public func reset(for worktreePath: String, agent: AgentType) {
+        let canonical = canonicalPath(worktreePath)
+        updateState(
+            .idle, key: AgentKey(worktreePath: worktreePath, agent: agent),
+            canonicalKey: AgentKey(worktreePath: canonical, agent: agent))
+    }
+
+    /// Clears only the attention states (`.done`, `.waitingForApproval`) for every agent of
+    /// `worktreePath`, leaving a `.running` agent alone. The "user interacted with the workspace,
+    /// dismiss the border" path — worktree-wide in reach, but must not silently stop a
+    /// concurrently running agent from reporting as running.
+    public func dismissAttentionStates(for worktreePath: String) {
+        let canonical = canonicalPath(worktreePath)
+        for agent in AgentType.allCases {
+            let key = AgentKey(worktreePath: worktreePath, agent: agent)
+            let canonicalKey = AgentKey(worktreePath: canonical, agent: agent)
+            guard states[key] == .done || states[key] == .waitingForApproval else { continue }
+            updateState(.idle, key: key, canonicalKey: canonicalKey)
         }
     }
 
     // Internal (not private) so tests can drive the reducer directly via @testable import,
     // without going through the socket/file-tailing IPC plumbing in start().
     func apply(_ payload: HookPayload) {
+        guard let agent = AgentType(hookAgent: payload.agent) else { return }
         let path = payload.worktreePath
         let canonical = canonicalPath(path)
-        let type: AgentType = payload.agent == "codex" ? .codex : .claude
-        updateAgentType(type, path: path, canonical: canonical)
-
-        let newState: AgentState =
-            switch payload.state {
-            case "running": .running
-            case "waitingForApproval": .waitingForApproval
-            case "done": .done
-            default: .idle
-            }
-        updateState(newState, path: path, canonical: canonical)
+        updateState(
+            AgentState(hookState: payload.state),
+            key: AgentKey(worktreePath: path, agent: agent),
+            canonicalKey: AgentKey(worktreePath: canonical, agent: agent)
+        )
     }
 
-    // `@Published` fires `objectWillChange` on assignment, not on change, so every one of these
-    // was republishing (and invalidating the whole sidebar, which observes this bus) even when the
-    // hook/watcher re-asserted a state or type it had already reported — up to 4 emissions per
-    // payload (state + type, path + canonical). Guarding each write is what keeps a repeated,
-    // identical event from causing visible churn downstream.
-    private func updateState(_ state: AgentState, path: String, canonical: String) {
-        if states[path] != state { states[path] = state }
-        if canonical != path, states[canonical] != state { states[canonical] = state }
-    }
-
-    private func updateAgentType(_ type: AgentType, path: String, canonical: String) {
-        if agentTypes[path] != type { agentTypes[path] = type }
-        if canonical != path, agentTypes[canonical] != type { agentTypes[canonical] = type }
+    // `@Published` fires `objectWillChange` on assignment, not on change, so writing the same
+    // state that's already there would republish (and invalidate the whole sidebar, which
+    // observes this bus) even when the hook/watcher re-asserted a state it had already reported —
+    // up to 2 emissions per payload (raw path + canonical path). Guarding each write is what keeps
+    // a repeated, identical event from causing visible churn downstream.
+    private func updateState(_ state: AgentState, key: AgentKey, canonicalKey: AgentKey) {
+        if states[key] != state { states[key] = state }
+        if canonicalKey != key, states[canonicalKey] != state { states[canonicalKey] = state }
     }
 
     private func canonicalPath(_ path: String) -> String {

@@ -13,16 +13,18 @@ struct AppShellView: View {
     @StateObject private var agentBus = AgentStateBus()
     @StateObject private var shellStateBus = ShellStateBus()
     @StateObject private var terminalTabs = TerminalTabsStore()
+    // Not `private`: read by the `AppShellView+Toolbar` extension in another file.
+    @StateObject var agentTabs = AgentTabsStore()
     @StateObject private var diskMonitor = DiskMonitorStore()
     @StateObject private var diskScanner = DiskCleanupScanner()
     @StateObject private var prMonitor = PRMonitorStore()
     @StateObject private var diskStatusWindow = DiskStatusWindow()
     @StateObject private var diffReview = DiffReviewWindow()
-    @EnvironmentObject private var configStore: ArgusConfigStore
+    @EnvironmentObject var configStore: ArgusConfigStore
     @Environment(\.openWindow) private var openWindow
     @State private var selectedWorktreeID: String?
     @State private var isCanvasMode = false
-    @State private var focusedRole: PaneRole = .shell
+    @State var focusedRole: PaneRole = .shell
     @State private var detailSize: CGSize = .zero
     @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
 
@@ -55,12 +57,11 @@ struct AppShellView: View {
                 guard let id = selectedWorktreeID,
                     let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
                 else { return }
-                pool.reloadAgentPane(id: id, workingDirectory: worktree.path)
-                agentBus.reset(for: id)
-                let config = ArgusConfigStore.shared.config
-                let primaryRole = PaneLayoutResolver.primaryAgentRole(layout: config.layout, agent: config.agent)
-                if primaryRole == .codex {
-                    agentBus.setAgentType(.codex, for: worktree.path)
+                let tabs = agentTabs.tabs(for: id)
+                let roles = PaneLayoutResolver.requiredRoles(tabs: tabs)
+                pool.reloadAgentPanes(id: id, workingDirectory: worktree.path, roles: roles)
+                for agent in tabs.open {
+                    agentBus.reset(for: worktree.path, agent: agent.agentType)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .openDiskStatus)) { _ in
@@ -72,7 +73,9 @@ struct AppShellView: View {
                 else { return }
                 diffReview.open(worktreePath: worktree.path, agent: configStore.config.agent)
             }
-            .onReceiveTerminalTabBindings(terminalTabs: terminalTabs, runAction: runTerminalTabAction)
+            .onReceiveTabBindings(
+                focusedRole: $focusedRole, terminalTabs: terminalTabs, agentTabs: agentTabs, pool: pool
+            )
             .onReceive(NotificationCenter.default.publisher(for: .openDiffReviewForPath)) { notification in
                 // CLI-originated (`argus diff`) request — the path is used as-is, independent of
                 // whether it's a workspace `store` already tracks in the sidebar.
@@ -104,6 +107,7 @@ struct AppShellView: View {
                         if selectedWorktreeID == id { selectedWorktreeID = nil }
                         pool.release(id: id)
                         agentBus.reset(for: id)
+                        agentTabs.release(id: id)
                     }
                 )
             }
@@ -135,11 +139,15 @@ struct AppShellView: View {
                 .disabled(selectedWorktreeID == nil)
             }
             ToolbarItem(placement: .automatic) {
+                agentPaneModeToggle
+            }
+            ToolbarItem(placement: .automatic) {
                 layoutPicker
             }
         }
         .onAppear {
             store.load()
+            agentTabs.attach(pool: pool, agentBus: agentBus)
             agentBus.start()
             shellStateBus.updateActivePaths(pool.activeIDs)
             shellStateBus.start()
@@ -179,21 +187,27 @@ struct AppShellView: View {
                 let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
             else {
                 terminalTabs.setWorktree(path: nil)
+                agentTabs.setWorktree(id: nil, path: nil, defaultAgent: configStore.config.agent)
                 return
             }
-            pool.getOrCreate(id: id, workingDirectory: worktree.path)
+            // Seed (or find) this worktree's open agent tabs before registering roles — the
+            // required-role set comes from whatever tabs it ends up with.
+            agentTabs.setWorktree(id: id, path: worktree.path, defaultAgent: configStore.config.agent)
+            pool.getOrCreate(
+                id: id, workingDirectory: worktree.path,
+                roles: PaneLayoutResolver.requiredRoles(tabs: agentTabs.tabs(for: id)))
             terminalTabs.setWorktree(path: worktree.path)
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusPaneLeft)) { _ in
             stepFocus(direction: -1)
-            dismissDoneIfNeeded()
+            dismissAttentionIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusPaneRight)) { _ in
             stepFocus(direction: +1)
-            dismissDoneIfNeeded()
+            dismissAttentionIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .workspaceInteracted)) { _ in
-            dismissDoneIfNeeded()
+            dismissAttentionIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .selectNextWorktree)) { _ in
             navigateWorktrees(forward: true)
@@ -204,47 +218,15 @@ struct AppShellView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshWorkspace)) { _ in
             store.requestRefresh()
         }
-    }
-
-    // MARK: - Layout picker
-
-    private var layoutPicker: some View {
-        let config = configStore.config
-        return Menu {
-            ForEach(WindowLayout.allCases) { layout in
-                Button {
-                    selectLayout(layout)
-                } label: {
-                    Label(layout.displayName, systemImage: layout.toolbarIcon)
-                }
-            }
-        } label: {
-            Image(systemName: config.layout.toolbarIcon)
-        }
-        .help("Window layout")
-    }
-
-    private func selectLayout(_ layout: WindowLayout) {
-        configStore.config.layout = layout
-        configStore.save()
-        // Register any newly-required roles for the current worktree.
-        if let id = selectedWorktreeID,
-            let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
-        {
-            pool.applyLayout(id: id, workingDirectory: worktree.path)
-        }
-        // Clamp focused role to those visible in the new layout.
-        let ordered = PaneLayoutResolver.orderedRoles(layout: layout, agent: configStore.config.agent)
-        if !ordered.contains(focusedRole) {
-            focusedRole = ordered.first ?? .shell
-        }
+        .onChange(of: agentTabs.mode) { _, _ in clampFocusedRole() }
+        .onChange(of: agentTabs.byWorktree) { _, _ in clampFocusedRole() }
     }
 
     // MARK: - Terminal detail
 
-    private var currentAgentState: AgentState {
+    private var currentWorktreeState: WorktreeAgentState {
         guard let id = selectedWorktreeID else { return .idle }
-        return agentBus.state(for: id)
+        return agentBus.worktreeState(for: id)
     }
 
     @ViewBuilder
@@ -262,16 +244,21 @@ struct AppShellView: View {
                 }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
+        } else if let worktreePath = agentTabs.worktreePath {
             WorktreeContentView(
                 layout: config.layout,
-                agent: config.agent,
                 shellHost: pool.shellHost,
                 claudeHost: pool.claudeHost,
                 codexHost: pool.codexHost,
                 tabsStore: terminalTabs,
-                agentState: currentAgentState,
-                onShellActivated: { focusedRole = .shell }
+                agentTabs: agentTabs,
+                agentBus: agentBus,
+                worktreePath: worktreePath,
+                onShellActivated: { focusedRole = .shell },
+                onAgentActivated: { role in
+                    focusedRole = role
+                    Task { @MainActor in pool.host(for: role).focusActiveTerminal() }
+                }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(terminalBackground)
@@ -296,17 +283,17 @@ struct AppShellView: View {
             isCanvasMode = false
         } else {
             let layout = CanvasLayout(count: activeWorktrees.count, available: detailSize)
-            pool.openCanvas(
-                worktrees: activeWorktrees.map { (id: $0.id, path: $0.id) },
-                fontSize: layout.fontSize
-            )
+            let worktrees = activeWorktrees.map {
+                CanvasWorktree(id: $0.id, path: $0.id, role: agentTabs.tabs(for: $0.id).active.paneRole)
+            }
+            pool.openCanvas(worktrees: worktrees, fontSize: layout.fontSize)
             isCanvasMode = true
         }
     }
 
     @ViewBuilder
     private var terminalBackground: some View {
-        switch currentAgentState {
+        switch currentWorktreeState.state {
         case .done:
             Color.green.opacity(0.05)
 
@@ -321,28 +308,16 @@ struct AppShellView: View {
 }
 
 extension AppShellView {
-    fileprivate func dismissDoneIfNeeded() {
+    fileprivate func dismissAttentionIfNeeded() {
         guard let id = selectedWorktreeID else { return }
-        let state = agentBus.state(for: id)
-        guard state == .done || state == .waitingForApproval else { return }
-        agentBus.reset(for: id)
+        agentBus.dismissAttentionStates(for: id)
     }
 
     // MARK: - Directional focus
 
-    /// Shared tail for leader-key terminal-tab actions: waits for the tmux command to finish,
-    /// then focuses the shell pane, matching what `TerminalTabBarView`'s mouse actions do.
-    fileprivate func runTerminalTabAction(_ task: Task<Void, Never>) {
-        focusedRole = .shell
-        Task {
-            await task.value
-            pool.shellHost.focusActiveTerminal()
-        }
-    }
-
     fileprivate func stepFocus(direction: Int) {
-        let config = configStore.config
-        let ordered = PaneLayoutResolver.orderedRoles(layout: config.layout, agent: config.agent)
+        let ordered = PaneLayoutResolver.orderedRoles(
+            layout: configStore.config.layout, tabs: agentTabs.tabs, mode: agentTabs.mode)
         guard !ordered.isEmpty else { return }
         let currentIndex = ordered.firstIndex(of: focusedRole) ?? 0
         let newIndex = max(0, min(ordered.count - 1, currentIndex + direction))
@@ -361,28 +336,5 @@ extension AppShellView {
         }
         selectedWorktreeID = next
         DispatchQueue.main.async { self.pool.host(for: self.focusedRole).focusActiveTerminal() }
-    }
-}
-
-extension View {
-    /// The leader-key bindings for the terminal tab bar (new / next / previous / close),
-    /// factored out of `AppShellView.coreView` to keep its body under SwiftLint's line-count
-    /// limit. `runAction` is `AppShellView.runTerminalTabAction`.
-    fileprivate func onReceiveTerminalTabBindings(
-        terminalTabs: TerminalTabsStore, runAction: @escaping (Task<Void, Never>) -> Void
-    ) -> some View {
-        onReceive(NotificationCenter.default.publisher(for: .newTerminalTab)) { _ in
-            runAction(terminalTabs.newTab())
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .nextTerminalTab)) { _ in
-            runAction(terminalTabs.selectRelative(1))
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .previousTerminalTab)) { _ in
-            runAction(terminalTabs.selectRelative(-1))
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .closeTerminalTab)) { _ in
-            guard let index = terminalTabs.windows.first(where: \.isActive)?.index else { return }
-            runAction(terminalTabs.close(index: index))
-        }
     }
 }
