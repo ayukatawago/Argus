@@ -13,4 +13,11 @@ struct AgentStateKitSmokeTests {
         #expect(payload.state == "running")
         #expect(payload.agent == "claude")
     }
+
+    @Test("HookPayload decodes a payload with no agent field at all")
+    func decodesHookPayloadWithoutAgentField() throws {
+        let json = Data(#"{"worktreePath":"/tmp/repo","state":"done"}"#.utf8)
+        let payload = try JSONDecoder().decode(HookPayload.self, from: json)
+        #expect(payload.agent == nil)
+    }
 }

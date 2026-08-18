@@ -73,6 +73,22 @@ struct ArgusConfigTests {
         #expect(decoded.popupShortcuts == [.lazygitDefault])
     }
 
+    @Test("a dropped layout raw value (terminalClaudeCodex) falls back to terminalAgent")
+    func droppedLayoutValueFallsBackToTerminalAgent() throws {
+        let decoded = try decode(
+            """
+            {"layout": "terminalClaudeCodex"}
+            """)
+        #expect(decoded.layout == .terminalAgent)
+    }
+
+    @Test("agentPaneMode defaults to full and decodes split, falling back to full on garbage")
+    func agentPaneModeDecoding() throws {
+        #expect(try decode("{}").agentPaneMode == .full)
+        #expect(try decode(#"{"agentPaneMode": "split"}"#).agentPaneMode == .split)
+        #expect(try decode(#"{"agentPaneMode": "nonsense"}"#).agentPaneMode == .full)
+    }
+
     @Test("launchCommand(for:) maps to the matching command field")
     func launchCommandMapping() {
         var config = ArgusConfig()
