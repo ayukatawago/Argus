@@ -46,8 +46,12 @@ struct AgentPaneView: View {
     private func hostView(for role: PaneRole) -> some View {
         let host = host(for: role)
         let state = role.agent.map { agentBus.state(for: worktreePath, agent: $0.agentType) } ?? .idle
+        // `.id(role)` is required, not cosmetic: in full mode this is the only view in its slot,
+        // so without a role-keyed identity a Claude<->Codex switch would leave `TerminalHostView`
+        // stuck on whichever host was mounted first — see its doc comment.
         TerminalHostView(host: host)
             .focusBorder(isFocused: host.hasFocus)
             .agentStateBorder(state)
+            .id(role)
     }
 }
