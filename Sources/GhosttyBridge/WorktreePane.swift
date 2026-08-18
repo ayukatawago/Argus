@@ -29,26 +29,17 @@ final class WorktreePane {
         let shell = LoginShell.current
         let session = sessionName(for: role)
         let tmux = Self.tmuxExecutable
-        let command: String
         let envPreamble = Self.envExportPreamble()
-        switch role {
-        case .shell:
+        let command: String
+        if let agent = role.agent {
+            let cmd = "\(envPreamble)\(ArgusConfigStore.shared.config.launchCommand(for: agent)) || exec \(shell) -l"
+            command =
+                "\(tmux) new-session -A -s \(session) \(shell) -l -c '\(cmd)'"
+                + " \\; set -s extended-keys on"
+                + " \\; set-option -t \(session) status off"
+        } else {
             command =
                 "\(tmux) new-session -A -s \(session) '\(envPreamble)exec \(shell) -l'"
-                + " \\; set -s extended-keys on"
-                + " \\; set-option -t \(session) status off"
-
-        case .claude:
-            let cmd = "\(envPreamble)\(ArgusConfigStore.shared.config.claudeCommand) || exec \(shell) -l"
-            command =
-                "\(tmux) new-session -A -s \(session) \(shell) -l -c '\(cmd)'"
-                + " \\; set -s extended-keys on"
-                + " \\; set-option -t \(session) status off"
-
-        case .codex:
-            let cmd = "\(envPreamble)\(ArgusConfigStore.shared.config.codexCommand) || exec \(shell) -l"
-            command =
-                "\(tmux) new-session -A -s \(session) \(shell) -l -c '\(cmd)'"
                 + " \\; set -s extended-keys on"
                 + " \\; set-option -t \(session) status off"
         }
@@ -60,20 +51,29 @@ final class WorktreePane {
         return terminalView
     }
 
+    /// Drops the cached view/state for `role` so a later `view(for:)` call builds a fresh surface
+    /// against a fresh tmux session, picking up the current launch command / environment
+    /// variables. Used when an agent tab is closed — its tmux session is killed separately by the
+    /// caller. `.shell` is never discarded; the shell pane always survives worktree pane teardown.
+    func discardView(for role: PaneRole) {
+        guard role != .shell else { return }
+        views.removeValue(forKey: role)
+        states.removeValue(forKey: role)
+    }
+
     /// Returns the stable tmux session name for `role` in this worktree.
     func sessionName(for role: PaneRole) -> String {
-        let type: String
-        switch role {
-        case .shell: type = "s"
-        case .claude: type = "a"
-        case .codex: type = "x"
-        }
-        return Self.sessionName(type, path: workingDirectory)
+        Self.sessionName(for: role, path: workingDirectory)
     }
 
     /// Derives a stable tmux session name from a worktree path. See TmuxSessionName for details.
     static func sessionName(_ type: String, path: String) -> String {
         TmuxSessionName.make(type: type, path: path)
+    }
+
+    /// Derives a stable tmux session name for `role` at `path`. See TmuxSessionName for details.
+    static func sessionName(for role: PaneRole, path: String) -> String {
+        sessionName(role.tmuxSessionType, path: path)
     }
 
     // Changes take effect only when new tmux sessions are created (reload with leader+a).

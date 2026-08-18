@@ -30,11 +30,12 @@ struct CanvasView: View {
             ScrollView {
                 LazyVGrid(columns: gridColumns, spacing: canvasSpacing) {
                     ForEach(worktrees, id: \.id) { card in
+                        let worktreeState = agentBus.worktreeState(for: card.id)
                         CanvasCardView(
                             name: card.name,
                             branch: card.branch,
-                            agentState: agentBus.state(for: card.id),
-                            agentType: agentBus.agentType(for: card.id),
+                            agentState: worktreeState.state,
+                            agentType: worktreeState.agent,
                             terminalView: canvasViews[card.id],
                             terminalHeight: layout.terminalHeight
                         )

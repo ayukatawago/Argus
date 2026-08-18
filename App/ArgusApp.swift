@@ -197,24 +197,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return flags
     }
 
+    /// A dictionary *literal* here would `fatalError` on any two bindings sharing a character —
+    /// rebuilt on every leader keypress, so a config with a collision (a user's custom binding
+    /// landing on another default, say) would crash the app the very next time leader mode is
+    /// used. `uniquingKeysWith` keeps the first entry instead, silently shadowing the loser —
+    /// surprising for that one binding, but not fatal.
     private static func notificationMap(from bindings: ArgusConfig.KeyBindings) -> [String: Notification.Name] {
-        [
-            bindings.focusPaneLeft: .focusPaneLeft,
-            bindings.focusPaneRight: .focusPaneRight,
-            bindings.selectNextWorktree: .selectNextWorktree,
-            bindings.selectPreviousWorktree: .selectPreviousWorktree,
-            bindings.openNvim: .openNvim,
-            bindings.refreshWorkspace: .refreshWorkspace,
-            bindings.openMarkdownPreview: .openMarkdownPreview,
-            bindings.openSettings: .openSettings,
-            bindings.reloadAgentPane: .reloadAgentPane,
-            bindings.openDiskStatus: .openDiskStatus,
-            bindings.openDiffReview: .openDiffReview,
-            bindings.newTerminalTab: .newTerminalTab,
-            bindings.nextTerminalTab: .nextTerminalTab,
-            bindings.previousTerminalTab: .previousTerminalTab,
-            bindings.closeTerminalTab: .closeTerminalTab,
-        ]
+        Dictionary(
+            [
+                (bindings.focusPaneLeft, Notification.Name.focusPaneLeft),
+                (bindings.focusPaneRight, .focusPaneRight),
+                (bindings.selectNextWorktree, .selectNextWorktree),
+                (bindings.selectPreviousWorktree, .selectPreviousWorktree),
+                (bindings.openNvim, .openNvim),
+                (bindings.refreshWorkspace, .refreshWorkspace),
+                (bindings.openMarkdownPreview, .openMarkdownPreview),
+                (bindings.openSettings, .openSettings),
+                (bindings.reloadAgentPane, .reloadAgentPane),
+                (bindings.openDiskStatus, .openDiskStatus),
+                (bindings.openDiffReview, .openDiffReview),
+                (bindings.newTerminalTab, .newTerminalTab),
+                (bindings.nextTerminalTab, .nextTerminalTab),
+                (bindings.previousTerminalTab, .previousTerminalTab),
+                (bindings.closeTerminalTab, .closeTerminalTab),
+                (bindings.toggleAgentSplit, .toggleAgentSplit),
+            ],
+            uniquingKeysWith: { first, _ in first }
+        )
     }
 }
 

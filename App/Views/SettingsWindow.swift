@@ -114,6 +114,12 @@ struct AgentSettingsView: View {
             .pickerStyle(.menu)
             .labelsHidden()
             .frame(width: 180)
+            Text("The default agent tab opened for a newly selected worktree. The other agent's")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("tab can still be opened on demand from the agent pane's \"+\" button.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

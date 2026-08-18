@@ -5,13 +5,15 @@ import SwiftUI
 
 struct WorktreeContentView: View {
     var layout: WindowLayout
-    var agent: AgentSelection
     @ObservedObject var shellHost: TerminalHost
     @ObservedObject var claudeHost: TerminalHost
     @ObservedObject var codexHost: TerminalHost
     @ObservedObject var tabsStore: TerminalTabsStore
-    var agentState: AgentState = .idle
+    @ObservedObject var agentTabs: AgentTabsStore
+    @ObservedObject var agentBus: AgentStateBus
+    var worktreePath: String
     var onShellActivated: () -> Void = {}
+    var onAgentActivated: (PaneRole) -> Void = { _ in }
 
     var body: some View {
         switch layout {
@@ -20,72 +22,54 @@ struct WorktreeContentView: View {
 
         case .agentsOverTerminal:
             agentsOverTerminalLayout
-
-        case .terminalClaudeCodex:
-            terminalClaudeCodexLayout
         }
     }
 
     // MARK: - Layout variants
 
-    /// Left: terminal. Right: the currently-selected agent (Claude or Codex).
+    /// Left: terminal. Right: the agent view (its own tabs, full-width or split — see
+    /// `AgentPaneView`).
     @ViewBuilder
     private var terminalAgentLayout: some View {
-        let agentHost = agent == .codex ? codexHost : claudeHost
         HSplitView {
             shellPane
                 .frame(minWidth: 200)
-            TerminalHostView(host: agentHost)
-                .overlay(focusBorder(isFocused: agentHost.hasFocus))
-                .overlay(agentStateBorder)
+            agentPane
                 .frame(minWidth: 200)
         }
     }
 
-    /// Top row: Codex (left) + Claude Code (right). Bottom: full-width terminal.
-    /// Initial split is 70% agents / 30% terminal; the divider remains user-draggable.
+    /// Top: the agent view. Bottom: full-width terminal. Initial split is 70% agents / 30%
+    /// terminal; the divider remains user-draggable.
     @ViewBuilder
     private var agentsOverTerminalLayout: some View {
         RatioVSplitView(topFraction: 0.7) {
-            HSplitView {
-                TerminalHostView(host: codexHost)
-                    .overlay(focusBorder(isFocused: codexHost.hasFocus))
-                    .frame(minWidth: 200)
-                TerminalHostView(host: claudeHost)
-                    .overlay(focusBorder(isFocused: claudeHost.hasFocus))
-                    .overlay(agentStateBorder)
-                    .frame(minWidth: 200)
-            }
+            agentPane
         } bottom: {
             shellPane
         }
     }
 
-    /// Left: terminal. Center: Claude Code. Right: Codex.
-    @ViewBuilder
-    private var terminalClaudeCodexLayout: some View {
-        HSplitView {
-            shellPane
-                .frame(minWidth: 200)
-            TerminalHostView(host: claudeHost)
-                .overlay(focusBorder(isFocused: claudeHost.hasFocus))
-                .overlay(agentStateBorder)
-                .frame(minWidth: 200)
-            TerminalHostView(host: codexHost)
-                .overlay(focusBorder(isFocused: codexHost.hasFocus))
-                .frame(minWidth: 200)
-        }
+    private var agentPane: some View {
+        AgentPaneView(
+            agentTabs: agentTabs,
+            agentBus: agentBus,
+            claudeHost: claudeHost,
+            codexHost: codexHost,
+            worktreePath: worktreePath,
+            onActivated: onAgentActivated
+        )
     }
 
     /// The shell column: its tmux windows as a tab bar, above the terminal itself. Extracted so
-    /// all three layouts pick up the bar from one place. The focus border deliberately stays
-    /// scoped to the terminal, not the tab bar above it.
+    /// both layouts pick up the bar from one place. The focus border deliberately stays scoped to
+    /// the terminal, not the tab bar above it.
     @ViewBuilder
     private var shellPane: some View {
         VStack(spacing: 0) {
             TerminalTabBarView(store: tabsStore, onActivate: activateShell)
             TerminalHostView(host: shellHost)
-                .overlay(focusBorder(isFocused: shellHost.hasFocus))
+                .focusBorder(isFocused: shellHost.hasFocus)
         }
     }
 
@@ -93,40 +77,6 @@ struct WorktreeContentView: View {
         onShellActivated()
         shellHost.focusActiveTerminal()
     }
-
-    // MARK: - Borders
-
-    @ViewBuilder
-    private func focusBorder(isFocused: Bool) -> some View {
-        if isFocused {
-            Rectangle()
-                .strokeBorder(Color.accentColor.opacity(0.5), lineWidth: 1.5)
-        }
-    }
-
-    /// State border applied to the primary agent (Claude) pane.
-    @ViewBuilder
-    private var agentStateBorder: some View {
-        switch agentState {
-        case .done:
-            Rectangle()
-                .strokeBorder(Color.green.opacity(0.5), lineWidth: 2)
-
-        case .waitingForApproval:
-            Rectangle()
-                .strokeBorder(Color.orange.opacity(0.7), lineWidth: 3)
-
-        default:
-            EmptyView()
-        }
-    }
-}
-
-private struct TerminalHostView: NSViewRepresentable {
-    let host: TerminalHost
-
-    func makeNSView(context _: Context) -> TerminalHost { host }
-    func updateNSView(_: TerminalHost, context _: Context) {}
 }
 
 /// A vertical split view whose divider starts at a fixed fraction of the available height.

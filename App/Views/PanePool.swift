@@ -1,5 +1,6 @@
 import AgentStateKit
 import ArgusConfigKit
+import ArgusSupport
 import GhosttyTerminal
 import SwiftUI
 
@@ -7,6 +8,13 @@ struct WorktreeCard {
     let id: String
     let name: String
     let branch: String?
+}
+
+/// One worktree's canvas attachment target — the session `PanePool.openCanvas` attaches to.
+struct CanvasWorktree {
+    let id: String
+    let path: String
+    let role: PaneRole
 }
 
 @MainActor
@@ -26,9 +34,10 @@ final class PanePool: ObservableObject {
         }
     }
 
-    func getOrCreate(id: String, workingDirectory: String) {
-        let config = ArgusConfigStore.shared.config
-        let roles = PaneLayoutResolver.requiredRoles(layout: config.layout, agent: config.agent)
+    /// Registers `roles` for `id`, building the worktree's pane (and its shell tmux session) on
+    /// first use. `roles` is the caller's required-role set — see `PaneLayoutResolver.requiredRoles`
+    /// and `AgentTabsStore` — so `PanePool` itself has no notion of layout or open agent tabs.
+    func getOrCreate(id: String, workingDirectory: String, roles: [PaneRole]) {
         if panes[id] == nil {
             try? WorktreeHookManager.install(worktreePath: workingDirectory)
             let pane = WorktreePane(workingDirectory: workingDirectory)
@@ -39,6 +48,12 @@ final class PanePool: ObservableObject {
         for role in roles {
             host(for: role).register(id: id, terminal: pane.view(for: role))
         }
+    }
+
+    /// Registers a single additional role for an already-created worktree — the agent-tab
+    /// analogue of opening a new tmux window. Idempotent.
+    func openRole(id: String, workingDirectory: String, role: PaneRole) {
+        getOrCreate(id: id, workingDirectory: workingDirectory, roles: [role])
     }
 
     func activate(id: String?) {
@@ -57,17 +72,24 @@ final class PanePool: ObservableObject {
         canvasViews.removeValue(forKey: id)
     }
 
-    /// Register any newly-required roles for the selected worktree after a layout change.
-    func applyLayout(id: String, workingDirectory: String) {
-        getOrCreate(id: id, workingDirectory: workingDirectory)
-        activate(id: id)
+    /// The agent-tab analogue of tmux `kill-window`: unmounts the surface, drops the pane's
+    /// cached view for `role` so a later reopen builds a fresh one, then kills its tmux session so
+    /// the next open starts a fresh agent rather than re-attaching to the old one. `role` must not
+    /// be `.shell` — the shell pane is never closed this way.
+    func closeRole(id: String, workingDirectory: String, role: PaneRole) async {
+        guard role != .shell else { return }
+        host(for: role).unregister(id: id)
+        panes[id]?.discardView(for: role)
+        canvasViews.removeValue(forKey: id)
+        let session = WorktreePane.sessionName(for: role, path: workingDirectory)
+        _ = await ProcessRunner.run(WorktreePane.tmuxExecutable, ["kill-session", "-t", session])
     }
 
-    func openCanvas(worktrees: [(id: String, path: String)], fontSize: Int) {
-        let config = ArgusConfigStore.shared.config
-        for (id, path) in worktrees where canvasViews[id] == nil {
-            let primaryRole = PaneLayoutResolver.primaryAgentRole(layout: config.layout, agent: config.agent)
-            let session = WorktreePane.sessionName(primaryRole == .codex ? "x" : "a", path: path)
+    func openCanvas(worktrees: [CanvasWorktree], fontSize: Int) {
+        for worktree in worktrees where canvasViews[worktree.id] == nil {
+            let id = worktree.id
+            let path = worktree.path
+            let session = WorktreePane.sessionName(for: worktree.role, path: path)
             let tmux = WorktreePane.tmuxExecutable
             let attachCmd =
                 "\(tmux) attach-session -t \(session)"
@@ -89,23 +111,20 @@ final class PanePool: ObservableObject {
         canvasViews.removeAll()
     }
 
-    func reloadAgentPane(id: String, workingDirectory: String) {
-        let config = ArgusConfigStore.shared.config
-        let primaryRole = PaneLayoutResolver.primaryAgentRole(layout: config.layout, agent: config.agent)
-        var rolesToReload: Set<PaneRole> = [primaryRole]
-        if PaneLayoutResolver.requiredRoles(layout: config.layout, agent: config.agent).contains(.codex) {
-            rolesToReload.insert(.codex)
-        }
-        for role in rolesToReload {
-            let typeChar = role == .codex ? "x" : "a"
-            let session = WorktreePane.sessionName(typeChar, path: workingDirectory)
+    /// Kills every currently-open agent role's tmux session, then rebuilds the worktree's pane
+    /// with `roles` registered again. The shell session is untouched. Answers "reload with both
+    /// tabs open" uniformly: whatever is open is killed and comes back — the open/active tab
+    /// state itself lives in `AgentTabsStore`, which `release`/`getOrCreate` never touch.
+    func reloadAgentPanes(id: String, workingDirectory: String, roles: [PaneRole]) {
+        for role in roles where role != .shell {
+            let session = WorktreePane.sessionName(for: role, path: workingDirectory)
             let task = Process()
             task.launchPath = WorktreePane.tmuxExecutable
             task.arguments = ["kill-session", "-t", session]
             try? task.run()
         }
         release(id: id)
-        getOrCreate(id: id, workingDirectory: workingDirectory)
+        getOrCreate(id: id, workingDirectory: workingDirectory, roles: roles)
         activate(id: id)
     }
 }

@@ -19,6 +19,7 @@ extension Notification.Name {
     static let nextTerminalTab = Notification.Name("argus.nextTerminalTab")
     static let previousTerminalTab = Notification.Name("argus.previousTerminalTab")
     static let closeTerminalTab = Notification.Name("argus.closeTerminalTab")
+    static let toggleAgentSplit = Notification.Name("argus.toggleAgentSplit")
     /// Posted by `AppDelegate` for a CLI-originated `argus://diff` request — carries
     /// `workspace`/`base`/`head` in `userInfo` and, unlike `openDiffReview`, is resolved without
     /// consulting `WorkspaceStore` (the path is taken as-is, whether or not it's a tracked

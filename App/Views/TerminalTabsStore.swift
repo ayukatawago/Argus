@@ -24,7 +24,7 @@ final class TerminalTabsStore: ObservableObject {
     func setWorktree(path: String?) {
         guard worktreePath != path else { return }
         worktreePath = path
-        session = path.map { WorktreePane.sessionName("s", path: $0) }
+        session = path.map { WorktreePane.sessionName(for: .shell, path: $0) }
         consecutiveFailures = 0
         actionGeneration += 1
         if !windows.isEmpty { windows = [] }
