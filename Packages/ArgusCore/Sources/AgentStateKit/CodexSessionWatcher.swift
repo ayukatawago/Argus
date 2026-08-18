@@ -55,7 +55,17 @@ public final class CodexSessionWatcher: @unchecked Sendable {
     ) async {
         let now = Date()
 
-        for fileURL in recentSessionFiles() {
+        // `recentSessionFiles()` only looks at today's and yesterday's day-bucketed directories —
+        // enough to *discover* newly created sessions. But `codex resume --last` (the default
+        // codexCommand) keeps appending to the *original* rollout file indefinitely, which lives
+        // in the directory named after the session's creation date, not today's. Without this
+        // union, any session resumed more than a day past its creation drops out of the scan
+        // forever and its worktree's state silently freezes. Once a file is discovered (present in
+        // `state.cwds`), keep polling it here regardless of which day it lives in, until
+        // `clearIfTracked` removes it below for genuinely going stale.
+        let files = Set(recentSessionFiles()).union(state.cwds.keys)
+
+        for fileURL in files {
             guard
                 let attrs = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]),
                 let mtime = attrs.contentModificationDate
