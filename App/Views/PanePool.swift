@@ -115,13 +115,10 @@ final class PanePool: ObservableObject {
     /// with `roles` registered again. The shell session is untouched. Answers "reload with both
     /// tabs open" uniformly: whatever is open is killed and comes back — the open/active tab
     /// state itself lives in `AgentTabsStore`, which `release`/`getOrCreate` never touch.
-    func reloadAgentPanes(id: String, workingDirectory: String, roles: [PaneRole]) {
+    func reloadAgentPanes(id: String, workingDirectory: String, roles: [PaneRole]) async {
         for role in roles where role != .shell {
             let session = WorktreePane.sessionName(for: role, path: workingDirectory)
-            let task = Process()
-            task.launchPath = WorktreePane.tmuxExecutable
-            task.arguments = ["kill-session", "-t", session]
-            try? task.run()
+            _ = await ProcessRunner.run(WorktreePane.tmuxExecutable, ["kill-session", "-t", session])
         }
         release(id: id)
         getOrCreate(id: id, workingDirectory: workingDirectory, roles: roles)
