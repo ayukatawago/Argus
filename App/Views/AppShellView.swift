@@ -59,7 +59,9 @@ struct AppShellView: View {
                 else { return }
                 let tabs = agentTabs.tabs(for: id)
                 let roles = PaneLayoutResolver.requiredRoles(tabs: tabs)
-                pool.reloadAgentPanes(id: id, workingDirectory: worktree.path, roles: roles)
+                Task {
+                    await pool.reloadAgentPanes(id: id, workingDirectory: worktree.path, roles: roles)
+                }
                 for agent in tabs.open {
                     agentBus.reset(for: worktree.path, agent: agent.agentType)
                 }
