@@ -32,24 +32,32 @@ public struct AgentRunner: Sendable {
     ///     new one. Cannot resume a live, interactively-attached session.
     public func run(prompt: String, mode: AgentRunMode, resumingSessionID: String?) -> AsyncStream<AgentEvent> {
         AsyncStream { continuation in
+            let process = Process()
+            let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+            process.executableURL = URL(fileURLWithPath: shell)
+            process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
+            process.arguments = [
+                "-l", "-c",
+                commandLine(prompt: prompt, mode: mode, resumingSessionID: resumingSessionID),
+            ]
+
+            var environment = ProcessInfo.processInfo.environment
+            for (key, value) in agent.environmentOverrides { environment[key] = value }
+            process.environment = environment
+
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            process.standardOutput = stdoutPipe
+            process.standardError = stderrPipe
+
+            // Drained but discarded: nothing surfaces stderr today, but leaving it unread lets
+            // a chatty CLI fill the ~64KB pipe buffer and block on write() forever, leaking the
+            // process (and both its pipes) for the lifetime of the app.
+            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+                _ = handle.availableData
+            }
+
             let task = Task {
-                let process = Process()
-                let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-                process.executableURL = URL(fileURLWithPath: shell)
-                process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
-                process.arguments = [
-                    "-l", "-c",
-                    commandLine(prompt: prompt, mode: mode, resumingSessionID: resumingSessionID),
-                ]
-
-                var environment = ProcessInfo.processInfo.environment
-                for (key, value) in agent.environmentOverrides { environment[key] = value }
-                process.environment = environment
-
-                let stdoutPipe = Pipe()
-                process.standardOutput = stdoutPipe
-                process.standardError = Pipe()
-
                 do {
                     try process.run()
                 } catch {
@@ -69,10 +77,18 @@ public struct AgentRunner: Sendable {
                     continuation.yield(.failed(error.localizedDescription))
                 }
                 process.waitUntilExit()
+                stderrPipe.fileHandleForReading.readabilityHandler = nil
                 continuation.yield(.finished(exitCode: process.terminationStatus))
                 continuation.finish()
             }
-            continuation.onTermination = { _ in task.cancel() }
+            continuation.onTermination = { _ in
+                task.cancel()
+                // `task.cancel()` alone only stops this Task from reading further output — it never
+                // signals the child. Re-sending a comment's Reply/Apply cancels the previous run
+                // (see `DiffReviewModel.send`), which without this would orphan the headless
+                // `claude`/`codex` subprocess (and its pipes) running in the background forever.
+                if process.isRunning { process.terminate() }
+            }
         }
     }
 
