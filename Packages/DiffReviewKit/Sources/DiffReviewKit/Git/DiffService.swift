@@ -4,6 +4,15 @@ public enum DiffServiceError: Error, Sendable {
     case gitFailed(String)
 }
 
+extension DiffServiceError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .gitFailed(let message):
+            return message.isEmpty ? "git reported an error." : message
+        }
+    }
+}
+
 /// Produces a parsed diff between two revisions, optionally folding in uncommitted working-tree
 /// changes (staged, unstaged, and untracked files).
 public struct DiffService: Sendable {

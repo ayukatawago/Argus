@@ -116,15 +116,22 @@ final class ArgusTerminalView: AppTerminalView {
 
     private func runTmux(_ path: String, args: [String]) -> String? {
         let task = Process()
-        task.launchPath = path
+        task.executableURL = URL(fileURLWithPath: path)
         task.arguments = args
         let out = Pipe()
         task.standardOutput = out
-        task.standardError = Pipe()
+        // Discarded, but must go somewhere other than the parent's own stderr — `nullDevice`
+        // avoids opening a pipe (and its fds) that nothing would ever read.
+        task.standardError = FileHandle.nullDevice
         guard (try? task.run()) != nil else { return nil }
-        task.waitUntilExit()
-        guard task.terminationStatus == 0 else { return nil }
+        // Read before waiting: a `capture-pane` of a long scrollback can exceed the pipe's ~64KB
+        // kernel buffer, and reading only after `waitUntilExit()` would deadlock — tmux would
+        // block on write() waiting for buffer space that never frees because nothing is draining
+        // the pipe, so it would never reach the exit `waitUntilExit()` is waiting for.
         let data = out.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        try? out.fileHandleForReading.close()
+        guard task.terminationStatus == 0 else { return nil }
         return String(data: data, encoding: .utf8)
     }
 }

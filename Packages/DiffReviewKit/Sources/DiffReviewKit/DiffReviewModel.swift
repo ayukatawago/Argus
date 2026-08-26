@@ -128,7 +128,7 @@ public final class DiffReviewModel {
                 selectedFilePath = newFiles.first?.path
             }
         } catch {
-            loadError = String(describing: error)
+            loadError = error.localizedDescription
         }
     }
 
