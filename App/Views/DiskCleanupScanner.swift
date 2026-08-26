@@ -227,7 +227,7 @@ final class DiskCleanupScanner: ObservableObject {
             scanningCandidateIDs = []
         }
         let items = candidates.map { ($0.id, $0.path) }
-        await withTaskGroup(of: (URL, Int64).self) { group in
+        await withTaskGroup(of: (URL, Int64?).self) { group in
             var iterator = items.makeIterator()
             for _ in 0..<4 {
                 guard let (id, url) = iterator.next() else { break }
@@ -237,7 +237,7 @@ final class DiskCleanupScanner: ObservableObject {
             for await (id, bytes) in group {
                 guard !Task.isCancelled else { break }
                 scanningCandidateIDs.remove(id)
-                if let idx = candidates.firstIndex(where: { $0.id == id }) {
+                if let bytes, let idx = candidates.firstIndex(where: { $0.id == id }) {
                     candidates[idx].sizeBytes = bytes
                 }
                 if let (nextID, nextURL) = iterator.next() {
@@ -275,8 +275,13 @@ final class DiskCleanupScanner: ObservableObject {
         }
     }
 
-    private static nonisolated func measureDiskUsage(at url: URL) async -> Int64 {
-        let result = await ProcessRunner.run("/usr/bin/du", ["-sk", url.path])
+    /// Returns `nil` (leaving the candidate's previously-known size untouched) when `du` fails,
+    /// rather than surfacing a spurious `0`. `-H` makes `du` follow the candidate path itself if
+    /// it's a symlink (e.g. a cache relocated to another volume) — without it, `du` reports only
+    /// the symlink's own on-disk size, which is 0.
+    private static nonisolated func measureDiskUsage(at url: URL) async -> Int64? {
+        let result = await ProcessRunner.run("/usr/bin/du", ["-skH", url.path])
+        guard result.succeeded else { return nil }
         return DiskUsageParser.bytes(fromDuOutput: result.standardOutput)
     }
 
