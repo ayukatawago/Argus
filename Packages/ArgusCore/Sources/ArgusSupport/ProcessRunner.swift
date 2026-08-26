@@ -218,7 +218,7 @@ private final class Completer: @unchecked Sendable {
             if bytesRead > 0 {
                 result.append(buffer, count: bytesRead)
             } else {
-                break // 0 == EOF; -1 == EAGAIN (nothing available) or a real error — either way, stop.
+                break  // 0 == EOF; -1 == EAGAIN (nothing available) or a real error — either way, stop.
             }
         }
         return result
