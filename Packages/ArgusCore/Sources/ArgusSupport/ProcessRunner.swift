@@ -52,7 +52,8 @@ public enum ProcessRunner {
             process.standardOutput = stdoutPipe
             process.standardError = stderrPipe
 
-            let completer = Completer(continuation: continuation, stdoutPipe: stdoutPipe, stderrPipe: stderrPipe)
+            let completer = Completer(
+                continuation: continuation, process: process, stdoutPipe: stdoutPipe, stderrPipe: stderrPipe)
 
             stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
                 let chunk = handle.availableData
@@ -63,17 +64,17 @@ public enum ProcessRunner {
                 if !chunk.isEmpty { completer.appendStderr(chunk) }
             }
 
+            // Captures only `completer` (never `process` directly) so nothing outlives the run:
+            // `completer` drops its own reference to `process` once it finishes.
             process.terminationHandler = { finished in
-                // Catches any bytes written between the last readabilityHandler firing and exit.
-                completer.appendStdout(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
-                completer.appendStderr(stderrPipe.fileHandleForReading.readDataToEndOfFile())
                 completer.finish(exitCode: finished.terminationStatus)
             }
 
             if let timeout {
+                // Captures only `completer`, which resolves the process itself — avoids a cycle
+                // through `process.terminationHandler` retaining a block that captures `process`.
                 let workItem = DispatchWorkItem {
-                    if process.isRunning { process.terminate() }
-                    completer.finish(exitCode: -1)
+                    completer.finishTimedOut()
                 }
                 completer.setTimeoutWorkItem(workItem)
                 DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: workItem)
@@ -88,21 +89,31 @@ public enum ProcessRunner {
     }
 }
 
-/// Owns the continuation and buffered output for one `run` call. Completion can be signaled from
-/// three independent, concurrently-executing sources — `terminationHandler`, the timeout's
-/// `DispatchWorkItem`, and the synchronous launch-failure `catch` — so every mutation and the
-/// resume-once guard are behind a single lock.
+/// Owns the continuation, the process, and the buffered output for one `run` call. Completion can
+/// be signaled from three independent, concurrently-executing sources — `terminationHandler`, the
+/// timeout's `DispatchWorkItem`, and the synchronous launch-failure `catch` — so every mutation and
+/// the resume-once guard are behind a single lock.
+///
+/// Also owns fd release: nothing else in `ProcessRunner.run` keeps a strong reference to the pipes
+/// once this class exists, so when a run finishes here, the pipes' read ends are drained and
+/// explicitly closed rather than left for ARC to reclaim whenever the last retaining closure (e.g.
+/// `Process.terminationHandler`, which `Process` itself retains) happens to release them.
 private final class Completer: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<ProcessResult, Never>?
-    private let stdoutPipe: Pipe
-    private let stderrPipe: Pipe
+    private var process: Process?
+    private var stdoutPipe: Pipe?
+    private var stderrPipe: Pipe?
     private var stdoutData = Data()
     private var stderrData = Data()
     private var timeoutWorkItem: DispatchWorkItem?
+    private var didRelease = false
 
-    init(continuation: CheckedContinuation<ProcessResult, Never>, stdoutPipe: Pipe, stderrPipe: Pipe) {
+    init(
+        continuation: CheckedContinuation<ProcessResult, Never>, process: Process, stdoutPipe: Pipe, stderrPipe: Pipe
+    ) {
         self.continuation = continuation
+        self.process = process
         self.stdoutPipe = stdoutPipe
         self.stderrPipe = stderrPipe
     }
@@ -128,44 +139,109 @@ private final class Completer: @unchecked Sendable {
     }
 
     func finish(exitCode: Int32) {
+        complete(exitCode: exitCode, launchError: nil)
+    }
+
+    func finishTimedOut() {
+        lock.lock()
+        let target = process
+        lock.unlock()
+        if target?.isRunning == true { target?.terminate() }
+        complete(exitCode: -1, launchError: nil)
+    }
+
+    func finishLaunchFailure(_ error: Error) {
+        complete(exitCode: -1, launchError: error)
+    }
+
+    /// Resolves the continuation exactly once, regardless of which of the three sources calls in
+    /// first. Draining and closing the pipes happens here too, unconditionally, so a caller can
+    /// never observe a resolved run that still holds its fds open.
+    private func complete(exitCode: Int32, launchError: Error?) {
         lock.lock()
         guard let pendingContinuation = continuation else {
             lock.unlock()
             return
         }
         continuation = nil
-        let out = stdoutData
-        let err = stderrData
+        process = nil
         let workItem = timeoutWorkItem
+        let stdout = stdoutPipe
+        let stderr = stderrPipe
         lock.unlock()
 
         workItem?.cancel()
-        stdoutPipe.fileHandleForReading.readabilityHandler = nil
-        stderrPipe.fileHandleForReading.readabilityHandler = nil
+
+        // Tear down the readability handlers before doing a final bounded, non-blocking drain —
+        // otherwise the handler and this drain can both be reading the same fd concurrently,
+        // interleaving or splitting output.
+        stdout?.fileHandleForReading.readabilityHandler = nil
+        stderr?.fileHandleForReading.readabilityHandler = nil
+        if let stdout { appendStdout(Self.drainNonBlocking(stdout.fileHandleForReading)) }
+        if let stderr { appendStderr(Self.drainNonBlocking(stderr.fileHandleForReading)) }
+        releasePipes(stdout, stderr)
+
+        lock.lock()
+        let out = stdoutData
+        let err = stderrData
+        lock.unlock()
+
+        let standardError: String
+        if let launchError {
+            standardError = "\(launchError)"
+        } else {
+            standardError = String(data: err, encoding: .utf8) ?? ""
+        }
         pendingContinuation.resume(
             returning: ProcessResult(
                 exitCode: exitCode,
                 standardOutput: String(data: out, encoding: .utf8) ?? "",
-                standardError: String(data: err, encoding: .utf8) ?? ""
+                standardError: standardError
             )
         )
     }
 
-    func finishLaunchFailure(_ error: Error) {
+    /// Reads whatever is immediately available without blocking, then stops — used only for the
+    /// final catch-up drain after the child has already exited (or after a launch failure, when
+    /// nothing was ever written). A grandchild that inherited the write end and kept it open past
+    /// the parent's exit must never be able to hang this on an EOF that will never arrive.
+    private static func drainNonBlocking(_ handle: FileHandle) -> Data {
+        let descriptor = handle.fileDescriptor
+        let flags = fcntl(descriptor, F_GETFL)
+        guard flags != -1 else { return Data() }
+        _ = fcntl(descriptor, F_SETFL, flags | O_NONBLOCK)
+
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 16384)
+        while true {
+            let bytesRead = buffer.withUnsafeMutableBytes { read(descriptor, $0.baseAddress, $0.count) }
+            if bytesRead > 0 {
+                result.append(buffer, count: bytesRead)
+            } else {
+                break // 0 == EOF; -1 == EAGAIN (nothing available) or a real error — either way, stop.
+            }
+        }
+        return result
+    }
+
+    /// Closes both pipes' handles exactly once. Guarded by `didRelease` (rather than relying on
+    /// `stdoutPipe`/`stderrPipe` becoming nil) because `finish`/`finishTimedOut`/`finishLaunchFailure`
+    /// can race to call `complete`, and double-closing a fd once its number has been reused by an
+    /// unrelated open elsewhere in the process is a real correctness hazard, not just a warning.
+    private func releasePipes(_ stdout: Pipe?, _ stderr: Pipe?) {
         lock.lock()
-        guard let pendingContinuation = continuation else {
+        guard !didRelease else {
             lock.unlock()
             return
         }
-        continuation = nil
-        let workItem = timeoutWorkItem
+        didRelease = true
+        stdoutPipe = nil
+        stderrPipe = nil
         lock.unlock()
 
-        workItem?.cancel()
-        stdoutPipe.fileHandleForReading.readabilityHandler = nil
-        stderrPipe.fileHandleForReading.readabilityHandler = nil
-        pendingContinuation.resume(
-            returning: ProcessResult(exitCode: -1, standardOutput: "", standardError: "\(error)")
-        )
+        try? stdout?.fileHandleForReading.close()
+        try? stdout?.fileHandleForWriting.close()
+        try? stderr?.fileHandleForReading.close()
+        try? stderr?.fileHandleForWriting.close()
     }
 }

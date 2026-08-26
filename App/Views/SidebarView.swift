@@ -1,5 +1,6 @@
 import AgentStateKit
 import ArgusConfigKit
+import ArgusSupport
 import SwiftUI
 import UniformTypeIdentifiers
 import Workspaces
@@ -218,15 +219,8 @@ struct SidebarView: View {
         if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
         store.hideWorktree(id: worktree.id)
         Task {
-            await Task.detached(priority: .userInitiated) {
-                let proc = Process()
-                proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-                proc.arguments = ["-C", repo.mainPath, "worktree", "remove", "--force", worktree.path]
-                proc.standardOutput = Pipe()
-                proc.standardError = Pipe()
-                try? proc.run()
-                proc.waitUntilExit()
-            }.value
+            _ = await ProcessRunner.run(
+                "/usr/bin/git", ["-C", repo.mainPath, "worktree", "remove", "--force", worktree.path], timeout: 10)
             await store.refresh()
         }
     }
@@ -241,18 +235,14 @@ struct SidebarView: View {
         let safeName = branch.replacingOccurrences(of: "/", with: "-")
         let parent = URL(fileURLWithPath: repo.mainPath).deletingLastPathComponent().path
         let newPath = (parent as NSString).appendingPathComponent(safeName)
-        let exitCode = await Task.detached(priority: .userInitiated) {
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            proc.arguments = ["-C", repo.mainPath, "worktree", "add", newPath, "-b", branch]
-            proc.standardOutput = Pipe()
-            proc.standardError = Pipe()
-            guard (try? proc.run()) != nil else { return Int32(-1) }
-            proc.waitUntilExit()
-            return proc.terminationStatus
-        }.value
-        if exitCode != 0 {
-            addWorktreeError = "Make sure the branch '\(branch)' does not already exist."
+        let result = await ProcessRunner.run(
+            "/usr/bin/git", ["-C", repo.mainPath, "worktree", "add", newPath, "-b", branch], timeout: 10)
+        if !result.succeeded {
+            let detail = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines)
+            addWorktreeError =
+                detail.isEmpty
+                ? "Make sure the branch '\(branch)' does not already exist."
+                : detail
             showAddWorktreeError = true
         }
         await store.refresh()
