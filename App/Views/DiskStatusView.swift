@@ -1,3 +1,4 @@
+import AppKit
 import Monitors
 import SwiftUI
 
@@ -7,6 +8,7 @@ struct DiskStatusView: View {
     @State private var showingConfirmation = false
     @State private var hideSmall = true
     @State private var sortOrder = SortOrder.size
+    @State private var copiedCandidateID: URL?
 
     enum SortOrder: String, CaseIterable {
         case name = "Name"
@@ -38,7 +40,7 @@ struct DiskStatusView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Selected items will be moved to Trash. Trash contents will be permanently deleted.")
+            Text("Selected items will be permanently deleted. This cannot be undone.")
         }
     }
 
@@ -171,10 +173,14 @@ struct DiskStatusView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(candidate.displayName)
                     .font(.body)
-                Text(candidate.path.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                Text(
+                    copiedCandidateID == candidate.id
+                        ? "Copied to clipboard"
+                        : candidate.path.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+                )
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -192,6 +198,23 @@ struct DiskStatusView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .contentShape(Rectangle())
+        .onTapGesture {
+            copyPath(of: candidate)
+        }
+        .help("Click to copy path")
+    }
+
+    private func copyPath(of candidate: CleanupCandidate) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(candidate.path.path, forType: .string)
+        copiedCandidateID = candidate.id
+        Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            if copiedCandidateID == candidate.id {
+                copiedCandidateID = nil
+            }
+        }
     }
 
     @ViewBuilder

@@ -1,4 +1,3 @@
-import AppKit
 import ArgusConfigKit
 import ArgusSupport
 import Foundation
@@ -262,7 +261,7 @@ final class DiskCleanupScanner: ObservableObject {
             if candidate.isTrash {
                 await emptyTrashContents(at: candidate.path)
             } else {
-                await recycleToTrash(candidate.path)
+                await deletePermanently(candidate.path)
             }
         }
         let sizeLookup = Dictionary(
@@ -285,12 +284,8 @@ final class DiskCleanupScanner: ObservableObject {
         return DiskUsageParser.bytes(fromDuOutput: result.standardOutput)
     }
 
-    private func recycleToTrash(_ url: URL) async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            NSWorkspace.shared.recycle([url]) { _, _ in
-                continuation.resume()
-            }
-        }
+    private func deletePermanently(_ url: URL) async {
+        try? FileManager.default.removeItem(at: url)
     }
 
     private func emptyTrashContents(at url: URL) async {
