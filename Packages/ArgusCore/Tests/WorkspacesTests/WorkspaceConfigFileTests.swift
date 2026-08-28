@@ -21,7 +21,8 @@ struct WorkspaceConfigFileTests {
             roots: ["/a", "/b"],
             hiddenWorktreeIDs: ["/a/hidden"],
             excludedRepoPaths: ["/a/excluded"],
-            repoOrder: ["/b", "/a"]
+            repoOrder: ["/b", "/a"],
+            openWorktreeIDs: ["/a", "/b/linked"]
         )
         WorkspaceConfigFile.save(config, to: url)
         let loaded = WorkspaceConfigFile.load(from: url, defaultRoots: ["/fallback"])
