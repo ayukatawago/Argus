@@ -23,6 +23,7 @@ struct AppShellView: View {
     @EnvironmentObject var configStore: ArgusConfigStore
     @Environment(\.openWindow) private var openWindow
     @State private var selectedWorktreeID: String?
+    @State private var hasRestoredOpenWorktrees = false
     @State private var isCanvasMode = false
     @State var focusedRole: PaneRole = .shell
     @State private var detailSize: CGSize = .zero
@@ -172,15 +173,18 @@ struct AppShellView: View {
         }
         .onChange(of: pool.activeIDs) { _, ids in
             shellStateBus.updateActivePaths(ids)
+            store.setOpenWorktreeIDs(ids)
         }
         .onChange(of: store.repos) { _, newRepos in
-            guard selectedWorktreeID == nil else { return }
             let all = newRepos.flatMap(\.worktrees)
-            if !persistedWorktreeID.isEmpty, all.contains(where: { $0.id == persistedWorktreeID }) {
-                selectedWorktreeID = persistedWorktreeID
-            } else if let first = all.first {
-                selectedWorktreeID = first.id
+            if selectedWorktreeID == nil {
+                if !persistedWorktreeID.isEmpty, all.contains(where: { $0.id == persistedWorktreeID }) {
+                    selectedWorktreeID = persistedWorktreeID
+                } else if let first = all.first {
+                    selectedWorktreeID = first.id
+                }
             }
+            restoreOpenWorktreesIfNeeded(all: all)
         }
         .onChange(of: selectedWorktreeID) { _, newID in
             if let newID { persistedWorktreeID = newID }
@@ -290,6 +294,25 @@ struct AppShellView: View {
             }
             pool.openCanvas(worktrees: worktrees, fontSize: layout.fontSize)
             isCanvasMode = true
+        }
+    }
+
+    /// Reattaches every worktree that had a live pane open when the app last quit, so canvas mode
+    /// and worktree-cycling show them again immediately instead of only the last selection. Runs
+    /// once per launch, the first time the scan produces a non-empty worktree list; the selected
+    /// worktree (already handled above) is skipped here to avoid double-registering its roles.
+    private func restoreOpenWorktreesIfNeeded(all: [GitWorktree]) {
+        guard !hasRestoredOpenWorktrees, !all.isEmpty else { return }
+        hasRestoredOpenWorktrees = true
+        for worktree in all
+        where worktree.id != selectedWorktreeID
+            && store.openWorktreeIDs.contains(worktree.id)
+            && !store.hiddenWorktreeIDs.contains(worktree.id)
+        {
+            agentTabs.seed(id: worktree.id, defaultAgent: configStore.config.agent)
+            pool.getOrCreate(
+                id: worktree.id, workingDirectory: worktree.path,
+                roles: PaneLayoutResolver.requiredRoles(tabs: agentTabs.tabs(for: worktree.id)))
         }
     }
 

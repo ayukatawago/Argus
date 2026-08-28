@@ -33,6 +33,10 @@ public struct GitRepo: Identifiable, Equatable, Sendable {
 public final class WorkspaceStore: ObservableObject {
     @Published public var repos: [GitRepo] = []
     @Published public var hiddenWorktreeIDs: Set<String> = []
+    /// Worktrees that had a live pane open when the app last quit — read once on `load()` so
+    /// `AppShellView` can reattach their tmux sessions in the background on relaunch, mirroring
+    /// `PanePool.activeIDs` across the process boundary. Kept in sync via `setOpenWorktreeIDs`.
+    @Published public private(set) var openWorktreeIDs: Set<String> = []
     public private(set) var roots: [String] = []
     private var excludedRepoPaths: Set<String> = []
     private var repoOrder: [String] = []
@@ -58,8 +62,16 @@ public final class WorkspaceStore: ObservableObject {
         hiddenWorktreeIDs = stored.hiddenWorktreeIDs
         excludedRepoPaths = stored.excludedRepoPaths
         repoOrder = stored.repoOrder
+        openWorktreeIDs = stored.openWorktreeIDs
         startWatcher()
         requestRefresh()
+    }
+
+    /// Called whenever `PanePool.activeIDs` changes, so the set of open worktrees survives quit/relaunch.
+    public func setOpenWorktreeIDs(_ ids: Set<String>) {
+        guard openWorktreeIDs != ids else { return }
+        openWorktreeIDs = ids
+        saveConfig()
     }
 
     public func addRoot(_ path: String) {
@@ -198,7 +210,8 @@ public final class WorkspaceStore: ObservableObject {
             roots: roots,
             hiddenWorktreeIDs: hiddenWorktreeIDs,
             excludedRepoPaths: excludedRepoPaths,
-            repoOrder: repoOrder
+            repoOrder: repoOrder,
+            openWorktreeIDs: openWorktreeIDs
         )
         WorkspaceConfigFile.save(config, to: url)
     }

@@ -42,7 +42,15 @@ final class AgentTabsStore: ObservableObject {
     func setWorktree(id: String?, path: String?, defaultAgent: AgentSelection) {
         worktreeID = id
         worktreePath = path
-        guard let id, byWorktree[id] == nil else { return }
+        guard let id else { return }
+        seed(id: id, defaultAgent: defaultAgent)
+    }
+
+    /// Seeds `id`'s tab set from `defaultAgent` if it hasn't been seen yet, without touching which
+    /// worktree is currently selected. Used to restore background (non-selected) worktrees that
+    /// were open when the app last quit.
+    func seed(id: String, defaultAgent: AgentSelection) {
+        guard byWorktree[id] == nil else { return }
         byWorktree[id] = AgentTabs(defaultAgent: defaultAgent)
     }
 
