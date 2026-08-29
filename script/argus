@@ -6,8 +6,9 @@ set -euo pipefail
 # already running and activates it either way — see AppDelegate's
 # `application(_:open:)` in App/ArgusApp.swift for the receiving side.
 #
-# `diff` is the first subcommand; add more as `cmd_<name>` functions plus a
-# case in `main` below, and a matching `host` case in AppDelegate.
+# `diff` and `capture` are implemented today; add more as `cmd_<name>`
+# functions plus a case in `main` below, and a matching `host` case in
+# AppDelegate.
 
 usage() {
     cat <<'EOF'
@@ -20,10 +21,22 @@ Commands:
       any git repo or worktree path — it does not need to already be tracked
       in Argus's sidebar.
 
+  capture screenshot [--output <path>]
+      Capture a screenshot of Argus's own window (PNG). Prints the output
+      path on success. Defaults to a generated path under /private/tmp when
+      --output is omitted. Requires Argus to have Screen Recording
+      permission (System Settings → Privacy & Security → Screen Recording).
+
+  capture video --duration <seconds> [--output <path>]
+      Capture a screen recording of Argus's own window (.mov) for the given
+      duration. Prints the output path on success. Same output/permission
+      notes as `capture screenshot`.
+
   skill install
-      Copy the argus-diff skill (skills/argus-diff) into Claude Code's and
-      Codex's user-scope skill directories (~/.claude/skills,
-      ~/.codex/skills), for whichever of those is present on this machine.
+      Copy every skill under skills/ (argus-diff, argus-capture, ...) into
+      Claude Code's and Codex's user-scope skill directories
+      (~/.claude/skills, ~/.codex/skills), for whichever of those is present
+      on this machine.
 
   -h, --help
       Show this help.
@@ -106,6 +119,113 @@ cmd_diff() {
     open "argus://diff?workspace=$(urlencode "$workspace")&from=$(urlencode "$from")&to=$(urlencode "$to")"
 }
 
+# A default output path when --output is omitted. Under /private/tmp (not $TMPDIR) to match the
+# rest of Argus's IPC (see HookIPC.eventLogPath) — a plain, globally-writable path rather than the
+# per-session directory macOS assigns each app.
+default_capture_output() {
+    local extension="$1"
+    printf '/private/tmp/argus-%s-capture-%s.%s' "$(id -u)" "$(date +%s)" "$extension"
+}
+
+# Polls for the app to finish writing $1 (or report failure via its "$1.error" sidecar — see
+# ScreenCaptureController.swift), for up to $2 seconds. Prints the output path and returns 0 on
+# success; prints an error and returns 1 on failure or timeout.
+wait_for_capture() {
+    local output="$1" timeout_seconds="$2" waited=0
+    while (( waited < timeout_seconds )); do
+        if [[ -f "$output.error" ]]; then
+            echo "error: capture failed: $(cat "$output.error")" >&2
+            rm -f "$output.error"
+            return 1
+        fi
+        if [[ -f "$output" ]]; then
+            echo "$output"
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    echo "error: timed out waiting for Argus to write $output" >&2
+    return 1
+}
+
+cmd_capture() {
+    if [[ $# -eq 0 ]]; then
+        echo "error: argus capture requires a subcommand (screenshot, video)" >&2
+        usage >&2
+        exit 1
+    fi
+    local subcommand="$1"
+    shift
+
+    case "$subcommand" in
+        screenshot)
+            cmd_capture_screenshot "$@"
+            ;;
+        video)
+            cmd_capture_video "$@"
+            ;;
+        *)
+            echo "error: unknown capture subcommand '$subcommand'" >&2
+            usage >&2
+            exit 1
+            ;;
+    esac
+}
+
+cmd_capture_screenshot() {
+    local output=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --output)
+                output="${2:-}"
+                shift 2
+                ;;
+            *)
+                echo "error: unknown argument '$1'" >&2
+                usage >&2
+                exit 1
+                ;;
+        esac
+    done
+    [[ -z "$output" ]] && output="$(default_capture_output png)"
+
+    open "argus://capture?mode=screenshot&output=$(urlencode "$output")"
+    wait_for_capture "$output" 15 || exit 1
+}
+
+cmd_capture_video() {
+    local output="" duration=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --output)
+                output="${2:-}"
+                shift 2
+                ;;
+            --duration)
+                duration="${2:-}"
+                shift 2
+                ;;
+            *)
+                echo "error: unknown argument '$1'" >&2
+                usage >&2
+                exit 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$duration" ]]; then
+        echo "error: argus capture video requires --duration <seconds>" >&2
+        usage >&2
+        exit 1
+    fi
+    [[ -z "$output" ]] && output="$(default_capture_output mov)"
+
+    open "argus://capture?mode=video&output=$(urlencode "$output")&duration=$(urlencode "$duration")"
+    # +20s of slack on top of the recording itself for encoding/finalization.
+    wait_for_capture "$output" "$((${duration%.*} + 20))" || exit 1
+}
+
 cmd_skill() {
     if [[ $# -eq 0 || "$1" != "install" ]]; then
         echo "error: argus skill requires a subcommand (install)" >&2
@@ -114,34 +234,36 @@ cmd_skill() {
     fi
 
     # This script lives at either <checkout>/script/argus or, bundled inside
-    # the installed app, Argus.app/Contents/Resources/argus — the skill
-    # source sits one level up in the first case, alongside it in the
+    # the installed app, Argus.app/Contents/Resources/argus — the skills/
+    # directory sits one level up in the first case, alongside it in the
     # second (see project.yml's `skills` resource).
-    local script_dir skill_source
+    local script_dir skills_dir
     script_dir="$(resolve_script_dir)"
-    if [[ -d "$script_dir/skills/argus-diff" ]]; then
-        skill_source="$script_dir/skills/argus-diff"
-    elif [[ -d "$script_dir/../skills/argus-diff" ]]; then
-        skill_source="$script_dir/../skills/argus-diff"
+    if [[ -d "$script_dir/skills" ]]; then
+        skills_dir="$script_dir/skills"
+    elif [[ -d "$script_dir/../skills" ]]; then
+        skills_dir="$script_dir/../skills"
     else
-        echo "error: couldn't find the argus-diff skill source next to $0" >&2
+        echo "error: couldn't find the skills/ directory next to $0" >&2
         exit 1
     fi
 
-    local installed_any=0
-    if [[ -d "$HOME/.claude" ]]; then
-        install_skill_into "$skill_source" "$HOME/.claude/skills/argus-diff" "Claude Code"
-        installed_any=1
-    fi
-    if [[ -d "$HOME/.codex" ]]; then
-        install_skill_into "$skill_source" "$HOME/.codex/skills/argus-diff" "Codex"
-        installed_any=1
-    fi
-
-    if [[ "$installed_any" -eq 0 ]]; then
+    local have_claude=0 have_codex=0
+    [[ -d "$HOME/.claude" ]] && have_claude=1
+    [[ -d "$HOME/.codex" ]] && have_codex=1
+    if [[ "$have_claude" -eq 0 && "$have_codex" -eq 0 ]]; then
         echo "error: neither ~/.claude nor ~/.codex was found — nothing to install into" >&2
         exit 1
     fi
+
+    local skill_source skill_name
+    for skill_source in "$skills_dir"/*/; do
+        skill_name="$(basename "$skill_source")"
+        [[ "$have_claude" -eq 1 ]] &&
+            install_skill_into "$skill_source" "$HOME/.claude/skills/$skill_name" "Claude Code"
+        [[ "$have_codex" -eq 1 ]] &&
+            install_skill_into "$skill_source" "$HOME/.codex/skills/$skill_name" "Codex"
+    done
 }
 
 # Overwrites $dest with a fresh copy of $source, so re-running install
@@ -152,7 +274,7 @@ install_skill_into() {
     mkdir -p "$(dirname "$dest")"
     rm -rf "$dest"
     cp -R "$source" "$dest"
-    echo "Installed argus-diff skill for $label at $dest"
+    echo "Installed $(basename "$dest") skill for $label at $dest"
 }
 
 main() {
@@ -165,6 +287,10 @@ main() {
         diff)
             shift
             cmd_diff "$@"
+            ;;
+        capture)
+            shift
+            cmd_capture "$@"
             ;;
         skill)
             shift

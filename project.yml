@@ -70,6 +70,8 @@ targets:
       - package: ArgusCore
         product: Monitors
       - sdk: WebKit.framework
+      - sdk: ScreenCaptureKit.framework
+      - sdk: AVFoundation.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.argus.app
