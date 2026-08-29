@@ -259,9 +259,9 @@ final class DiskCleanupScanner: ObservableObject {
         let toRemove = candidates.filter(\.isSelected)
         for candidate in toRemove {
             if candidate.isTrash {
-                await emptyTrashContents(at: candidate.path)
+                await Self.emptyTrashContents(at: candidate.path)
             } else {
-                await deletePermanently(candidate.path)
+                await Self.deletePermanently(candidate.path)
             }
         }
         let sizeLookup = Dictionary(
@@ -284,15 +284,19 @@ final class DiskCleanupScanner: ObservableObject {
         return DiskUsageParser.bytes(fromDuOutput: result.standardOutput)
     }
 
-    private func deletePermanently(_ url: URL) async {
-        try? FileManager.default.removeItem(at: url)
+    /// Shells out to `rm -rf` rather than calling `FileManager.removeItem` directly so the
+    /// recursive delete (which can touch hundreds of thousands of files for things like
+    /// DerivedData or a stale git worktree) runs on a separate process instead of blocking this
+    /// `@MainActor`-isolated type's thread for the duration of the delete.
+    private static nonisolated func deletePermanently(_ url: URL) async {
+        _ = await ProcessRunner.run("/bin/rm", ["-rf", url.path])
     }
 
-    private func emptyTrashContents(at url: URL) async {
+    private static nonisolated func emptyTrashContents(at url: URL) async {
         let fileManager = FileManager.default
         let contents = (try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)) ?? []
         for item in contents {
-            try? fileManager.removeItem(at: item)
+            await deletePermanently(item)
         }
     }
 }
