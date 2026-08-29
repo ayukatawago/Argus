@@ -11,6 +11,13 @@ private struct DiffReviewRequest {
     let head: String
 }
 
+/// The `mode` of an `argus://capture?mode=...&output=...&duration=...` request — see
+/// `AppDelegate.handleCaptureRequest`.
+private enum CaptureMode: String {
+    case screenshot
+    case video
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set in `init()` — SwiftUI constructs the `@NSApplicationDelegateAdaptor`-owned delegate
@@ -40,12 +47,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingDiffReviewRequest: DiffReviewRequest?
 
     /// Handles `argus://<subcommand>` URLs from `script/argus` (or any other `open`-based
-    /// caller). Only `diff` is implemented today; unrecognized hosts are ignored so future
-    /// subcommands can be added without breaking older callers.
+    /// caller). `diff` and `capture` are implemented today; unrecognized hosts are ignored so
+    /// future subcommands can be added without breaking older callers.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where url.scheme == "argus" {
             switch url.host {
             case "diff": handleDiffRequest(url)
+            case "capture": handleCaptureRequest(url)
             default: break
             }
         }
@@ -96,6 +104,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText = "Can't open diff review"
         alert.informativeText = "\"\(path)\" isn't a valid absolute path."
         alert.runModal()
+    }
+
+    // MARK: - CLI-originated capture (`argus capture` → `argus://capture`)
+
+    /// Unlike `handleDiffRequest`, this needs no app-shell-readiness gate: it targets Argus's own
+    /// already-existing main window rather than opening new UI, and reports success/failure by
+    /// writing to `output`/`output.error` on disk (`ScreenCaptureController`) rather than through
+    /// a `NotificationCenter` round trip a SwiftUI view would need to be subscribed to receive.
+    private func handleCaptureRequest(_ url: URL) {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
+        let items = components.queryItems ?? []
+        func value(_ name: String) -> String? { items.first(where: { $0.name == name })?.value }
+
+        guard let output = value("output"), output.hasPrefix("/") else { return }
+        guard let mode = value("mode").flatMap(CaptureMode.init(rawValue:)) else { return }
+        let duration = value("duration").flatMap(Double.init) ?? 10
+
+        Task {
+            switch mode {
+            case .screenshot:
+                await ScreenCaptureController.shared.captureScreenshot(outputPath: output)
+
+            case .video:
+                await ScreenCaptureController.shared.captureVideo(outputPath: output, duration: duration)
+            }
+        }
     }
 
     func applicationDidFinishLaunching(_: Notification) {
