@@ -79,6 +79,7 @@ struct AppShellView: View {
             .onReceiveTabBindings(
                 focusedRole: $focusedRole, terminalTabs: terminalTabs, agentTabs: agentTabs, pool: pool
             )
+            .onReceiveFocusSync(focusedRole: $focusedRole, pool: pool)
             .onReceive(NotificationCenter.default.publisher(for: .openDiffReviewForPath)) { notification in
                 // CLI-originated (`argus diff`) request — the path is used as-is, independent of
                 // whether it's a workspace `store` already tracks in the sidebar.
