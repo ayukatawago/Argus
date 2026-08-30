@@ -32,6 +32,23 @@ extension View {
             agentTabs.toggleMode()
         }
     }
+
+    /// `WorktreeContentView`'s `onShellActivated`/`onAgentActivated` callbacks only fire from tab-bar
+    /// clicks. Clicking directly into a terminal's content area makes it first responder — and updates
+    /// its border via `TerminalHost.hasFocus` — without going through either callback, so `focusedRole`
+    /// (which the tab bindings above route on) would otherwise go stale. Mirror `hasFocus` here so the
+    /// two always agree on which pane is focused.
+    func onReceiveFocusSync(focusedRole: Binding<PaneRole>, pool: PanePool) -> some View {
+        onReceive(pool.shellHost.$hasFocus) { focused in
+            if focused { focusedRole.wrappedValue = .shell }
+        }
+        .onReceive(pool.claudeHost.$hasFocus) { focused in
+            if focused { focusedRole.wrappedValue = .claude }
+        }
+        .onReceive(pool.codexHost.$hasFocus) { focused in
+            if focused { focusedRole.wrappedValue = .codex }
+        }
+    }
 }
 
 /// Which tab action a leader-key binding requests, before `runTabAction` routes it to whichever
