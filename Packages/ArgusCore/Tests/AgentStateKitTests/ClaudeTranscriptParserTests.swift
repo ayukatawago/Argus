@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import AgentStateKit
@@ -107,6 +108,33 @@ struct ClaudeTranscriptParserTests {
             "content":"<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>"}}
             """
         #expect(ClaudeTranscriptParser.isLocalCommand(line: line))
+    }
+
+    @Test("recognizes the current CLI's system/local_command shape for a stdout echo")
+    func recognizesSystemLocalCommandStdoutEntry() {
+        let line = """
+            {"type":"system","subtype":"local_command",\
+            "content":"<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>"}
+            """
+        #expect(ClaudeTranscriptParser.isLocalCommand(line: line))
+    }
+
+    @Test("recognizes the current CLI's system/local_command shape for a command invocation")
+    func recognizesSystemLocalCommandNameEntry() {
+        let line = """
+            {"type":"system","subtype":"local_command",\
+            "content":"<command-name>/model</command-name>\\n            <command-message>model</command-message>"}
+            """
+        #expect(ClaudeTranscriptParser.isLocalCommand(line: line))
+    }
+
+    @Test("a system entry with an unrelated subtype that merely contains command-name is not a local command")
+    func systemEntryWithDifferentSubtypeIsNotLocalCommand() {
+        let line = """
+            {"type":"system","subtype":"compact_boundary",\
+            "content":"<command-name>/compact</command-name>"}
+            """
+        #expect(!ClaudeTranscriptParser.isLocalCommand(line: line))
     }
 
     @Test("a user message that mentions command-name without it being a prefix is not a local command")
