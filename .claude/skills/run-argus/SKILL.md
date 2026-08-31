@@ -71,7 +71,6 @@ scrollback is intact and they reattach on selection.
 |---|---|
 | **You are probably running inside Argus** | An agent pane's shell is a child of Argus. Quitting it kills that shell. The panes are tmux-backed and the tmux server is a separate daemon, so the session survives and reattaches — but run the quit/install/relaunch as a detached `nohup script &` so nothing in the chain depends on the pane surviving. |
 | `screencapture` fails | `could not create image from display` — the invoking process lacks Screen Recording permission. There is no screenshot-based verification available; use the liveness + tmux + `script/argus diff` checks above. |
-| Debug builds are **ad-hoc signed** | `project.yml` sets `CODE_SIGN_IDENTITY: "Argus Local Dev"` under the Argus target's `debug:` block, but XcodeGen ignores bare `debug:`/`release:` keys under a target's `settings:` — they must be nested under `settings: configs:`. The generated Debug config carries only the `base:` values, so builds come out `Signature=adhoc`. Ad-hoc signatures change every build, so TCC grants do **not** reliably survive a rebuild despite what CLAUDE.md's "Debug code signing" section claims. Expect occasional re-prompts until `project.yml` is fixed. |
 | Don't use this for Release | The local `Argus Local Dev` identity is self-signed and must never sign a distribution build. |
 
 ## Workflow
