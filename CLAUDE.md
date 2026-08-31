@@ -104,7 +104,16 @@ concurrently `.running` agent.
 | A `user`-type entry (a real prompt, or a tool_result) | `running` |
 | `assistant` entry with `stop_reason` `end_turn`/`stop_sequence` | `done` |
 | The synthetic `[Request interrupted by user…]` entry Claude Code writes on Escape | `idle` |
-| Transcript untouched for 5 minutes (crash, `kill -9`, or a normal `/exit` — no hook covers either) | `idle` |
+| No transcript entry newer than 15 minutes (crash, `kill -9`, or a normal `/exit` — no hook covers either) | `idle` |
+
+Liveness is judged by the newest **in-file** entry `timestamp`, not the transcript file's mtime —
+Claude Code rewrites transcripts in place without appending, so mtime alone can be hours or days
+newer than the session's actual last activity and would otherwise resurrect a long-finished
+session's final `stop_reason` as if it had just happened. `ClaudeTranscriptParser.scan(tail:)`
+returns both the decisive state and this activity timestamp from the same read; a worktree with
+several transcripts bound to it (multiple sessions, or a headless diff-review run sharing the same
+cwd — excluded outright via its `entrypoint: "sdk-cli"` marker) resolves to whichever one has the
+most recent in-file activity, via `SessionActivityArbiter`.
 
 `assistant` entries with `stop_reason: tool_use` (or unset — a message still being generated) are
 deliberately **not** decisive. Every content block of one assistant message — thinking, text,
@@ -127,7 +136,12 @@ Codex state is inferred the same way, polling `~/.codex/sessions/<year>/<month>/
 | `task_complete` / `turn_complete` | `done` |
 | `turn_aborted` (Codex's Esc-abort) | `idle` — aligned with Claude's interrupt-to-idle behavior |
 | `exec_approval_request` / `apply_patch_approval_request` / `request_user_input` / `elicitation_request` | `waitingForApproval` |
-| Session file untouched for 5 minutes | `idle`, same rationale/timeout as Claude |
+| Session file untouched for 15 minutes | `idle`, same rationale/timeout as Claude |
+
+Unlike Claude's transcripts, a Codex rollout's mtime IS a trustworthy activity signal on its own —
+Codex appends and never rewrites a rollout file in place — so liveness here still keys off mtime
+directly rather than an in-file timestamp. Multiple rollouts sharing a cwd (a resumed session plus
+a newly started one) are resolved the same way as Claude's, via `SessionActivityArbiter`.
 
 The `waitingForApproval` mapping is transcript-inferred and **unverified** — this codebase's Codex
 projects are all `trust_level = "trusted"`, so no approval prompt has ever been observed in a real
@@ -210,6 +224,7 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 | `Packages/ArgusCore/Sources/AgentStateKit/AgentStateBus.swift` | `@MainActor` ObservableObject; per-(worktree, agent) state, owns the socket/JSONL hook reader, `CodexSessionWatcher`, and `ClaudeTranscriptWatcher` |
 | `Packages/ArgusCore/Sources/AgentStateKit/WorktreeAgentState.swift` | Pure aggregate: collapses a worktree's per-agent states into the single state/agent a sidebar dot or window tint shows |
 | `Packages/ArgusCore/Sources/AgentStateKit/ClaudeTranscriptWatcher.swift` / `ClaudeTranscriptParser.swift` | Polls `~/.claude/projects/*/*.jsonl` to infer running/done/interrupted-idle/stale-idle without hooks |
+| `Packages/ArgusCore/Sources/AgentStateKit/SessionActivityArbiter.swift` | Pure per-cwd arbitration: resolves several transcripts/rollouts bound to one worktree to the single state (newest activity wins) that watcher polls publish |
 | `Packages/ArgusCore/Sources/AgentStateKit/WorktreeHookManager.swift` | Writes the one remaining hook script (PermissionRequest); delegates the settings.local.json merge to `ClaudeSettingsPatcher` |
 | `Packages/ArgusCore/Sources/ArgusConfigKit/ArgusConfig.swift` | `ArgusConfig` struct, `ArgusConfigStore`, `AgentSelection`/`WindowLayout` enums, `github`/`diskMonitor`/`environmentVariables`/`popupShortcuts` config blocks; persistence itself is `ArgusConfigFile.swift` (`~/.config/argus/argus.json`) |
 | `Packages/ArgusCore/Sources/Workspaces/WorkspaceStore.swift` | Repo/worktree scanning orchestrator; parsing (`WorktreeListParser`) and discovery (`RepoScanner`) are separate testable files in the same target |
