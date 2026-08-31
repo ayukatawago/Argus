@@ -1,10 +1,11 @@
 import Foundation
 
 /// Pure parsing of Claude Code's session transcript JSONL files: extracting the session's working
-/// directory, detecting the synthetic user message Claude Code writes when the user presses Escape
-/// mid-turn, and inferring running/done state from the most recent turn's `stop_reason`. Kept
-/// separate from ClaudeTranscriptWatcher so it's testable without touching the filesystem — mirrors
-/// CodexSessionParser's split from CodexSessionWatcher.
+/// directory and entrypoint, detecting the synthetic user message Claude Code writes when the user
+/// presses Escape mid-turn, inferring running/done state from the most recent turn's `stop_reason`,
+/// and extracting the newest in-file activity timestamp (the authoritative liveness signal — see
+/// `scan(tail:)`). Kept separate from ClaudeTranscriptWatcher so it's testable without touching the
+/// filesystem — mirrors CodexSessionParser's split from CodexSessionWatcher.
 public enum ClaudeTranscriptParser {
     /// The synthetic user message Claude Code appends when the user presses Escape mid-turn. Two
     /// variants are observed in the wild: "[Request interrupted by user]" and "[Request interrupted
@@ -33,8 +34,22 @@ public enum ClaudeTranscriptParser {
     /// Avoids full JSON parsing per line for the common case via a quote-delimited scan, matching
     /// CodexSessionParser.extractCwd — macOS paths cannot contain `"` so this is safe.
     public static func extractCwd(from headerText: String) -> String? {
-        for line in headerText.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard let keyRange = line.range(of: #""cwd":""#) else { continue }
+        firstQuotedValue(forKey: "cwd", in: headerText)
+    }
+
+    /// Extracts `entrypoint` ("cli" for an interactive session, "sdk-cli" for a headless
+    /// `claude -p` run) the same way as `extractCwd`. DiffReviewKit's AgentRunner spawns headless
+    /// runs with the worktree as cwd, so without this the watcher can't tell a diff-review
+    /// Reply/Apply from the interactive agent-pane session sharing the same cwd — both would
+    /// otherwise flip the worktree's indicator to done when the headless run finishes.
+    public static func extractEntrypoint(from headerText: String) -> String? {
+        firstQuotedValue(forKey: "entrypoint", in: headerText)
+    }
+
+    private static func firstQuotedValue(forKey key: String, in text: String) -> String? {
+        let marker = "\"\(key)\":\""
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let keyRange = line.range(of: marker) else { continue }
             let afterKey = line[keyRange.upperBound...]
             guard let endQuote = afterKey.firstIndex(of: "\"") else { continue }
             let value = String(afterKey[..<endQuote])
@@ -57,19 +72,33 @@ public enum ClaudeTranscriptParser {
         return firstText(in: obj["message"] as? [String: Any])?.hasPrefix(interruptMarker) == true
     }
 
-    /// True if `line` is one of the synthetic user entries Claude Code's CLI writes across a local
-    /// slash command's lifecycle. Requires a decoded `type == "user"` entry whose text content
-    /// starts with one of `localCommandMarkers`, mirroring `isInterrupt`'s decode-then-check shape
-    /// so a tool result or assistant text that merely quotes one of the tags can't misfire.
+    /// True if `line` is one of the synthetic entries Claude Code's CLI writes across a local slash
+    /// command's lifecycle. Requires a decoded entry whose text content starts with one of
+    /// `localCommandMarkers`, mirroring `isInterrupt`'s decode-then-check shape so a tool result or
+    /// assistant text that merely quotes one of the tags can't misfire.
+    ///
+    /// Two on-disk shapes exist for this: older/still-current-for-`<command-name>` transcripts
+    /// write it as `type: "user"` with the marker as the message text; current Claude Code (2.1.x)
+    /// writes the trailing `<local-command-stdout>` echo — the entry that actually decides
+    /// `/clear`/`/compact`'s tail — as `type: "system", subtype: "local_command"` with the marker
+    /// in `content` instead. Matching only the `user` shape leaves `/clear` and `/compact` stuck on
+    /// `running` on current CLIs, since their decisive last line no longer round-trips through it.
     public static func isLocalCommand(line: String) -> Bool {
         guard localCommandMarkers.contains(where: { line.contains($0) }) else { return false }
         guard
             let data = line.data(using: .utf8),
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            obj["type"] as? String == "user",
-            let text = firstText(in: obj["message"] as? [String: Any])
+            let text = localCommandText(in: obj)
         else { return false }
         return localCommandMarkers.contains { text.hasPrefix($0) }
+    }
+
+    private static func localCommandText(in obj: [String: Any]) -> String? {
+        switch obj["type"] as? String {
+        case "user": return firstText(in: obj["message"] as? [String: Any])
+        case "system" where obj["subtype"] as? String == "local_command": return obj["content"] as? String
+        default: return nil
+        }
     }
 
     /// True if `line` is the `isCompactSummary` entry `/compact` seeds the new context with — the
@@ -88,12 +117,34 @@ public enum ClaudeTranscriptParser {
         return obj["isCompactSummary"] as? Bool == true
     }
 
-    /// Scans tail lines in reverse and returns the first decisive state, or `nil` if nothing in
-    /// the given text is decisive.
+    /// The result of one `scan(tail:)` call: the newest decisive state found in the window (`nil`
+    /// when nothing in it is decisive), and the newest entry `timestamp` found in it (`nil` when
+    /// the window has none). The two are independent: a session mid-tool-call keeps writing fresh
+    /// `tool_result`/`attachment` entries whose timestamps are newer than its last *decisive* line.
+    public struct TranscriptScan: Equatable, Sendable {
+        public let state: String?
+        public let lastActivity: Date?
+    }
+
+    /// Scans tail lines in reverse for the first decisive state and, independently, the newest
+    /// in-file `timestamp` in the window — the caller's authoritative "is this session live" signal.
+    /// A transcript's file-system mtime is NOT that signal: Claude Code rewrites transcripts in
+    /// place without appending (measured: 92 of 140 local transcripts have an mtime more than 5
+    /// minutes ahead of their newest in-file timestamp, some by 40+ days), so a stale-content file
+    /// whose mtime was merely touched would otherwise look freshly active and re-surface its last
+    /// `stop_reason` as if the agent had just finished.
+    ///
+    /// `lastActivity` must be the max timestamp over the window, not the last line's: 46 of 140
+    /// local transcripts end in untimestamped bookkeeping lines (`mode`, `last-prompt`, `ai-title`,
+    /// `file-history-snapshot`, …) appended after the conversational entry that actually carries
+    /// one. Bogus/future timestamps are not filtered here — this stays pure/time-free; the caller
+    /// (`SessionActivityArbiter`) rejects those against `now`.
+    ///
+    /// Decisive-state rules:
     /// - interrupt marker -> "idle"
     /// - local slash command entry (invocation, caveat, stdout, or compact summary) -> "idle"
     /// - assistant entry whose `stop_reason` is `end_turn`/`stop_sequence` -> "done"
-    /// - any other (non-interrupt, non-command) user entry -> "running"
+    /// - any other (non-interrupt, non-command, non-isMeta) user entry -> "running"
     ///
     /// An assistant entry whose `stop_reason` is `tool_use` (or unset — a message still being
     /// generated) is deliberately NOT decisive and is skipped rather than mapped to "running".
@@ -106,36 +157,82 @@ public enum ClaudeTranscriptParser {
     /// silently overwrite `waitingForApproval` back to `running` while the dialog is still open.
     /// The next unambiguous signal — a `tool_result` (a `user`-type entry either way) once the tool
     /// actually runs — correctly re-asserts "running" once the ambiguity resolves.
-    public static func inferState(fromTail tailText: String) -> String? {
-        let lines = tailText.split(separator: "\n", omittingEmptySubsequences: true)
-        for line in lines.reversed() {
+    ///
+    /// An `isMeta: true` user entry (skill-loading notices, image placeholders — routinely written
+    /// mid-turn) is likewise not decisive; without this check a skill notice landing as the newest
+    /// line in a poll window would misreport "running" for a turn that may already be done.
+    public static func scan(tail tailText: String) -> TranscriptScan {
+        var state: String?
+        var newestTimestamp: String?
+        for line in tailText.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
             let lineStr = String(line)
-            if isInterrupt(line: lineStr) { return "idle" }
-            if isLocalCommand(line: lineStr) { return "idle" }
-            if isCompactSummary(line: lineStr) { return "idle" }
-
-            guard
-                let data = lineStr.data(using: .utf8),
-                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let type = obj["type"] as? String
-            else { continue }
-
-            switch type {
-            case "assistant":
-                let message = obj["message"] as? [String: Any]
-                switch message?["stop_reason"] as? String {
-                case "end_turn", "stop_sequence": return "done"
-                default: continue
-                }
-
-            case "user":
-                return "running"
-
-            default:
-                continue
+            if state == nil { state = decisiveState(ofLine: lineStr) }
+            if let stamp = timestampField(in: lineStr), newestTimestamp.map({ stamp > $0 }) ?? true {
+                newestTimestamp = stamp
             }
         }
-        return nil
+        return TranscriptScan(state: state, lastActivity: newestTimestamp.flatMap(parseTimestamp))
+    }
+
+    /// Convenience for callers that only need the state half of `scan(tail:)`.
+    public static func inferState(fromTail tailText: String) -> String? {
+        scan(tail: tailText).state
+    }
+
+    private static func decisiveState(ofLine lineStr: String) -> String? {
+        if isInterrupt(line: lineStr) { return "idle" }
+        if isLocalCommand(line: lineStr) { return "idle" }
+        if isCompactSummary(line: lineStr) { return "idle" }
+
+        guard
+            let data = lineStr.data(using: .utf8),
+            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let type = obj["type"] as? String
+        else { return nil }
+
+        switch type {
+        case "assistant":
+            let message = obj["message"] as? [String: Any]
+            switch message?["stop_reason"] as? String {
+            case "end_turn", "stop_sequence": return "done"
+            default: return nil
+            }
+
+        case "user":
+            guard obj["isMeta"] as? Bool != true else { return nil }
+            return "running"
+
+        default:
+            return nil
+        }
+    }
+
+    /// Splits `data` at its last newline into the complete-lines prefix and the unterminated
+    /// remainder the caller must carry into the next read window. A poll window's byte boundary is
+    /// not a line boundary, so without this a decisive line straddling two windows is missed in
+    /// both — the trailing fragment fails to decode as JSON and the leading fragment of the next
+    /// window does too. Cutting at `\n` also makes `String(decoding:as:)` lossless on the complete
+    /// half: a newline byte can never occur inside a multi-byte UTF-8 sequence, so this cut cannot
+    /// split a codepoint.
+    public static func splitAtLastNewline(_ data: Data) -> (complete: Data, remainder: Data) {
+        guard let newlineIndex = data.lastIndex(of: 0x0A) else { return (Data(), data) }
+        let completeEnd = data.index(after: newlineIndex)
+        return (Data(data[data.startIndex..<completeEnd]), Data(data[completeEnd...]))
+    }
+
+    private static func timestampField(in line: String) -> String? {
+        guard let keyRange = line.range(of: #""timestamp":""#) else { return nil }
+        let afterKey = line[keyRange.upperBound...]
+        guard let endQuote = afterKey.firstIndex(of: "\"") else { return nil }
+        let value = String(afterKey[..<endQuote])
+        return value.isEmpty ? nil : value
+    }
+
+    private static let isoFormatterWithFraction = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+    private static let isoFormatterWithoutFraction = Date.ISO8601FormatStyle()
+
+    private static func parseTimestamp(_ value: String) -> Date? {
+        (try? isoFormatterWithFraction.parse(value)) ?? (try? isoFormatterWithoutFraction.parse(value))
     }
 
     private static func firstText(in message: [String: Any]?) -> String? {

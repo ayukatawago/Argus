@@ -12,10 +12,14 @@ public final class CodexSessionWatcher: @unchecked Sendable {
     private var pollTask: Task<Void, Never>?
 
     /// A worktree whose session file hasn't grown in this long is treated as abandoned (crash,
-    /// `kill -9`, or a normal exit — Codex fires no hook for either) and cleared to idle. Shares
-    /// Claude's 300s rationale (see ClaudeTranscriptWatcher.staleTimeout): comfortably above any
-    /// observed tool-call gap, so a genuinely busy agent never trips it.
-    private nonisolated static let staleTimeout: TimeInterval = 300
+    /// `kill -9`, or a normal exit — Codex fires no hook for either) and stops contributing to its
+    /// cwd's resolved state. Shares Claude's rationale for sizing (see
+    /// ClaudeTranscriptWatcher.activityWindow) — comfortably above any observed tool-call gap.
+    /// Unlike Claude's transcripts, mtime IS trustworthy here as a positive signal too: measured
+    /// zero mtime/content skew across every local rollout — Codex appends, it never rewrites a
+    /// rollout file in place — so this stays keyed on mtime rather than needing an in-file
+    /// timestamp read.
+    private nonisolated static let activityWindow: TimeInterval = 900
 
     public init() {}
 
@@ -43,9 +47,12 @@ public final class CodexSessionWatcher: @unchecked Sendable {
     /// here needs no lock or actor (same reasoning as ClaudeTranscriptWatcher.PollState).
     private final class PollState: @unchecked Sendable {
         var lastMtimes: [URL: Date] = [:]
-        // Worktree cwd a tracked session file is bound to, so the stale branch knows what to clear.
+        // Worktree cwd a tracked session file is bound to, and its last-known parsed contribution —
+        // kept even once a file goes stale so a resumed-elsewhere sibling can still be told apart
+        // from "nothing is active for this cwd" until this record itself is dropped.
         var cwds: [URL: String] = [:]
-        // cwd -> last state string we emitted, used to suppress duplicate emissions
+        var lastObservation: [URL: SessionActivityArbiter.SessionObservation] = [:]
+        // cwd -> last state string emitted, used to suppress duplicate emissions.
         var lastEmitted: [String: String] = [:]
     }
 
@@ -61,8 +68,8 @@ public final class CodexSessionWatcher: @unchecked Sendable {
         // in the directory named after the session's creation date, not today's. Without this
         // union, any session resumed more than a day past its creation drops out of the scan
         // forever and its worktree's state silently freezes. Once a file is discovered (present in
-        // `state.cwds`), keep polling it here regardless of which day it lives in, until
-        // `clearIfTracked` removes it below for genuinely going stale.
+        // `state.cwds`), keep polling it here regardless of which day it lives in, until it falls
+        // out of `activityWindow` below.
         let files = Set(recentSessionFiles()).union(state.cwds.keys)
 
         for fileURL in files {
@@ -71,51 +78,43 @@ public final class CodexSessionWatcher: @unchecked Sendable {
                 let mtime = attrs.contentModificationDate
             else { continue }
 
-            guard now.timeIntervalSince(mtime) < staleTimeout else {
+            guard now.timeIntervalSince(mtime) < activityWindow else {
                 state.lastMtimes.removeValue(forKey: fileURL)
-                await clearIfTracked(fileURL, state: state, handler: handler)
+                state.cwds.removeValue(forKey: fileURL)
+                state.lastObservation.removeValue(forKey: fileURL)
                 continue
             }
 
             let prevMtime = state.lastMtimes[fileURL]
             state.lastMtimes[fileURL] = mtime
 
-            // Only reparse if the file actually changed
-            guard prevMtime.map({ mtime > $0 }) ?? true else { continue }
-
-            guard let parsed = parseSessionFile(at: fileURL) else { continue }
-            // Subagent rollouts carry their parent's cwd but track a different unit of work —
-            // treating them as peers of the top-level session flaps the indicator on every
-            // subagent spawn/finish. Only the top-level ("user") thread drives worktree state.
-            guard parsed.threadSource != "subagent" else { continue }
-            state.cwds[fileURL] = parsed.cwd
-
-            guard let sessionState = parsed.state else { continue }
-            await emit(cwd: parsed.cwd, sessionState: sessionState, state: state, handler: handler)
+            // Only reparse if the file actually changed.
+            if prevMtime.map({ mtime > $0 }) ?? true {
+                if let parsed = parseSessionFile(at: fileURL), parsed.threadSource != "subagent" {
+                    // Subagent rollouts carry their parent's cwd but track a different unit of
+                    // work — treating them as peers of the top-level session flaps the indicator on
+                    // every subagent spawn/finish. Only the top-level ("user") thread drives
+                    // worktree state.
+                    state.cwds[fileURL] = parsed.cwd
+                    // The file grew (mtime advanced) even when nothing decisive landed in the last
+                    // 4096-byte tail — carry the previously-known state forward but still refresh
+                    // `lastActivity` to the new mtime, or a genuinely active session with a quiet
+                    // tail window would otherwise age out of `activityWindow` on its own growth.
+                    if let effectiveState = parsed.state ?? state.lastObservation[fileURL]?.state {
+                        state.lastObservation[fileURL] = SessionActivityArbiter.SessionObservation(
+                            cwd: parsed.cwd, state: effectiveState, lastActivity: mtime
+                        )
+                    }
+                }
+            }
         }
-    }
 
-    /// A file we were never tracking is just an old, already-finished (or subagent) session —
-    /// nothing to do. One we *were* tracking just went quiet (crash, `kill -9`, or a normal exit —
-    /// no hook covers either): clear its worktree to idle and stop tracking it.
-    private nonisolated static func clearIfTracked(
-        _ fileURL: URL,
-        state: PollState,
-        handler: @Sendable (HookPayload) async -> Void
-    ) async {
-        guard let cwd = state.cwds.removeValue(forKey: fileURL) else { return }
-        await emit(cwd: cwd, sessionState: "idle", state: state, handler: handler)
-    }
-
-    private nonisolated static func emit(
-        cwd: String,
-        sessionState: String,
-        state: PollState,
-        handler: @Sendable (HookPayload) async -> Void
-    ) async {
-        guard state.lastEmitted[cwd] != sessionState else { return }
-        state.lastEmitted[cwd] = sessionState
-        await handler(HookPayload(worktreePath: cwd, state: sessionState, agent: "codex"))
+        let observations = Array(state.lastObservation.values)
+        let resolved = SessionActivityArbiter.resolve(observations, now: now, window: activityWindow)
+        for emission in SessionActivityArbiter.emissions(resolved: resolved, lastEmitted: state.lastEmitted) {
+            state.lastEmitted[emission.cwd] = emission.state
+            await handler(HookPayload(worktreePath: emission.cwd, state: emission.state, agent: "codex"))
+        }
     }
 
     // MARK: - File helpers
