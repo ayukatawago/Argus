@@ -192,7 +192,7 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 
 ## Sidebar monitors
 
-- **GitHub PR monitor** (`App/Views/PRMonitorStore.swift`, `PRMonitorView.swift`): fetches via the GitHub REST API directly (`URLSession` + bearer token), not the `gh` CLI. Configured on the Settings → GitHub page (`apiBaseURL`, `token`, `refreshIntervalSeconds`). Groups PRs into My Open / My Drafts / Assigned / a collapsed "Do Not Merge" section; highlights PRs whose approvals changed since the last poll; grays out approved/draft PRs.
+- **GitHub PR monitor** (`App/Views/PRMonitorStore.swift`, `PRMonitorView.swift`): fetches via the GitHub REST API directly (`URLSession` + bearer token), not the `gh` CLI. Configured on the Settings → GitHub page (`apiBaseURL`, `token`, `refreshIntervalSeconds`). Groups PRs into My Open / My Drafts / Assigned / a collapsed "Do Not Merge" section; highlights PRs whose approvals changed since the last poll; grays out approved/draft PRs. Each row has a hover "hide" button (`PRHiddenList.hide`, `Monitors` target); a hidden PR's section header shows the hidden count and a reveal-all button (`PRHiddenList.reveal`) rather than dropping the header, so an all-hidden section stays recoverable. Hidden ids persist to `~/Library/Application Support/argus/hidden-prs.json` (`PRHiddenFile`) and are pruned against each successful fetch so merged/closed/unassigned PRs don't linger in the file.
 - **Disk space monitor** (`App/Views/DiskMonitorStore.swift`, `DiskCleanupScanner.swift`, `DiskStatusView.swift`, `DiskStatusWindow.swift`): opened via leader `d` or a low-disk banner. Shows a free-space gauge and cleanup candidates (Xcode DerivedData, package manager caches, workspace git repos, `~/Library` subdirectories, …) sized via `du -sk` at concurrency 4, sortable by name/size with a size filter. Config block `diskMonitor` (`checkIntervalSeconds`, `alertThresholdPercent`, `sizeCheckIntervalSeconds`).
 
 ## Key files
@@ -217,6 +217,8 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 | `App/Views/MarkdownPreviewWindow.swift` | Markdown preview popup (⌘F search, local images, file tree) |
 | `App/Views/DiffReviewWindow.swift` | Floating diff-review popup host (one per worktree) |
 | `App/Views/PRMonitorStore.swift` / `PRMonitorView.swift` | GitHub PR fetch/categorize + sidebar section |
+| `Packages/ArgusCore/Sources/Monitors/PRHiddenList.swift` | Pure hide/reveal/prune/split logic over a set of hidden PR ids |
+| `Packages/ArgusCore/Sources/Monitors/PRHiddenFile.swift` | hidden-prs.json read/write against an injectable URL |
 | `App/Views/DiskMonitorStore.swift` / `DiskCleanupScanner.swift` / `DiskStatusWindow.swift` | Disk space poll, cleanup candidate scan, popup host |
 | `App/Views/SettingsWindow.swift` | Settings UI — Agent page (agent picker + commands) and GitHub/Environment pages |
 | `App/Views/KeyboardSettingsView.swift` | Settings UI — Keyboard page (key bindings + popup terminal shortcuts editor) |
