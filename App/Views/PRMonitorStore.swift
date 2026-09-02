@@ -88,6 +88,17 @@ private struct PREnrichment: Sendable {
     var approvedBy: [String] = []
 }
 
+/// A sidebar bucket (My Open PRs, My Drafts, Assigned, Do Not Merge) split into what's currently
+/// shown and what the user hid, so `PRMonitorView` can render a hidden count and a reveal-all
+/// button per section without re-deriving the split itself.
+struct PRSection {
+    var visible: [GitHubPR] = []
+    var hidden: [GitHubPR] = []
+
+    var hiddenIDs: Set<Int> { Set(hidden.map(\.id)) }
+    var isEmpty: Bool { visible.isEmpty && hidden.isEmpty }
+}
+
 enum PRMonitorError: Error, LocalizedError {
     case badURL
     case missingCredentials
@@ -109,10 +120,10 @@ enum PRMonitorError: Error, LocalizedError {
 
 @MainActor
 final class PRMonitorStore: ObservableObject {
-    @Published private(set) var myOpenPRs: [GitHubPR] = []
-    @Published private(set) var myDraftPRs: [GitHubPR] = []
-    @Published private(set) var reviewRequestedPRs: [GitHubPR] = []
-    @Published private(set) var doNotMergePRs: [GitHubPR] = []
+    @Published private(set) var myOpen = PRSection()
+    @Published private(set) var myDrafts = PRSection()
+    @Published private(set) var assigned = PRSection()
+    @Published private(set) var doNotMerge = PRSection()
     @Published private(set) var isLoading = false
     @Published private(set) var lastError: String?
     @Published private(set) var highlightedPRIDs: Set<Int> = []
@@ -120,9 +131,11 @@ final class PRMonitorStore: ObservableObject {
     private var pollTask: Task<Void, Never>?
     private var resolvedUsername: String?
     private let highlightTracker = PRHighlightTracker()
+    private var hidden = PRHiddenList(ids: PRHiddenFile.load(from: PRMonitorStore.hiddenPRsURL))
+    private var lastCategorized: PRCategorizer.Categorized<GitHubPR>?
 
     var hasAnyPRs: Bool {
-        !myOpenPRs.isEmpty || !myDraftPRs.isEmpty || !reviewRequestedPRs.isEmpty || !doNotMergePRs.isEmpty
+        !myOpen.isEmpty || !myDrafts.isEmpty || !assigned.isEmpty || !doNotMerge.isEmpty
     }
 
     func start() {
@@ -147,6 +160,21 @@ final class PRMonitorStore: ObservableObject {
     func dismissHighlight(prID: Int) {
         highlightTracker.dismiss(id: prID)
         highlightedPRIDs = highlightTracker.highlightedIDs
+    }
+
+    /// Hides a single PR from the sidebar. Deliberately doesn't touch its approval highlight —
+    /// a PR whose approvals changed while hidden should still show highlighted once revealed.
+    func hide(prID: Int) {
+        guard hidden.hide(prID) else { return }
+        PRHiddenFile.save(hidden.ids, to: Self.hiddenPRsURL)
+        applySections()
+    }
+
+    /// Reveals every given id (a section's "reveal all hidden" button).
+    func reveal(ids: Set<Int>) {
+        guard hidden.reveal(ids) else { return }
+        PRHiddenFile.save(hidden.ids, to: Self.hiddenPRsURL)
+        applySections()
     }
 
     func refresh() async {
@@ -199,12 +227,30 @@ final class PRMonitorStore: ObservableObject {
             assigned: enrich(assignedPRs),
             username: username
         )
-        myOpenPRs = categorized.myOpenPRs
-        myDraftPRs = categorized.myDraftPRs
-        reviewRequestedPRs = categorized.reviewRequestedPRs
-        doNotMergePRs = categorized.doNotMergePRs
-        highlightTracker.update(trackable: myOpenPRs + reviewRequestedPRs)
+        lastCategorized = categorized
+        highlightTracker.update(trackable: categorized.myOpenPRs + categorized.reviewRequestedPRs)
         highlightedPRIDs = highlightTracker.highlightedIDs
+
+        // Prune ids no longer present in this successful fetch (merged/closed/unassigned) so the
+        // hidden set can't grow forever. Never runs on a failed fetch — the throw happens above.
+        if hidden.prune(keeping: Set(allPRs.map(\.id))) {
+            PRHiddenFile.save(hidden.ids, to: Self.hiddenPRsURL)
+        }
+        applySections()
+    }
+
+    /// Re-derives the four published sections from the last successful fetch, applying the
+    /// current hidden set. Called after every fetch and every hide/reveal.
+    private func applySections() {
+        guard let categorized = lastCategorized else { return }
+        func section(_ prs: [GitHubPR]) -> PRSection {
+            let (visible, hiddenPRs) = hidden.split(prs)
+            return PRSection(visible: visible, hidden: hiddenPRs)
+        }
+        myOpen = section(categorized.myOpenPRs)
+        myDrafts = section(categorized.myDraftPRs)
+        assigned = section(categorized.reviewRequestedPRs)
+        doNotMerge = section(categorized.doNotMergePRs)
     }
 
     private func enrichDetails(for prs: [GitHubPR], config: ArgusConfig.GitHub) async -> [Int: PREnrichment] {
@@ -251,6 +297,13 @@ final class PRMonitorStore: ObservableObject {
         }
         let result: GitHubSearchResult = try await Self.githubFetch(url: url, token: config.token)
         return result.items
+    }
+
+    private nonisolated static var hiddenPRsURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("argus/hidden-prs.json")
+            ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/argus/hidden-prs.json")
     }
 
     private nonisolated static func approvedLogins(from reviews: [GitHubReview]) -> [String] {
