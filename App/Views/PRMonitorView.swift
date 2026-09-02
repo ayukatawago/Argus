@@ -15,9 +15,9 @@ struct PRMonitorView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 4)
             } else {
-                prSection(title: "My Open PRs", prs: store.myOpenPRs, showAuthor: false)
-                prSection(title: "My Drafts", prs: store.myDraftPRs, showAuthor: false)
-                prSection(title: "Assigned", prs: store.reviewRequestedPRs, showAuthor: true)
+                prSection(title: "My Open PRs", section: store.myOpen, showAuthor: false)
+                prSection(title: "My Drafts", section: store.myDrafts, showAuthor: false)
+                prSection(title: "Assigned", section: store.assigned, showAuthor: true)
                 doNotMergeSection
                 if !store.hasAnyPRs && store.lastError == nil {
                     Text("No open pull requests")
@@ -39,23 +39,17 @@ struct PRMonitorView: View {
     }
 
     @ViewBuilder
-    private func prSection(title: String, prs: [GitHubPR], showAuthor: Bool) -> some View {
-        if !prs.isEmpty {
+    private func prSection(title: String, section: PRSection, showAuthor: Bool) -> some View {
+        if !section.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                Text(title)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.05))
-                ForEach(prs) { pullRequest in
+                sectionHeader(title: title, hiddenIDs: section.hiddenIDs)
+                ForEach(section.visible) { pullRequest in
                     PRRow(
                         pr: pullRequest,
                         showAuthor: showAuthor,
                         isHighlighted: store.highlightedPRIDs.contains(pullRequest.id),
-                        onOpen: { store.dismissHighlight(prID: pullRequest.id) }
+                        onOpen: { store.dismissHighlight(prID: pullRequest.id) },
+                        onHide: { store.hide(prID: pullRequest.id) }
                     )
                     .padding(.horizontal, 8)
                     .padding(.vertical, 1)
@@ -71,35 +65,87 @@ struct PRMonitorView: View {
         }
     }
 
+    private func sectionHeader(title: String, hiddenIDs: Set<Int>) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+            if !hiddenIDs.isEmpty {
+                Text("(\(hiddenIDs.count) hidden)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            if !hiddenIDs.isEmpty {
+                Button {
+                    store.reveal(ids: hiddenIDs)
+                } label: {
+                    Image(systemName: "eye")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Reveal \(hiddenIDs.count) hidden pull request\(hiddenIDs.count == 1 ? "" : "s")")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.05))
+    }
+
     @ViewBuilder
     private var doNotMergeSection: some View {
-        if !store.doNotMergePRs.isEmpty {
+        let section = store.doNotMerge
+        if !section.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                Button {
-                    isDNMExpanded.toggle()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: isDNMExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 10)
-                        Text("Do Not Merge (\(store.doNotMergePRs.count))")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                        Spacer()
+                HStack(spacing: 4) {
+                    Image(systemName: isDNMExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 10)
+                    Text("Do Not Merge (\(section.visible.count))")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                    if !section.hiddenIDs.isEmpty {
+                        Text("(\(section.hiddenIDs.count) hidden)")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.05))
+                    Spacer()
+                    if !section.hiddenIDs.isEmpty {
+                        Button {
+                            store.reveal(ids: section.hiddenIDs)
+                        } label: {
+                            Image(systemName: "eye")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help(
+                            "Reveal \(section.hiddenIDs.count) hidden pull request"
+                                + "\(section.hiddenIDs.count == 1 ? "" : "s")")
+                    }
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.05))
+                .contentShape(Rectangle())
+                .onTapGesture { isDNMExpanded.toggle() }
                 if isDNMExpanded {
-                    ForEach(store.doNotMergePRs) { pullRequest in
-                        PRRow(pr: pullRequest, showAuthor: false, isHighlighted: false, onOpen: {})
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 1)
+                    ForEach(section.visible) { pullRequest in
+                        PRRow(
+                            pr: pullRequest,
+                            showAuthor: false,
+                            isHighlighted: false,
+                            onOpen: {},
+                            onHide: { store.hide(prID: pullRequest.id) }
+                        )
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 1)
                     }
                 }
             }
@@ -146,69 +192,77 @@ private struct PRRow: View {
     let showAuthor: Bool
     let isHighlighted: Bool
     let onOpen: () -> Void
+    let onHide: () -> Void
     @State private var isHovered = false
 
     var body: some View {
-        Button {
-            onOpen()
-            NSWorkspace.shared.open(pr.htmlURL)
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 12)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(pr.title)
-                        .font(.caption)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    HStack(spacing: 4) {
-                        Text(pr.repoName)
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .frame(width: 12)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(pr.title)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                HStack(spacing: 4) {
+                    Text(pr.repoName)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("#\(pr.number)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    if let branch = pr.baseBranch {
+                        Text("→ \(branch)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                        Text("#\(pr.number)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        if let branch = pr.baseBranch {
-                            Text("→ \(branch)")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    if showAuthor {
-                        Text("by \(pr.authorLogin)")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    if pr.draft {
-                        Text("draft")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    } else if pr.approvedBy.isEmpty {
-                        Text("waiting for review")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    } else {
-                        Text("✓ \(pr.approvedBy.joined(separator: ", "))")
-                            .font(.caption2)
-                            .foregroundStyle(.green.opacity(0.75))
                     }
                 }
-                Spacer()
-                Image(systemName: "arrow.up.right")
+                if showAuthor {
+                    Text("by \(pr.authorLogin)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                if pr.draft {
+                    Text("draft")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                } else if pr.approvedBy.isEmpty {
+                    Text("waiting for review")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                } else {
+                    Text("✓ \(pr.approvedBy.joined(separator: ", "))")
+                        .font(.caption2)
+                        .foregroundStyle(.green.opacity(0.75))
+                }
+            }
+            Spacer()
+            Button(action: onHide) {
+                Image(systemName: "eye.slash")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .opacity(isHovered ? 1 : 0)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovered ? Color.accentColor.opacity(0.1) : Color.clear)
-            )
+            .buttonStyle(.borderless)
+            .help("Hide pull request")
+            .opacity(isHovered ? 1 : 0)
+            Image(systemName: "arrow.up.right")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .opacity(isHovered ? 1 : 0)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isHovered ? Color.accentColor.opacity(0.1) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onOpen()
+            NSWorkspace.shared.open(pr.htmlURL)
+        }
         .onHover { isHovered = $0 }
         .overlay(
             RoundedRectangle(cornerRadius: 6)
