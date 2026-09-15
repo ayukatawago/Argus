@@ -11,6 +11,7 @@ struct AppShellView: View {
     @StateObject private var nvim = NvimWindow()
     @StateObject private var markdownPreview = MarkdownPreviewWindow()
     @StateObject private var agentBus = AgentStateBus()
+    @StateObject private var agentDisplayWatcher = AgentPaneDisplayWatcher()
     @StateObject private var shellStateBus = ShellStateBus()
     @StateObject private var terminalTabs = TerminalTabsStore()
     // Not `private`: read by the `AppShellView+Toolbar` extension in another file.
@@ -172,6 +173,7 @@ struct AppShellView: View {
             diskScanner.stop()
             prMonitor.stop()
         }
+        .withAgentDisplayWatcher(agentDisplayWatcher, agentBus: agentBus, repos: store.repos)
         .onChange(of: pool.activeIDs) { _, ids in
             shellStateBus.updateActivePaths(ids)
             store.setOpenWorktreeIDs(ids)
