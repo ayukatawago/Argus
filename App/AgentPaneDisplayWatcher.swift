@@ -23,12 +23,13 @@ final class AgentPaneDisplayWatcher: ObservableObject {
     private var knownPaths: Set<String> = []
     private var pollTask: Task<Void, Never>?
 
-    /// Per-key latch: has this pane shown a running/finished signal at least once since Argus
-    /// started watching it? Needed only for Codex's `.ready` signal, which is ambiguous on its
-    /// own — its `· Ready ·` status segment shows both before the first turn and after one
-    /// finishes. Claude needs no equivalent (its `finished` marker is unambiguous, and its
-    /// `Patterns.ready` list is deliberately empty).
-    private var hasRunSinceObserved: Set<AgentKey> = []
+    /// Per-key latch/debounce/dedup state — see `AgentPaneSignalReducer`'s doc comment for why
+    /// this exists at all rather than calling `agentBus?.apply` straight from a `switch` on the
+    /// signal: Claude's on-screen "finished" marker (`✻ Sautéed for 31m 19s`) persists unchanged
+    /// until the *next* turn starts, so polling it every second without this would re-`apply(.done)`
+    /// right past a user's dismissal (`AgentStateBus.dismissAttentionStates` publishes `.idle` but
+    /// has no way to change what the pane itself displays) within one poll interval.
+    private var keyStates: [AgentKey: AgentPaneSignalReducer.KeyState] = [:]
 
     /// Keys covered on the previous poll, so a session that disappears between polls (tmux
     /// session killed outside Argus's own reset paths, which already call
@@ -119,43 +120,25 @@ final class AgentPaneDisplayWatcher: ObservableObject {
     }
 
     private func applySignal(paneText: String, key: AgentKey) {
-        guard let signal = AgentPaneDisplayParser.signal(fromPane: paneText, patterns: resolvedPatterns(for: key.agent))
-        else { return }  // indeterminate — keep whatever state is already published
-
-        let state: String
-        switch signal {
-        case .awaitingApproval:
-            state = "waitingForApproval"
-
-        case .running:
-            hasRunSinceObserved.insert(key)
-            state = "running"
-
-        case .finished:
-            hasRunSinceObserved.insert(key)
-            state = "done"
-
-        case .ready:
-            state = hasRunSinceObserved.contains(key) ? "done" : "idle"
-
-        case .noAgentUI:
-            hasRunSinceObserved.remove(key)
-            state = "idle"
-        }
+        let signal = AgentPaneDisplayParser.signal(fromPane: paneText, patterns: resolvedPatterns(for: key.agent))
+        let (next, publish) = AgentPaneSignalReducer.reduce(signal, previous: keyStates[key] ?? .init())
+        keyStates[key] = next
+        guard let publish else { return }  // indeterminate, or an unchanged conclusion — nothing to do
 
         agentBus?.apply(
-            HookPayload(worktreePath: key.worktreePath, state: state, agent: Self.hookAgentString(for: key.agent)),
+            HookPayload(worktreePath: key.worktreePath, state: publish, agent: Self.hookAgentString(for: key.agent)),
             source: .display
         )
     }
 
     /// A key covered on the previous poll but gone now — explicit `.display` idle rather than
-    /// letting it go stale with no further signal. `hasRunSinceObserved` is cleared too: if this
+    /// letting it go stale with no further signal. Its reducer state is dropped entirely: if this
     /// worktree's agent tab reopens later, it starts a fresh session (see
-    /// `AgentTabsStore.closeTab`'s doc comment) that hasn't run yet either.
+    /// `AgentTabsStore.closeTab`'s doc comment) that hasn't run yet either, and its first signal
+    /// must not be suppressed by a dedup entry left over from the session that just vanished.
     private func emitIdleForVanishedSessions(_ keys: Set<AgentKey>) {
         for key in keys {
-            hasRunSinceObserved.remove(key)
+            keyStates.removeValue(forKey: key)
             agentBus?.apply(
                 HookPayload(worktreePath: key.worktreePath, state: "idle", agent: Self.hookAgentString(for: key.agent)),
                 source: .display

@@ -32,10 +32,6 @@ public final class AgentStateBus: ObservableObject {
     /// `apply(_:source:)` rather than raced against the display signal.
     private var displayCovered: Set<AgentKey> = []
 
-    /// Consecutive `.display` polls that have reported something other than `waitingForApproval`
-    /// while that state is still the one published for this key — see `resolveDisplayDowngrade`.
-    private var pendingApprovalDowngrade: [AgentKey: Int] = [:]
-
     public init() {}
 
     public func start() {
@@ -87,11 +83,9 @@ public final class AgentStateBus: ObservableObject {
     public func reset(for worktreePath: String) {
         let canonical = canonicalPath(worktreePath)
         for agent in AgentType.allCases {
-            let key = AgentKey(worktreePath: worktreePath, agent: agent)
-            let canonicalKey = AgentKey(worktreePath: canonical, agent: agent)
-            pendingApprovalDowngrade[key] = nil
-            pendingApprovalDowngrade[canonicalKey] = nil
-            updateState(.idle, key: key, canonicalKey: canonicalKey)
+            updateState(
+                .idle, key: AgentKey(worktreePath: worktreePath, agent: agent),
+                canonicalKey: AgentKey(worktreePath: canonical, agent: agent))
         }
     }
 
@@ -99,11 +93,9 @@ public final class AgentStateBus: ObservableObject {
     /// close, both of which kill one specific agent's tmux session and must not disturb the other.
     public func reset(for worktreePath: String, agent: AgentType) {
         let canonical = canonicalPath(worktreePath)
-        let key = AgentKey(worktreePath: worktreePath, agent: agent)
-        let canonicalKey = AgentKey(worktreePath: canonical, agent: agent)
-        pendingApprovalDowngrade[key] = nil
-        pendingApprovalDowngrade[canonicalKey] = nil
-        updateState(.idle, key: key, canonicalKey: canonicalKey)
+        updateState(
+            .idle, key: AgentKey(worktreePath: worktreePath, agent: agent),
+            canonicalKey: AgentKey(worktreePath: canonical, agent: agent))
     }
 
     /// Clears only the attention states (`.done`, `.waitingForApproval`) for every agent of
@@ -116,10 +108,6 @@ public final class AgentStateBus: ObservableObject {
             let key = AgentKey(worktreePath: worktreePath, agent: agent)
             let canonicalKey = AgentKey(worktreePath: canonical, agent: agent)
             guard states[key] == .done || states[key] == .waitingForApproval else { continue }
-            // This is an explicit user dismissal, not a display-inferred downgrade — bypasses the
-            // debounce below (and clears its counter) rather than waiting for two quiet polls.
-            pendingApprovalDowngrade[key] = nil
-            pendingApprovalDowngrade[canonicalKey] = nil
             updateState(.idle, key: key, canonicalKey: canonicalKey)
         }
     }
@@ -129,6 +117,12 @@ public final class AgentStateBus: ObservableObject {
     /// to live one layer up, same reasoning as `ShellStateBus`. `source` defaults to `.hook` so
     /// existing tests driving the reducer directly via `@testable import` (bypassing the
     /// socket/file-tailing IPC plumbing in `start()`) don't need updating.
+    ///
+    /// Unlike `.inference`, `.display` payloads carry no downgrade debounce here — that logic
+    /// lives entirely in `AgentPaneSignalReducer`, which the display watcher runs *before* ever
+    /// calling this, so by the time a `.display` payload arrives it has already cleared the
+    /// two-consecutive-poll approval debounce and the dedup-against-its-own-last-conclusion check.
+    /// Duplicating either concern here would only let the two disagree.
     public func apply(_ payload: HookPayload, source: StateSource = .hook) {
         guard let agent = AgentType(hookAgent: payload.agent) else { return }
         let path = payload.worktreePath
@@ -143,34 +137,7 @@ public final class AgentStateBus: ObservableObject {
             return
         }
 
-        let incoming = AgentState(hookState: payload.state)
-        let resolved =
-            source == .display
-            ? resolveDisplayDowngrade(incoming, key: key, canonicalKey: canonicalKey)
-            : incoming
-        updateState(resolved, key: key, canonicalKey: canonicalKey)
-    }
-
-    /// A pane with an open approval dialog shows no active spinner — indistinguishable, purely
-    /// from the display signal, from "the agent simply hasn't resumed yet". Demoting
-    /// `waitingForApproval` straight to whatever `.display` reports next would race the
-    /// `PermissionRequest` hook exactly while the dialog is still open, the same hazard
-    /// `ClaudeTranscriptParser`'s `stop_reason: tool_use` handling exists to avoid. Requiring two
-    /// consecutive non-approval `.display` polls before downgrading gives the hook's own
-    /// dismissal — or a slow poll cycle — room to land first.
-    private func resolveDisplayDowngrade(_ incoming: AgentState, key: AgentKey, canonicalKey: AgentKey) -> AgentState {
-        let currentlyWaiting = states[key] == .waitingForApproval || states[canonicalKey] == .waitingForApproval
-        guard currentlyWaiting, incoming != .waitingForApproval else {
-            pendingApprovalDowngrade[key] = nil
-            return incoming
-        }
-        let pollsWithoutApproval = (pendingApprovalDowngrade[key] ?? 0) + 1
-        guard pollsWithoutApproval >= 2 else {
-            pendingApprovalDowngrade[key] = pollsWithoutApproval
-            return .waitingForApproval
-        }
-        pendingApprovalDowngrade[key] = nil
-        return incoming
+        updateState(AgentState(hookState: payload.state), key: key, canonicalKey: canonicalKey)
     }
 
     // `@Published` fires `objectWillChange` on assignment, not on change, so writing the same
