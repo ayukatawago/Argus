@@ -76,13 +76,24 @@ public enum AgentPaneDisplayParser {
         )
 
         /// `ready`/`agentUI` are verified against a live idle Codex 0.153/0.154 pane (its
-        /// `· Ready ·` status-line segment and startup banner). `running`/`awaitingApproval` are
-        /// NOT independently verified against a live capture — recovered from `strings` on the
-        /// Codex binary, the same epistemic status CLAUDE.md already records for Codex's
-        /// `EventMsg` names — so a miss here degrades to the hook/transcript fallback rather than
-        /// breaking anything.
+        /// `· Ready ·` status-line segment and startup banner). `running` used to be bare
+        /// `\bWorking\b`/`\bReviewing\b`/`to interrupt\)` word matches anywhere in the pane,
+        /// recovered from `strings` on the Codex binary with no live verification — that false-
+        /// positived live: an idle pane whose scrollback merely contained a `git status` recap
+        /// ("Working tree is clean.") or a directory-trust prompt ("Working with untrusted
+        /// contents...") read as permanently `.running`, and `Reviewing` turned out on inspection
+        /// to bind to an unrelated internal string ("Reviewing approval request"), not a run
+        /// state at all. The binary also confirms (`strings`: "Compact session run-state text
+        /// (Ready, Working, Thinking)") that the verified `· Ready ·` status-line segment is one
+        /// of exactly three values for that slot — so `running` now matches `Working`/`Thinking`
+        /// anchored to the same dot-delimited slot as `ready`, rather than as a bare word anywhere
+        /// in the pane. The other two values themselves are not yet independently live-verified
+        /// the way `Ready` is. `awaitingApproval` is likewise NOT independently verified against a
+        /// live capture — recovered from `strings` on the Codex binary, the same epistemic status
+        /// CLAUDE.md already records for Codex's `EventMsg` names — so a miss here degrades to the
+        /// hook/transcript fallback rather than breaking anything.
         public static let codexDefaults = Patterns(
-            running: [#"\bWorking\b"#, #"\bReviewing\b"#, #"to interrupt\)"#],
+            running: [#"·\s*Working\s*·"#, #"·\s*Thinking\s*·"#],
             finished: [],
             ready: [#"·\s*Ready\s*·"#],
             awaitingApproval: [
