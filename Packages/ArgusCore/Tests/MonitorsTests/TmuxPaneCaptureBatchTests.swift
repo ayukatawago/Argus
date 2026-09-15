@@ -86,15 +86,16 @@ struct TmuxPaneCaptureBatchTests {
         // token here).
         #expect(args.filter { $0 == ";" }.count == 3)
         #expect(args.first == "display-message")
-        #expect(args == [
-            "display-message", "-p", "ARGUS_PANE:argus-a-repo-abc123",
-            ";",
-            "capture-pane", "-p", "-J", "-t", "argus-a-repo-abc123", "-S", "51",
-            ";",
-            "display-message", "-p", "ARGUS_PANE:argus-x-repo-abc123",
-            ";",
-            "capture-pane", "-p", "-J", "-t", "argus-x-repo-abc123", "-S", "8",
-        ])
+        #expect(
+            args == [
+                "display-message", "-p", "ARGUS_PANE:argus-a-repo-abc123",
+                ";",
+                "capture-pane", "-p", "-J", "-t", "argus-a-repo-abc123", "-S", "51",
+                ";",
+                "display-message", "-p", "ARGUS_PANE:argus-x-repo-abc123",
+                ";",
+                "capture-pane", "-p", "-J", "-t", "argus-x-repo-abc123", "-S", "8",
+            ])
     }
 
     // MARK: - splitCapture
