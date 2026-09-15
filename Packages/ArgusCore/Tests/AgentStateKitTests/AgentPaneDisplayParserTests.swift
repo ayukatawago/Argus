@@ -64,6 +64,43 @@ struct AgentPaneDisplayParserTests {
         takuya.ogawa@Mac Argus %
         """
 
+    /// Real capture from a genuinely idle Codex pane (`· Ready ·` in its status line) whose
+    /// scrollback happens to contain the literal word "Working" from an unrelated `git status`
+    /// recap — the exact regression a bare `\bWorking\b` match (this codebase's previous pattern)
+    /// produced live: the row stuck on `.running` forever. `running` must not match this text.
+    private static let codexIdleWithWorkingInScrollback = """
+        • Updated and renamed pr-form to pr-approve (plugins/line-android-tools/skills/pr-approve/SKILL.md).
+
+          It now:
+
+          - Accepts an explicit PR URL
+          - Validates PR state and author
+          - Prevents duplicate approval
+          - Confirms before approval
+          - Runs gh pr review --approve
+          - Verifies the approval
+
+        create-fork-pr retains form generation through an internal reference. Skill and plugin
+        validation passed. The unrelated my-commit edit remains untouched. Changes are uncommitted.
+
+        ─ Worked for 3m 37s ───────────────────────────────────────────────
+
+        › Ask Codex to do anything
+
+          gpt-5.6-sol xhigh · ~/.claude/my-plugins · xhigh · Ready · Context 71% left · 0.153.4 · 258K window
+        """
+
+    /// The dot-delimited status-line slot the verified `· Ready ·` occupies is confirmed by
+    /// `strings` on the Codex binary to hold one of exactly three "compact session run-state"
+    /// values: `Ready`, `Working`, `Thinking`. Not independently live-captured mid-run the way
+    /// `Ready` is (no live pane was caught actually running while investigating this), but this is
+    /// the same slot, not a guess at a new location.
+    private static let codexRunningStatusLine = """
+        › Ask Codex to do anything
+
+          gpt-5.6-sol xhigh · ~/workspace/app/Argus · xhigh · Working · Context 68% left · 0.153.4 · 258K window
+        """
+
     // MARK: - Claude
 
     @Test("a live running-turn capture maps to .running")
@@ -116,6 +153,27 @@ struct AgentPaneDisplayParserTests {
     func bareShellPromptMapsToNoAgentUIUnderCodexPatterns() {
         #expect(
             AgentPaneDisplayParser.signal(fromPane: Self.bareShellPrompt, patterns: .codexDefaults) == .noAgentUI)
+    }
+
+    @Test(
+        """
+        the reported regression: an idle Codex pane ("· Ready ·") whose scrollback happens to \
+        contain the word "Working" (from an unrelated git-status recap) must map to .ready, not \
+        .running — a bare \\bWorking\\b match anywhere in the pane (this codebase's previous \
+        pattern) read this live capture as permanently running
+        """
+    )
+    func codexIdleWithWorkingInScrollbackMapsToReadyNotRunning() {
+        #expect(
+            AgentPaneDisplayParser.signal(fromPane: Self.codexIdleWithWorkingInScrollback, patterns: .codexDefaults)
+                == .ready)
+    }
+
+    @Test("a Codex status line reading \"· Working ·\" in the same slot as Ready maps to .running")
+    func codexWorkingStatusLineMapsToRunning() {
+        #expect(
+            AgentPaneDisplayParser.signal(fromPane: Self.codexRunningStatusLine, patterns: .codexDefaults)
+                == .running)
     }
 
     // MARK: - Robustness
