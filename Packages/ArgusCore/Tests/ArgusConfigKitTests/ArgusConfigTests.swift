@@ -89,6 +89,38 @@ struct ArgusConfigTests {
         #expect(try decode(#"{"agentPaneMode": "nonsense"}"#).agentPaneMode == .full)
     }
 
+    // MARK: - agentDisplayPatterns
+
+    @Test("a missing agentDisplayPatterns key decodes to nil claude/codex overrides")
+    func missingAgentDisplayPatternsDecodesToDefault() throws {
+        let decoded = try decode("{}")
+        #expect(decoded.agentDisplayPatterns.claude == nil)
+        #expect(decoded.agentDisplayPatterns.codex == nil)
+    }
+
+    @Test("a partial claude override decodes only the fields present, leaving the rest nil")
+    func partialClaudeOverrideDecodesOnlyPresentFields() throws {
+        let decoded = try decode(
+            """
+            {"agentDisplayPatterns": {"claude": {"running": ["…\\\\(\\\\d+[hms]"]}}}
+            """)
+        #expect(decoded.agentDisplayPatterns.claude?.running == ["…\\(\\d+[hms]"])
+        #expect(decoded.agentDisplayPatterns.claude?.finished == nil)
+        #expect(decoded.agentDisplayPatterns.codex == nil)
+    }
+
+    @Test("a full agentDisplayPatterns round-trips through JSON for both agents")
+    func fullAgentDisplayPatternsRoundTrips() throws {
+        var config = ArgusConfig()
+        config.agentDisplayPatterns = ArgusConfig.AgentDisplayPatterns(
+            claude: ArgusConfig.AgentDisplayPatternOverrides(running: ["a"], finished: ["b"]),
+            codex: ArgusConfig.AgentDisplayPatternOverrides(ready: ["c"], awaitingApproval: ["d"], agentUI: ["e"])
+        )
+        let data = try JSONEncoder().encode(config)
+        let decoded = try JSONDecoder().decode(ArgusConfig.self, from: data)
+        #expect(decoded == config)
+    }
+
     @Test("launchCommand(for:) maps to the matching command field")
     func launchCommandMapping() {
         var config = ArgusConfig()
