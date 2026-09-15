@@ -68,12 +68,49 @@ Cross-module import rule: only `App/` imports everything; other modules may only
 
 ## Agent state system
 
-Claude Code state is inferred by polling the session transcript JSONL files Claude Code writes
-unconditionally under `~/.claude/projects/*/*.jsonl` (`ClaudeTranscriptWatcher`, 500ms poll,
-`Packages/ArgusCore/Sources/AgentStateKit/ClaudeTranscriptWatcher.swift` +
+The sidebar's per-agent indicator is fed by three sources of differing trust, arbitrated by
+`AgentStateBus` via `StateSource` (`Packages/ArgusCore/Sources/AgentStateKit/AgentStateBus.swift`):
+
+1. **`.display`** (primary, for any pane Argus itself hosts) — `AgentPaneDisplayWatcher` (App/,
+   `App/AgentPaneDisplayWatcher.swift`) polls every live Claude/Codex tmux pane once a second and
+   scrapes what the TUI actually renders via a single batched `tmux capture-pane` call (pure
+   batching/parsing logic in `Packages/ArgusCore/Sources/Monitors/TmuxPaneCaptureBatch.swift`,
+   text-to-signal classification in `AgentPaneDisplayParser.swift`). Because this reads a
+   continuously-re-asserted signal rather than inferring liveness from a timeout, it is immune to
+   the false-idle failure mode described below: a single tool call or a `Task` subagent run lasting
+   longer than 15 minutes (both observed live) no longer demotes a genuinely busy agent to idle.
+   `AgentPaneDisplayWatcher` lives in App/, not AgentStateKit, because it needs
+   `WorktreePane.tmuxExecutable`/`sessionName(for:path:)` from GhosttyBridge, which AgentStateKit
+   cannot import.
+2. **`.inference`** (fallback) — the transcript/rollout polling described below, for a worktree with
+   no live Argus-hosted agent pane (an agent started in an external terminal, or a tab not yet
+   opened). `AgentStateBus.setDisplayCovered(_:)`, republished every `.display` poll, is what
+   suppresses `.inference` payloads for any key `.display` currently covers, so the two sources
+   never race for the same key.
+3. **`.hook`** — `PermissionRequest`, never suppressed (see below).
+
+An agent pane's on-screen text is matched against a small built-in regex vocabulary
+(`AgentPaneDisplayParser.Patterns`) — verified live against real Claude Code/Codex panes, not
+hand-written approximations — with a config escape hatch (`ArgusConfig.agentDisplayPatterns`) for
+working around a future CLI wording change without an app release. The parser is deliberately
+conservative: no pattern match means `nil` (indeterminate — the caller keeps whatever state is
+already published), and idle is only ever inferred from a *positive* signal (no agent chrome on
+screen at all, or the tmux session disappearing), never from the mere absence of a running marker —
+a live pane blocked on a background subagent shows text ("Waiting for N background agent(s) to
+finish") that matches neither `running` nor `finished`, and must not be misread as either.
+
+Claude Code state is *additionally* inferred by polling the session transcript JSONL files Claude
+Code writes unconditionally under `~/.claude/projects/*/*.jsonl` (`ClaudeTranscriptWatcher`, 500ms
+poll, `Packages/ArgusCore/Sources/AgentStateKit/ClaudeTranscriptWatcher.swift` +
 `ClaudeTranscriptParser.swift`) — the same no-hook-trust approach `CodexSessionWatcher` already
-used for Codex. One hook remains: `PermissionRequest`, because nothing is written to the transcript
-while a permission dialog is open. Both feed `AgentStateBus.apply(_:)`.
+used for Codex, and still the only source for a worktree `.display` doesn't cover. This path has its
+own false-idle fix: `ClaudeTranscriptWatcher` also tracks each session's `Task`-subagent sidechain
+transcripts (`<project>/<sessionId>/subagents/*.jsonl`) purely for liveness — never state — so a
+subagent run that keeps the *parent* transcript silent for longer than the 15-minute staleness
+window no longer ages a genuinely-running parent observation out of it (see
+`ClaudeTranscriptWatcher.applySidechainLiveness`). One hook remains: `PermissionRequest`, because
+nothing is written to the transcript while a permission dialog is open. All three sources feed
+`AgentStateBus.apply(_:source:)`.
 
 `AgentStateBus` tracks state per **(worktree, agent)** — `states: [AgentKey: AgentState]` — because
 Claude and Codex can each have an open agent tab at once (see Window layout & pane pool below) and
@@ -223,9 +260,12 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 | `App/Views/SettingsWindow.swift` | Settings UI — Agent page (agent picker + commands) and GitHub/Environment pages |
 | `App/Views/KeyboardSettingsView.swift` | Settings UI — Keyboard page (key bindings + popup terminal shortcuts editor) |
 | `App/ShellStateBus.swift` | Shell-busy tracking (fish hooks / tmux fallback) → sidebar border |
-| `Packages/ArgusCore/Sources/AgentStateKit/AgentStateBus.swift` | `@MainActor` ObservableObject; per-(worktree, agent) state, owns the socket/JSONL hook reader, `CodexSessionWatcher`, and `ClaudeTranscriptWatcher` |
+| `App/AgentPaneDisplayWatcher.swift` | Polls every live Claude/Codex tmux pane Argus hosts, scrapes on-screen state via batched `tmux capture-pane`, feeds `AgentStateBus` as the primary `.display` source |
+| `Packages/ArgusCore/Sources/AgentStateKit/AgentPaneDisplayParser.swift` | Pure: classifies one pane capture into running/finished/ready/awaitingApproval/noAgentUI, or `nil` if indeterminate |
+| `Packages/ArgusCore/Sources/Monitors/TmuxPaneCaptureBatch.swift` | Pure: batches several tmux panes' `capture-pane` calls into one subprocess invocation, and splits the combined output back apart |
+| `Packages/ArgusCore/Sources/AgentStateKit/AgentStateBus.swift` | `@MainActor` ObservableObject; per-(worktree, agent) state, owns the socket/JSONL hook reader, `CodexSessionWatcher`, and `ClaudeTranscriptWatcher`; arbitrates `.display`/`.inference`/`.hook` via `StateSource` |
 | `Packages/ArgusCore/Sources/AgentStateKit/WorktreeAgentState.swift` | Pure aggregate: collapses a worktree's per-agent states into the single state/agent a sidebar dot or window tint shows |
-| `Packages/ArgusCore/Sources/AgentStateKit/ClaudeTranscriptWatcher.swift` / `ClaudeTranscriptParser.swift` | Polls `~/.claude/projects/*/*.jsonl` to infer running/done/interrupted-idle/stale-idle without hooks |
+| `Packages/ArgusCore/Sources/AgentStateKit/ClaudeTranscriptWatcher.swift` / `ClaudeTranscriptParser.swift` | Polls `~/.claude/projects/*/*.jsonl` (plus each session's `Task`-subagent sidechains, for liveness only) to infer running/done/interrupted-idle/stale-idle without hooks |
 | `Packages/ArgusCore/Sources/AgentStateKit/SessionActivityArbiter.swift` | Pure per-cwd arbitration: resolves several transcripts/rollouts bound to one worktree to the single state (newest activity wins) that watcher polls publish |
 | `Packages/ArgusCore/Sources/AgentStateKit/WorktreeHookManager.swift` | Writes the one remaining hook script (PermissionRequest); delegates the settings.local.json merge to `ClaudeSettingsPatcher` |
 | `Packages/ArgusCore/Sources/ArgusConfigKit/ArgusConfig.swift` | `ArgusConfig` struct, `ArgusConfigStore`, `AgentSelection`/`WindowLayout` enums, `github`/`diskMonitor`/`environmentVariables`/`popupShortcuts` config blocks; persistence itself is `ArgusConfigFile.swift` (`~/.config/argus/argus.json`) |
