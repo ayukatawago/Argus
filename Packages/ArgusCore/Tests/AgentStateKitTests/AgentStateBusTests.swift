@@ -249,51 +249,30 @@ struct AgentStateBusTests {
 
     @Test(
         """
-        .display downgrading away from waitingForApproval requires two consecutive non-approval \
-        polls — a pane with an open dialog shows no spinner, so a single ambiguous poll must not \
-        race the PermissionRequest hook's own dismissal
+        .display downgrades waitingForApproval immediately, with no debounce of its own — that \
+        logic lives entirely in AgentPaneSignalReducer, which runs before AgentStateBus ever sees \
+        the payload (see AgentStateBus.apply's doc comment)
         """
     )
-    func displayDowngradeFromApprovalRequiresTwoConsecutivePolls() {
+    func displayDowngradesFromApprovalImmediately() {
         let bus = AgentStateBus()
-        let path = "/tmp/approval-debounce"
+        let path = "/tmp/approval-immediate-downgrade"
         bus.apply(HookPayload(worktreePath: path, state: "waitingForApproval", agent: "claude"), source: .hook)
 
         bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
-        #expect(bus.state(for: path, agent: .claude) == .waitingForApproval)
 
-        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
         #expect(bus.state(for: path, agent: .claude) == .running)
     }
 
-    @Test("a .display poll re-reporting waitingForApproval mid-debounce resets the counter")
-    func displayReReportingApprovalResetsDebounceCounter() {
+    @Test("dismissAttentionStates clears waitingForApproval immediately, and a later .display payload still applies")
+    func dismissAttentionStatesThenDisplayPayloadApplies() {
         let bus = AgentStateBus()
-        let path = "/tmp/approval-debounce-reset"
-        bus.apply(HookPayload(worktreePath: path, state: "waitingForApproval", agent: "claude"), source: .hook)
-
-        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
-        #expect(bus.state(for: path, agent: .claude) == .waitingForApproval)
-
-        // The dialog is still up on the next poll — counter must reset, not accumulate toward 2.
-        bus.apply(HookPayload(worktreePath: path, state: "waitingForApproval", agent: "claude"), source: .display)
-        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
-        #expect(bus.state(for: path, agent: .claude) == .waitingForApproval)
-
-        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
-        #expect(bus.state(for: path, agent: .claude) == .running)
-    }
-
-    @Test("dismissAttentionStates clears waitingForApproval immediately, bypassing the display debounce")
-    func dismissAttentionStatesBypassesApprovalDebounce() {
-        let bus = AgentStateBus()
-        let path = "/tmp/dismiss-bypasses-debounce"
+        let path = "/tmp/dismiss-then-display"
         bus.apply(HookPayload(worktreePath: path, state: "waitingForApproval", agent: "claude"), source: .hook)
 
         bus.dismissAttentionStates(for: path)
         #expect(bus.state(for: path, agent: .claude) == .idle)
 
-        // No lingering debounce counter: a single .display "running" poll applies immediately.
         bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
         #expect(bus.state(for: path, agent: .claude) == .running)
     }
