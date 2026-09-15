@@ -186,6 +186,118 @@ struct AgentStateBusTests {
         #expect(bus.state(for: real.path, agent: .codex) == .idle)
     }
 
+    // MARK: - Source precedence (display > inference; hook never suppressed)
+
+    @Test("an .inference payload for a key setDisplayCovered has claimed is dropped")
+    func inferencePayloadDroppedForDisplayCoveredKey() {
+        let bus = AgentStateBus()
+        let path = "/tmp/display-covered"
+        bus.setDisplayCovered([AgentKey(worktreePath: path, agent: .claude)])
+
+        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .inference)
+
+        #expect(bus.state(for: path, agent: .claude) == .idle)
+    }
+
+    @Test("an .inference payload for an uncovered key still applies")
+    func inferencePayloadAppliesForUncoveredKey() {
+        let bus = AgentStateBus()
+        let path = "/tmp/not-display-covered"
+
+        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .inference)
+
+        #expect(bus.state(for: path, agent: .claude) == .running)
+    }
+
+    @Test("setDisplayCovered replaces the previous set wholesale, uncovering a key that dropped out")
+    func setDisplayCoveredReplacesWholesale() {
+        let bus = AgentStateBus()
+        let path = "/tmp/coverage-drops"
+        let key = AgentKey(worktreePath: path, agent: .claude)
+        bus.setDisplayCovered([key])
+        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .inference)
+        #expect(bus.state(for: path, agent: .claude) == .idle)
+
+        bus.setDisplayCovered([])
+        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .inference)
+
+        #expect(bus.state(for: path, agent: .claude) == .running)
+    }
+
+    @Test("a .hook payload applies even for a display-covered key")
+    func hookPayloadIsNeverSuppressed() {
+        let bus = AgentStateBus()
+        let path = "/tmp/hook-not-suppressed"
+        bus.setDisplayCovered([AgentKey(worktreePath: path, agent: .claude)])
+
+        bus.apply(HookPayload(worktreePath: path, state: "waitingForApproval", agent: "claude"), source: .hook)
+
+        #expect(bus.state(for: path, agent: .claude) == .waitingForApproval)
+    }
+
+    @Test(".display applies directly when the current state isn't waitingForApproval")
+    func displayAppliesDirectlyOutsideApprovalDowngrade() {
+        let bus = AgentStateBus()
+        let path = "/tmp/display-direct"
+
+        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
+        #expect(bus.state(for: path, agent: .claude) == .running)
+
+        bus.apply(HookPayload(worktreePath: path, state: "done", agent: "claude"), source: .display)
+        #expect(bus.state(for: path, agent: .claude) == .done)
+    }
+
+    @Test(
+        """
+        .display downgrading away from waitingForApproval requires two consecutive non-approval \
+        polls — a pane with an open dialog shows no spinner, so a single ambiguous poll must not \
+        race the PermissionRequest hook's own dismissal
+        """
+    )
+    func displayDowngradeFromApprovalRequiresTwoConsecutivePolls() {
+        let bus = AgentStateBus()
+        let path = "/tmp/approval-debounce"
+        bus.apply(HookPayload(worktreePath: path, state: "waitingForApproval", agent: "claude"), source: .hook)
+
+        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
+        #expect(bus.state(for: path, agent: .claude) == .waitingForApproval)
+
+        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
+        #expect(bus.state(for: path, agent: .claude) == .running)
+    }
+
+    @Test("a .display poll re-reporting waitingForApproval mid-debounce resets the counter")
+    func displayReReportingApprovalResetsDebounceCounter() {
+        let bus = AgentStateBus()
+        let path = "/tmp/approval-debounce-reset"
+        bus.apply(HookPayload(worktreePath: path, state: "waitingForApproval", agent: "claude"), source: .hook)
+
+        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
+        #expect(bus.state(for: path, agent: .claude) == .waitingForApproval)
+
+        // The dialog is still up on the next poll — counter must reset, not accumulate toward 2.
+        bus.apply(HookPayload(worktreePath: path, state: "waitingForApproval", agent: "claude"), source: .display)
+        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
+        #expect(bus.state(for: path, agent: .claude) == .waitingForApproval)
+
+        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
+        #expect(bus.state(for: path, agent: .claude) == .running)
+    }
+
+    @Test("dismissAttentionStates clears waitingForApproval immediately, bypassing the display debounce")
+    func dismissAttentionStatesBypassesApprovalDebounce() {
+        let bus = AgentStateBus()
+        let path = "/tmp/dismiss-bypasses-debounce"
+        bus.apply(HookPayload(worktreePath: path, state: "waitingForApproval", agent: "claude"), source: .hook)
+
+        bus.dismissAttentionStates(for: path)
+        #expect(bus.state(for: path, agent: .claude) == .idle)
+
+        // No lingering debounce counter: a single .display "running" poll applies immediately.
+        bus.apply(HookPayload(worktreePath: path, state: "running", agent: "claude"), source: .display)
+        #expect(bus.state(for: path, agent: .claude) == .running)
+    }
+
     @Test("repeated identical payloads do not republish objectWillChange")
     func repeatedIdenticalPayloadDoesNotRepublish() {
         let bus = AgentStateBus()
