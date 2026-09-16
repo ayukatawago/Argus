@@ -46,6 +46,36 @@ struct AgentPaneDisplayParserTests {
           ◯ general-purpose  Research LiffFragment public surface for Phase 7d
         """
 
+    /// Real capture: a live Claude pane (genuinely running — see the `✽ Marinating…` line) whose
+    /// visible window also contains unrelated quoted diff text mentioning "for 3m 37s" (a `git
+    /// diff` line from a completely different, Codex-authored file this same session had open).
+    /// The old bare `\sfor\s+\d+[hms]` match (with no line-start/glyph anchor) read that quoted
+    /// text as `.finished`, clobbering the correctly-detected `.running` state from the real
+    /// marker below it — this must resolve to `.running`.
+    private static let claudeRunningWithUnrelatedForText = """
+        ✽ Marinating… (8m 44s · ↓ 20.2k tokens)
+              85 +        ─ Worked for 3m 37s ───────────────────────────────────────────────
+          ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work
+        ────────────────────────────────────────────────────────────
+        ❯
+        ────────────────────────────────────────────────────────────
+          [Sonnet 5 (high)] [ctx:22%] [5h:2%/20:30] [7d:5%/Mon 13:00]
+          ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
+        """
+
+    /// Same unrelated quoted text, but with no genuine running/done marker anywhere in the
+    /// window at all (e.g. the real marker has already scrolled out of the captured tail) — must
+    /// resolve to `nil` (indeterminate), not `.finished` from the quoted "for 3m 37s" text alone.
+    private static let claudeOnlyUnrelatedForText = """
+              85 +        ─ Worked for 3m 37s ───────────────────────────────────────────────
+          ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work
+        ────────────────────────────────────────────────────────────
+        ❯
+        ────────────────────────────────────────────────────────────
+          [Sonnet 5 (high)] [ctx:22%] [5h:2%/20:30] [7d:5%/Mon 13:00]
+          ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
+        """
+
     private static let codexWelcome = """
         ╭────────────────────────────────────────────────╮
         │ >_ OpenAI Codex (v0.153.4)                     │
@@ -132,6 +162,26 @@ struct AgentPaneDisplayParserTests {
     func bareShellPromptMapsToNoAgentUIUnderClaudePatterns() {
         #expect(
             AgentPaneDisplayParser.signal(fromPane: Self.bareShellPrompt, patterns: .claudeDefaults) == .noAgentUI)
+    }
+
+    @Test(
+        """
+        the reported regression: unrelated quoted text mentioning "for 3m 37s" elsewhere in the \
+        captured window must not clobber a genuine .running marker — the old unanchored finished \
+        pattern read the quoted text as .finished instead
+        """
+    )
+    func unrelatedForTextInScrollbackDoesNotClobberRealRunningMarker() {
+        #expect(
+            AgentPaneDisplayParser.signal(
+                fromPane: Self.claudeRunningWithUnrelatedForText, patterns: .claudeDefaults) == .running)
+    }
+
+    @Test("unrelated quoted \"for 3m 37s\" text with no real marker present at all is indeterminate, not .finished")
+    func unrelatedForTextAloneIsIndeterminate() {
+        #expect(
+            AgentPaneDisplayParser.signal(
+                fromPane: Self.claudeOnlyUnrelatedForText, patterns: .claudeDefaults) == nil)
     }
 
     @Test("an approval-dialog phrase outranks a running spinner also present in the same capture")
