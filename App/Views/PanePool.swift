@@ -72,17 +72,24 @@ final class PanePool: ObservableObject {
         canvasViews.removeValue(forKey: id)
     }
 
-    /// The agent-tab analogue of tmux `kill-window`: unmounts the surface, drops the pane's
-    /// cached view for `role` so a later reopen builds a fresh one, then kills its tmux session so
-    /// the next open starts a fresh agent rather than re-attaching to the old one. `role` must not
-    /// be `.shell` — the shell pane is never closed this way.
+    /// The agent-tab analogue of tmux `kill-window`: kills the role's tmux session, then unmounts
+    /// the surface and drops the pane's cached view so a later reopen builds a fresh one against a
+    /// fresh session rather than re-attaching to the old one. `role` must not be `.shell` — the
+    /// shell pane is never closed this way.
+    ///
+    /// Killing the session before releasing the view (not after) matters: releasing the view's
+    /// last strong reference synchronously tears down its native surface on the main thread, which
+    /// blocks joining that surface's IO threads. If the tmux client is still alive in that surface's
+    /// pty at that moment, that join can hang indefinitely (observed live as an 80s+ app freeze) —
+    /// killing the session first lets the pty's child process exit and its IO threads unblock
+    /// before teardown ever has to wait on them.
     func closeRole(id: String, workingDirectory: String, role: PaneRole) async {
         guard role != .shell else { return }
+        let session = WorktreePane.sessionName(for: role, path: workingDirectory)
+        _ = await ProcessRunner.run(WorktreePane.tmuxExecutable, ["kill-session", "-t", session])
         host(for: role).unregister(id: id)
         panes[id]?.discardView(for: role)
         canvasViews.removeValue(forKey: id)
-        let session = WorktreePane.sessionName(for: role, path: workingDirectory)
-        _ = await ProcessRunner.run(WorktreePane.tmuxExecutable, ["kill-session", "-t", session])
     }
 
     func openCanvas(worktrees: [CanvasWorktree], fontSize: Int) {
