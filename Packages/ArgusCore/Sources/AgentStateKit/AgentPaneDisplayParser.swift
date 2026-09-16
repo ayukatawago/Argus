@@ -54,12 +54,21 @@ public enum AgentPaneDisplayParser {
         /// Baked, ...) both rotate through the CLI's own randomized vocabulary, so neither is
         /// matched — only the stable timer shape is: `running` is "…" then a "(" duration " ·"
         /// counter that's still ticking; `finished` is "for" then a duration with nothing after,
-        /// once the counter stops. Claude prints no distinct idle/"ready" marker of its own — an
-        /// empty `ready` list is intentional, not an oversight; the `nil` (indeterminate, keep
-        /// previous state) fallback covers it.
+        /// once the counter stops.
+        ///
+        /// Both are anchored (`(?m)^\s*[glyph]`) to a line that *starts* with one of those four
+        /// glyphs — live-observed, a false positive otherwise: a Claude pane reviewing/quoting
+        /// text that merely contains "for 3m 37s" (e.g. a diff of some unrelated file, or a quoted
+        /// log line) matched the old bare `\sfor\s+\d+[hms]` and read as a false `.finished` with
+        /// nothing having actually happened — the same false-positive-on-ordinary-content bug
+        /// already fixed once for Codex's `running` (see `codexDefaults`'s doc comment), just
+        /// unanchored here in a different way (anywhere in the captured text rather than a bare
+        /// word). Claude prints no distinct idle/"ready" marker of its own — an empty `ready` list
+        /// is intentional, not an oversight; the `nil` (indeterminate, keep previous state)
+        /// fallback covers it.
         public static let claudeDefaults = Patterns(
-            running: [#"…\s*\(\d+[hms]"#],
-            finished: [#"\sfor\s+\d+[hms]"#],
+            running: [#"(?m)^\s*[✻✽✶✳].*…\s*\(\d+[hms]"#],
+            finished: [#"(?m)^\s*[✻✽✶✳].*\sfor\s+\d+[hms]"#],
             ready: [],
             awaitingApproval: [
                 #"Do you want to proceed\?"#,
