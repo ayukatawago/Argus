@@ -15,7 +15,7 @@ configs:
 packages:
   libghostty-spm:
     url: https://github.com/Lakr233/libghostty-spm.git
-    branch: main
+    version: 1.6.20260909
   DiffReviewKit:
     path: Packages/DiffReviewKit
   ArgusCore:
