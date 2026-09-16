@@ -88,6 +88,17 @@ final class AgentPaneDisplayWatcher: ObservableObject {
         let tmux = WorktreePane.tmuxExecutable
         let listResult = await ProcessRunner.run(
             tmux, ["list-panes", "-a", "-F", "#{session_name}|#{pane_height}"])
+        // A failed launch/exit (e.g. around system sleep/wake, or transient resource pressure)
+        // returns exit code -1 with empty output — indistinguishable, if fed straight into
+        // parseSessionHeights, from "there are now zero live sessions". Treating that as a real
+        // "everything vanished" would force-idle and wipe every key's AgentPaneSignalReducer
+        // memory, and the very next successful poll would then read the SAME still-on-screen
+        // "done" marker (Claude's finished text persists on screen until the next turn) against
+        // fresh memory as a brand-new signal, republishing "done" immediately — a periodic
+        // idle-then-done flicker with nothing having actually happened. Bail out and retry next
+        // poll instead, same "no data this poll" treatment already given to a mid-batch capture
+        // failure below.
+        guard listResult.succeeded else { return }
         let heightBySession = TmuxPaneCaptureBatch.parseSessionHeights(from: listResult.standardOutput)
         let foundSessionNames = Array(Set(heightBySession.keys).intersection(sessionToKey.keys))
         let foundKeys = Set(foundSessionNames.compactMap { sessionToKey[$0] })
