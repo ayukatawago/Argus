@@ -18,7 +18,7 @@ Built with Swift + SwiftUI/AppKit, powered by [libghostty](https://github.com/gh
 
 ### Agent & shell status
 
-- Visual agent status — idle / running / waitingForApproval / done — driven by Claude Code hooks
+- Visual agent status — idle / running / waitingForApproval / done — read live from what's on screen in each hosted agent pane, backed by Claude Code/Codex session-file inference and a permission-request hook
 - Sidebar dot and border color change to reflect agent state at a glance
 - Animated sidebar border when a shell pane has a foreground command running, via fish hooks (accent-tinted when the worktree is selected)
 

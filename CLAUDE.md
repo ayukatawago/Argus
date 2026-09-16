@@ -97,7 +97,30 @@ conservative: no pattern match means `nil` (indeterminate — the caller keeps w
 already published), and idle is only ever inferred from a *positive* signal (no agent chrome on
 screen at all, or the tmux session disappearing), never from the mere absence of a running marker —
 a live pane blocked on a background subagent shows text ("Waiting for N background agent(s) to
-finish") that matches neither `running` nor `finished`, and must not be misread as either.
+finish") that matches neither `running` nor `finished`, and must not be misread as either. Both
+CLIs' `running`/`finished` patterns learned this the hard way from live false positives: Claude's are
+anchored to a line that *starts* with one of its four spinner glyphs (`(?m)^\s*[✻✽✶✳]`) after
+ordinary quoted scrollback text like "Worked for 3m 37s" once matched a bare `finished` pattern
+anywhere in the pane; Codex's are anchored to the same dot-delimited `· Working ·`/`· Thinking ·`
+status-line slot after bare-word matches on "Working"/"Reviewing" once fired on unrelated scrollback
+("Working tree is clean.", a directory-trust prompt, "Reviewing approval request").
+
+Each poll's raw signal is reduced through `AgentPaneSignalReducer` (pure, unit-testable, one
+`KeyState` per `AgentKey`) before ever reaching `AgentStateBus.apply` — without it, the watcher would
+re-publish on every poll a decisive signal is found, including polls where nothing actually changed.
+Claude's on-screen "finished" marker persists unchanged until the *next* turn starts, so re-asserting
+`.done` every second would stomp right back over a user's dismissal within one poll interval; the
+reducer's own `lastEmitted` memory (deliberately independent of what `AgentStateBus` currently
+publishes, since dismissal is meant to be free to diverge from it) only lets a *change* through. The
+same reducer also latches Codex's ambiguous `ready` signal (shown both before the first turn and
+after one finishes) via `hasRunSinceObserved`, and debounces a `waitingForApproval` downgrade for two
+consecutive non-approval polls — collapsing what a pane merely *doesn't* show right this instant is
+the recurring hazard here, not just `finished`'s persistence, hence one shared reducer rather than
+three ad hoc special cases. Relatedly, a poll bails out and retries rather than treating a failed
+`tmux list-panes` launch/exit (e.g. around system sleep/wake) as "zero live sessions": feeding that
+empty output through as a real signal would force-idle and wipe every key's reducer memory, and the
+next successful poll would then read the same still-on-screen marker against fresh memory as a
+brand-new signal — a periodic idle-then-done flicker with nothing having actually happened.
 
 Claude Code state is *additionally* inferred by polling the session transcript JSONL files Claude
 Code writes unconditionally under `~/.claude/projects/*/*.jsonl` (`ClaudeTranscriptWatcher`, 500ms
@@ -206,6 +229,14 @@ The agent view (`App/Views/AgentPaneView.swift`) is a single pane holding up to 
 
 `App/Views/PanePool.swift` owns all three `TerminalHost`s (shell/claude/codex). `PaneLayoutResolver.requiredRoles(tabs:)` (`Packages/ArgusCore/Sources/ArgusConfigKit/PaneLayoutResolver.swift`) returns every role a worktree's *open* agent tabs need, visible or not — a hidden tab keeps its agent running, like a background tmux window — so the Codex session is never spun up until its tab is opened. `PaneLayoutResolver.visibleAgentRoles(tabs:mode:)` is what the agent view actually renders. There is no more "primary agent role" concept: the canvas view and leader `a` (`reloadAgentPane`) target whichever tab is **active**. Closing an agent tab (`AgentTabsStore.closeTab`) kills that agent's tmux session outright — like the terminal tab bar's `kill-window` — so reopening it starts a fresh `claude --continue` / `codex resume --last` rather than re-attaching; relaunching Argus, by contrast, re-attaches a still-running session because `tmux new-session -A` ignores the launch command on an existing session.
 
+`PanePool.closeRole`/`reloadAgentPanes` always kill a role's tmux session *before* releasing its
+cached `AppTerminalView` (`WorktreePane.discardView`), never after: releasing a pane's last strong
+reference synchronously tears down its native ghostty surface on the main thread, joining that
+surface's IO threads. If the tmux client is still alive in that pane's pty at that moment, that join
+can hang indefinitely — observed live as an 80+ second app freeze on tab close. Killing the session
+first lets the pty's child process exit and its IO threads unblock before teardown ever has to wait
+on them.
+
 ### Terminal tabs and agent tabs
 
 The shell pane's tmux session (`WorktreePane`'s `.shell` role) runs with `status off`, so its windows are otherwise invisible; `App/Views/TerminalTabBarView.swift` renders them as a tab bar above the shell `TerminalHostView` in every layout, sourced from `App/Views/TerminalTabsStore.swift`. One tmux window = one tab, nothing more — the store is a control surface and mirror over tmux (`list-windows`/`select-window`/`new-window`/`kill-window`), never a second source of truth, so a window opened from inside tmux (`ctrl-b ctrl-b c`) appears on the next poll same as one Argus creates. Tab labels are the current directory's folder name (`TmuxWindow.label` in `Packages/ArgusCore/Sources/Monitors/TmuxWindowParser.swift`, derived from `#{pane_current_path}`), not a process name, and are not renameable. A new tab replays the same `EnvExportPreamble` + `LoginShell` command tab 0 uses so its environment matches.
@@ -262,6 +293,7 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 | `App/ShellStateBus.swift` | Shell-busy tracking (fish hooks / tmux fallback) → sidebar border |
 | `App/AgentPaneDisplayWatcher.swift` | Polls every live Claude/Codex tmux pane Argus hosts, scrapes on-screen state via batched `tmux capture-pane`, feeds `AgentStateBus` as the primary `.display` source |
 | `Packages/ArgusCore/Sources/AgentStateKit/AgentPaneDisplayParser.swift` | Pure: classifies one pane capture into running/finished/ready/awaitingApproval/noAgentUI, or `nil` if indeterminate |
+| `Packages/ArgusCore/Sources/AgentStateKit/AgentPaneSignalReducer.swift` | Pure: per-key latch/debounce/dedup turning a poll's raw signal into at most one published state change |
 | `Packages/ArgusCore/Sources/Monitors/TmuxPaneCaptureBatch.swift` | Pure: batches several tmux panes' `capture-pane` calls into one subprocess invocation, and splits the combined output back apart |
 | `Packages/ArgusCore/Sources/AgentStateKit/AgentStateBus.swift` | `@MainActor` ObservableObject; per-(worktree, agent) state, owns the socket/JSONL hook reader, `CodexSessionWatcher`, and `ClaudeTranscriptWatcher`; arbitrates `.display`/`.inference`/`.hook` via `StateSource` |
 | `Packages/ArgusCore/Sources/AgentStateKit/WorktreeAgentState.swift` | Pure aggregate: collapses a worktree's per-agent states into the single state/agent a sidebar dot or window tint shows |
