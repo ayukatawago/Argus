@@ -231,15 +231,18 @@ struct AppShellView: View {
         .onChange(of: agentTabs.byWorktree) { _, _ in clampFocusedRole() }
     }
 
+}
+
+extension AppShellView {
     // MARK: - Terminal detail
 
-    private var currentWorktreeState: WorktreeAgentState {
+    fileprivate var currentWorktreeState: WorktreeAgentState {
         guard let id = selectedWorktreeID else { return .idle }
         return agentBus.worktreeState(for: id)
     }
 
     @ViewBuilder
-    private var terminalDetail: some View {
+    fileprivate var terminalDetail: some View {
         let config = configStore.config
         if isCanvasMode {
             CanvasView(
@@ -274,7 +277,7 @@ struct AppShellView: View {
         }
     }
 
-    private var activeWorktrees: [WorktreeCard] {
+    fileprivate var activeWorktrees: [WorktreeCard] {
         store.repos.flatMap(\.worktrees)
             .filter { pool.activeIDs.contains($0.id) }
             .map { worktree in
@@ -286,7 +289,7 @@ struct AppShellView: View {
             }
     }
 
-    private func toggleCanvas() {
+    fileprivate func toggleCanvas() {
         if isCanvasMode {
             pool.closeCanvas()
             isCanvasMode = false
@@ -304,7 +307,7 @@ struct AppShellView: View {
     /// and worktree-cycling show them again immediately instead of only the last selection. Runs
     /// once per launch, the first time the scan produces a non-empty worktree list; the selected
     /// worktree (already handled above) is skipped here to avoid double-registering its roles.
-    private func restoreOpenWorktreesIfNeeded(all: [GitWorktree]) {
+    fileprivate func restoreOpenWorktreesIfNeeded(all: [GitWorktree]) {
         guard !hasRestoredOpenWorktrees, !all.isEmpty else { return }
         hasRestoredOpenWorktrees = true
         for worktree in all
@@ -320,7 +323,7 @@ struct AppShellView: View {
     }
 
     @ViewBuilder
-    private var terminalBackground: some View {
+    fileprivate var terminalBackground: some View {
         switch currentWorktreeState.state {
         case .done:
             Color.green.opacity(0.05)
@@ -333,9 +336,6 @@ struct AppShellView: View {
         }
     }
 
-}
-
-extension AppShellView {
     fileprivate func dismissAttentionIfNeeded() {
         guard let id = selectedWorktreeID else { return }
         agentBus.dismissAttentionStates(for: id)
