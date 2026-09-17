@@ -57,14 +57,14 @@ Packages/
                        filter/sort, tmux pane parsing
   DiffReviewKit/     SPM package (macOS 14+, Swift 6) — side-by-side diff review UI + headless agent runner
 Sources/
-  GhosttyBridge/     GhosttyKit (C lib) + Foundation — PTY, terminal surface, URL-open
+  GhosttyBridge/     libghostty-spm (GhosttyTerminal) + Foundation — PTY, terminal surface, URL-open
 App/
   ShellStateBus.swift  Shell-busy tracking (fish hooks / tmux fallback), feeds the sidebar border
   Views/             SwiftUI + AppKit — all UI (sidebar, panes, monitors, popups, diff review host)
   ArgusApp.swift     NSApplicationDelegate, leader-key monitor, top-level wiring
 ```
 
-Cross-module import rule: only `App/` imports everything; other modules may only import siblings listed in CONVENTIONS.md. `Packages/ArgusCore` and `Packages/DiffReviewKit` are local SPM packages embedded via Xcode's local package dependency. `DiffReviewKit` doesn't import any other module — `App/` wires it up (agent selection, worktree path) from the outside. `ArgusCore`'s five targets have their own internal graph — `ArgusConfigKit`/`AgentStateKit`/`Workspaces`/`Monitors` each depend only on `ArgusSupport`, with no edges between those four — so `swift test` in `Packages/ArgusCore` runs in seconds with no GhosttyKit/AppKit/SwiftUI in the build graph at all.
+Cross-module import rule: only `App/` imports everything; other modules may only import siblings listed in CONVENTIONS.md. `Packages/ArgusCore` and `Packages/DiffReviewKit` are local SPM packages embedded via Xcode's local package dependency. `DiffReviewKit` doesn't import any other module — `App/` wires it up (agent selection, worktree path) from the outside. `ArgusCore`'s five targets have their own internal graph — `ArgusConfigKit`/`AgentStateKit`/`Workspaces`/`Monitors` each depend only on `ArgusSupport`, with no edges between those four — so `swift test` in `Packages/ArgusCore` runs in seconds with no libghostty/AppKit/SwiftUI in the build graph at all.
 
 ## Agent state system
 
