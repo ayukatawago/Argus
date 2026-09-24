@@ -63,7 +63,7 @@ public final class CodexSessionWatcher: @unchecked Sendable {
         let now = Date()
 
         // `recentSessionFiles()` only looks at today's and yesterday's day-bucketed directories —
-        // enough to *discover* newly created sessions. But `codex resume --last` (the default
+        // enough to *discover* newly created sessions. But `codex resume` (the default
         // codexCommand) keeps appending to the *original* rollout file indefinitely, which lives
         // in the directory named after the session's creation date, not today's. Without this
         // union, any session resumed more than a day past its creation drops out of the scan

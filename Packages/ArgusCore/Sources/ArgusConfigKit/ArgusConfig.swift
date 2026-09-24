@@ -53,7 +53,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
     public var layout: WindowLayout = .terminalAgent
     public var agentPaneMode: AgentPaneMode = .full
     public var claudeCommand: String = "claude --continue"
-    public var codexCommand: String = "codex resume --last"
+    public var codexCommand: String = "codex resume"
     public var diskMonitor = DiskMonitor()
     public var github = GitHub()
     public var environmentVariables: [String: String] = [:]
@@ -74,7 +74,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
         layout = (try? container.decodeIfPresent(WindowLayout.self, forKey: .layout)) ?? .terminalAgent
         agentPaneMode = (try? container.decodeIfPresent(AgentPaneMode.self, forKey: .agentPaneMode)) ?? .full
         claudeCommand = (try? container.decodeIfPresent(String.self, forKey: .claudeCommand)) ?? "claude --continue"
-        codexCommand = (try? container.decodeIfPresent(String.self, forKey: .codexCommand)) ?? "codex resume --last"
+        codexCommand = (try? container.decodeIfPresent(String.self, forKey: .codexCommand)) ?? "codex resume"
         diskMonitor = (try? container.decodeIfPresent(DiskMonitor.self, forKey: .diskMonitor)) ?? DiskMonitor()
         github = (try? container.decodeIfPresent(GitHub.self, forKey: .github)) ?? GitHub()
         environmentVariables =
