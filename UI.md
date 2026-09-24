@@ -96,7 +96,7 @@ Both layouts render the same two pieces — `shellPane` and `agentPane` — just
 $SHELL -l -c 'claude --continue || exec $SHELL -l'
 ```
 
-so that `claude` (or `codex resume --last`) is found via the user's login-shell PATH (Homebrew, nvm, etc.), and falls back to an interactive shell if the CLI exits. `discardView(for:)` drops a role's cached surface/state so a later `view(for:)` call (after an agent tab is closed and reopened) builds a fresh one against a fresh tmux session.
+so that `claude` (or `codex resume`) is found via the user's login-shell PATH (Homebrew, nvm, etc.), and falls back to an interactive shell if the CLI exits. `discardView(for:)` drops a role's cached surface/state so a later `view(for:)` call (after an agent tab is closed and reopened) builds a fresh one against a fresh tmux session.
 
 ---
 
