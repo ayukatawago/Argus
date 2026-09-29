@@ -59,6 +59,11 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
     public var environmentVariables: [String: String] = [:]
     public var popupShortcuts: [PopupShortcut] = [.lazygitDefault]
     public var agentDisplayPatterns = AgentDisplayPatterns()
+    /// Per-project agent override, keyed by repo `mainPath` (the same key `Workspaces`' own
+    /// `repoOrder`/`excludedRepoPaths` use). Absent key = use `agent`. Lives here rather than in
+    /// `Workspaces`/`workspaces.json` because `AgentSelection` is an `ArgusConfigKit` type and that
+    /// target may not import `Workspaces` (see CLAUDE.md's module layout rule).
+    public var projectAgents: [String: AgentSelection] = [:]
 
     // Needed because we declare a custom init(from:).
     public init() {}
@@ -84,12 +89,18 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
         agentDisplayPatterns =
             (try? container.decodeIfPresent(AgentDisplayPatterns.self, forKey: .agentDisplayPatterns))
             ?? AgentDisplayPatterns()
+        // Decoded as raw strings first rather than `[String: AgentSelection]` directly, so one
+        // unrecognized value (a future third agent, a hand-edited typo) drops just that entry
+        // instead of failing the whole dictionary decode and resetting every override to none.
+        let rawProjectAgents =
+            (try? container.decodeIfPresent([String: String].self, forKey: .projectAgents)) ?? [:]
+        projectAgents = rawProjectAgents.compactMapValues(AgentSelection.init(rawValue:))
     }
 
     private enum CodingKeys: String, CodingKey {
         case leaderKey, leaderTimeoutSeconds, keyBindings, agent, layout, agentPaneMode
         case claudeCommand, codexCommand, diskMonitor, github, environmentVariables, popupShortcuts
-        case agentDisplayPatterns
+        case agentDisplayPatterns, projectAgents
     }
 
     public func launchCommand(for selection: AgentSelection) -> String {
@@ -97,6 +108,20 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
         case .claude: claudeCommand
         case .codex: codexCommand
         }
+    }
+
+    /// The agent to use for a worktree belonging to the project at `projectPath` (a repo
+    /// `mainPath`): its override if it has one, otherwise the global default `agent`. A nil or
+    /// untracked path — e.g. a CLI-originated `argus diff` on a folder outside the sidebar — falls
+    /// back too.
+    public func agent(forProjectPath projectPath: String?) -> AgentSelection {
+        guard let projectPath, let override = projectAgents[projectPath] else { return agent }
+        return override
+    }
+
+    /// Sets `projectPath`'s agent override. `nil` clears it, restoring the global default.
+    public mutating func setAgent(_ selection: AgentSelection?, forProjectPath projectPath: String) {
+        projectAgents[projectPath] = selection
     }
 
     public struct KeyBindings: Codable, Equatable, Sendable {

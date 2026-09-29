@@ -75,7 +75,7 @@ struct AppShellView: View {
                 guard let id = selectedWorktreeID,
                     let worktree = store.repos.flatMap(\.worktrees).first(where: { $0.id == id })
                 else { return }
-                diffReview.open(worktreePath: worktree.path, agent: configStore.config.agent)
+                diffReview.open(worktreePath: worktree.path, agent: agent(forWorktreePath: worktree.path))
             }
             .onReceiveTabBindings(
                 focusedRole: $focusedRole, terminalTabs: terminalTabs, agentTabs: agentTabs, pool: pool
@@ -89,7 +89,9 @@ struct AppShellView: View {
                 }
                 let base = info["base"] as? String ?? ""
                 let head = info["head"] as? String ?? "HEAD"
-                diffReview.open(worktreePath: workspace, base: base, head: head, agent: configStore.config.agent)
+                diffReview.open(
+                    worktreePath: workspace, base: base, head: head,
+                    agent: agent(forWorktreePath: workspace))
             }
     }
 
@@ -201,7 +203,7 @@ struct AppShellView: View {
             }
             // Seed (or find) this worktree's open agent tabs before registering roles — the
             // required-role set comes from whatever tabs it ends up with.
-            agentTabs.setWorktree(id: id, path: worktree.path, defaultAgent: configStore.config.agent)
+            agentTabs.setWorktree(id: id, path: worktree.path, defaultAgent: agent(forWorktreePath: worktree.path))
             pool.getOrCreate(
                 id: id, workingDirectory: worktree.path,
                 roles: PaneLayoutResolver.requiredRoles(tabs: agentTabs.tabs(for: id)))
@@ -231,6 +233,11 @@ struct AppShellView: View {
         .onChange(of: agentTabs.byWorktree) { _, _ in clampFocusedRole() }
     }
 
+    /// The agent to seed/use for the worktree at `path`: its project's override if the sidebar has
+    /// one configured, otherwise the global default.
+    fileprivate func agent(forWorktreePath path: String) -> AgentSelection {
+        configStore.config.agent(forProjectPath: store.repoMainPath(forWorktreePath: path))
+    }
 }
 
 extension AppShellView {
@@ -315,7 +322,7 @@ extension AppShellView {
             && store.openWorktreeIDs.contains(worktree.id)
             && !store.hiddenWorktreeIDs.contains(worktree.id)
         {
-            agentTabs.seed(id: worktree.id, defaultAgent: configStore.config.agent)
+            agentTabs.seed(id: worktree.id, defaultAgent: agent(forWorktreePath: worktree.path))
             pool.getOrCreate(
                 id: worktree.id, workingDirectory: worktree.path,
                 roles: PaneLayoutResolver.requiredRoles(tabs: agentTabs.tabs(for: worktree.id)))

@@ -1,18 +1,32 @@
 import AgentStateKit
+import ArgusConfigKit
 import SwiftUI
 
 struct RepoHeader: View {
     let name: String
     let isGitRepo: Bool
     let hiddenCount: Int
+    /// This project's agent override (`nil` = follow the global default), for the context menu's
+    /// checkmarks and the badge next to the repo name.
+    var agentOverride: AgentSelection?
     let onAddWorktree: () -> Void
     let onRemove: () -> Void
     let onUnhide: () -> Void
+    /// `nil` clears the override, restoring the global default.
+    var onSelectAgent: (AgentSelection?) -> Void = { _ in }
 
     var body: some View {
         HStack(spacing: 4) {
             Text(name)
                 .font(.headline)
+            if let agentOverride {
+                Text(agentOverride.displayName)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(Color.secondary.opacity(0.15)))
+            }
             Spacer()
             if hiddenCount > 0 {
                 Button(action: onUnhide) {
@@ -36,6 +50,34 @@ struct RepoHeader: View {
             }
             .buttonStyle(.borderless)
             .help("Remove repository")
+        }
+        .contextMenu { if isGitRepo { agentMenu } }
+    }
+
+    @ViewBuilder
+    private var agentMenu: some View {
+        Menu("Agent") {
+            Button {
+                onSelectAgent(nil)
+            } label: {
+                agentMenuLabel("Use default", isSelected: agentOverride == nil)
+            }
+            ForEach(AgentSelection.allCases) { option in
+                Button {
+                    onSelectAgent(option)
+                } label: {
+                    agentMenuLabel(option.displayName, isSelected: agentOverride == option)
+                }
+            }
+        }
+    }
+
+    private func agentMenuLabel(_ title: String, isSelected: Bool) -> some View {
+        HStack {
+            Text(title)
+            if isSelected {
+                Image(systemName: "checkmark")
+            }
         }
     }
 }

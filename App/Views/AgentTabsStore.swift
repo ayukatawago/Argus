@@ -6,8 +6,8 @@ import Foundation
 /// `TerminalTabsStore`, this is *not* a mirror over tmux — tmux has no notion of "which agent tabs
 /// are open"; this store is the source of truth, and `PanePool` role registration is its
 /// projection. Nothing here is persisted except `mode`: every launch starts each worktree with
-/// only its default agent's tab open (seeded from `config.agent` at the moment a worktree is
-/// first selected).
+/// only its default agent's tab open (seeded from `config.agent`, or the worktree's repo's
+/// `projectAgents` override if it has one, at the moment a worktree is first selected).
 @MainActor
 final class AgentTabsStore: ObservableObject {
     @Published private(set) var byWorktree: [String: AgentTabs] = [:]
@@ -38,7 +38,8 @@ final class AgentTabsStore: ObservableObject {
 
     /// Switches to a different worktree (or none), seeding its tab set from `defaultAgent` the
     /// first time it's seen. An already-seeded worktree keeps whatever tabs it has — switching
-    /// `config.agent` in Settings has no retroactive effect on worktrees already open.
+    /// `config.agent` in Settings, or a project's `projectAgents` override, has no retroactive
+    /// effect on worktrees already open.
     func setWorktree(id: String?, path: String?, defaultAgent: AgentSelection) {
         worktreeID = id
         worktreePath = path

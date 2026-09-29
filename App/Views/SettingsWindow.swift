@@ -120,6 +120,9 @@ struct AgentSettingsView: View {
             Text("tab can still be opened on demand from the agent pane's \"+\" button.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Text("A project can override this from its sidebar repo header's context menu.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
