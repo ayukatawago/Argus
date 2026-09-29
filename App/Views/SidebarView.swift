@@ -17,6 +17,7 @@ struct SidebarView: View {
     @ObservedObject var agentBus: AgentStateBus
     @ObservedObject var shellStateBus: ShellStateBus
     @ObservedObject var prMonitor: PRMonitorStore
+    @EnvironmentObject var configStore: ArgusConfigStore
     let onRelease: (String) -> Void
     @State private var dropTargetRepoID: String?
     @State private var showPickFolder = false
@@ -125,30 +126,18 @@ struct SidebarView: View {
         let hidden = repo.worktrees.filter { store.hiddenWorktreeIDs.contains($0.id) }
         let visible = repo.worktrees.filter { !store.hiddenWorktreeIDs.contains($0.id) }
         VStack(alignment: .leading, spacing: 0) {
-            RepoHeader(
-                name: repo.name,
-                isGitRepo: repo.isGitRepo,
-                hiddenCount: hidden.count,
-                onAddWorktree: { addWorktree(for: repo) },
-                onRemove: {
-                    if repo.worktrees.map(\.id).contains(selectedWorktreeID ?? "") {
-                        selectedWorktreeID = nil
-                    }
-                    store.removeRepo(mainPath: repo.mainPath)
-                },
-                onUnhide: { store.unhideWorktrees(repoID: repo.id) }
-            )
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 2)
-            .contentShape(Rectangle())
-            .draggable(repo.id) {
-                Text(repo.name)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
+            repoHeader(for: repo, hiddenCount: hidden.count)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 2)
+                .contentShape(Rectangle())
+                .draggable(repo.id) {
+                    Text(repo.name)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.regularMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
             worktreeRows(for: repo, visible: visible)
         }
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
@@ -170,6 +159,27 @@ struct SidebarView: View {
             }
         }
         .overlay(alignment: .top) { dropIndicator(isTarget: isDropTarget) }
+    }
+
+    private func repoHeader(for repo: GitRepo, hiddenCount: Int) -> some View {
+        RepoHeader(
+            name: repo.name,
+            isGitRepo: repo.isGitRepo,
+            hiddenCount: hiddenCount,
+            agentOverride: configStore.config.projectAgents[repo.mainPath],
+            onAddWorktree: { addWorktree(for: repo) },
+            onRemove: {
+                if repo.worktrees.map(\.id).contains(selectedWorktreeID ?? "") {
+                    selectedWorktreeID = nil
+                }
+                store.removeRepo(mainPath: repo.mainPath)
+            },
+            onUnhide: { store.unhideWorktrees(repoID: repo.id) },
+            onSelectAgent: { selection in
+                configStore.config.setAgent(selection, forProjectPath: repo.mainPath)
+                configStore.save()
+            }
+        )
     }
 
     @ViewBuilder

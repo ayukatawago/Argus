@@ -119,6 +119,12 @@ public final class WorkspaceStore: ObservableObject {
         saveConfig()
     }
 
+    /// The `mainPath` of the repo owning the worktree at `path`, or `nil` if untracked. See
+    /// `RepoLookup`.
+    public func repoMainPath(forWorktreePath path: String) -> String? {
+        RepoLookup.mainPath(forWorktreePath: path, in: repos)
+    }
+
     public func moveRepo(fromIndex: Int, toIndex: Int) {
         guard let order = RepoOrdering.move(fromIndex: fromIndex, toIndex: toIndex, in: repos) else { return }
         let snapshot = repos
