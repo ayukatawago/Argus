@@ -37,6 +37,7 @@ struct RepoHeader: View {
                 .help("Unhide \(hiddenCount) worktree\(hiddenCount == 1 ? "" : "s")")
             }
             if isGitRepo {
+                agentMenu
                 Button(action: onAddWorktree) {
                     Image(systemName: "plus.circle")
                         .imageScale(.medium)
@@ -51,12 +52,14 @@ struct RepoHeader: View {
             .buttonStyle(.borderless)
             .help("Remove repository")
         }
-        .contextMenu { if isGitRepo { agentMenu } }
     }
 
+    /// A visible icon-button menu — as opposed to a hidden right-click-only context menu — since a
+    /// per-project setting this consequential (which agent an entire project's worktrees default
+    /// to) needs to be discoverable at a glance, not something a user has to know to right-click for.
     @ViewBuilder
     private var agentMenu: some View {
-        Menu("Agent") {
+        Menu {
             Button {
                 onSelectAgent(nil)
             } label: {
@@ -69,7 +72,14 @@ struct RepoHeader: View {
                     agentMenuLabel(option.displayName, isSelected: agentOverride == option)
                 }
             }
+        } label: {
+            Image(systemName: "sparkles")
+                .imageScale(.medium)
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Set agent for this project")
     }
 
     private func agentMenuLabel(_ title: String, isSelected: Bool) -> some View {
