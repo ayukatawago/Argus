@@ -21,6 +21,7 @@ struct ArgusConfigFileTests {
         config.leaderKey = "cmd+k"
         config.agent = .codex
         config.claudeCommand = "claude --resume"
+        config.projectAgents = ["/repos/a": .codex, "/repos/b": .claude]
 
         ArgusConfigFile.save(config, to: url)
         let loaded = ArgusConfigFile.load(from: url)
