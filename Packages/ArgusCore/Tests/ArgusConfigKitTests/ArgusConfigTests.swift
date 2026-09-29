@@ -121,6 +121,44 @@ struct ArgusConfigTests {
         #expect(decoded == config)
     }
 
+    // MARK: - projectAgents
+
+    @Test("a missing projectAgents key decodes to an empty map")
+    func missingProjectAgentsDecodesToEmpty() throws {
+        let decoded = try decode("{}")
+        #expect(decoded.projectAgents.isEmpty)
+    }
+
+    @Test("an unrecognized projectAgents value drops only that entry")
+    func unrecognizedProjectAgentValueDropsOnlyThatEntry() throws {
+        let decoded = try decode(
+            """
+            {"projectAgents": {"/repos/a": "codex", "/repos/b": "nonsense"}}
+            """)
+        #expect(decoded.projectAgents == ["/repos/a": .codex])
+    }
+
+    @Test("agent(forProjectPath:) resolves the override, else the global default")
+    func agentForProjectPathResolution() {
+        var config = ArgusConfig()
+        config.agent = .claude
+        config.projectAgents["/repos/a"] = .codex
+
+        #expect(config.agent(forProjectPath: "/repos/a") == .codex)
+        #expect(config.agent(forProjectPath: "/repos/unmapped") == .claude)
+        #expect(config.agent(forProjectPath: nil) == .claude)
+    }
+
+    @Test("setAgent(nil, forProjectPath:) clears an existing override")
+    func setAgentNilClearsOverride() {
+        var config = ArgusConfig()
+        config.setAgent(.codex, forProjectPath: "/repos/a")
+        #expect(config.projectAgents["/repos/a"] == .codex)
+
+        config.setAgent(nil, forProjectPath: "/repos/a")
+        #expect(config.projectAgents["/repos/a"] == nil)
+    }
+
     @Test("launchCommand(for:) maps to the matching command field")
     func launchCommandMapping() {
         var config = ArgusConfig()
