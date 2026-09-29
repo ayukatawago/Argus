@@ -63,6 +63,11 @@ struct AppShellView: View {
                 let roles = PaneLayoutResolver.requiredRoles(tabs: tabs)
                 Task {
                     await pool.reloadAgentPanes(id: id, workingDirectory: worktree.path, roles: roles)
+                    // reloadAgentPanes rebuilds every role's terminal view (including the shell's,
+                    // to pick up the freshly re-registered pane), which leaves nothing as first
+                    // responder — restore focus to whichever pane the user was last in rather than
+                    // leaving the keyboard focus nowhere.
+                    pool.host(for: focusedRole).focusActiveTerminal()
                 }
                 for agent in tabs.open {
                     agentBus.reset(for: worktree.path, agent: agent.agentType)
