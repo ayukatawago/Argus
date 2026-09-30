@@ -168,6 +168,44 @@ struct ArgusConfigTests {
         #expect(config.launchCommand(for: .codex) == "codex resume --last")
     }
 
+    @Test("codexUsage round-trips through JSON")
+    func codexUsageRoundTrips() throws {
+        var config = ArgusConfig()
+        config.codexUsage.refreshIntervalSeconds = 60
+        config.codexUsage.scanDayWindow = 3
+        config.codexUsage.modelPrices["gpt-6-luna"] = .init(
+            inputPerMillion: 1.25, cachedInputPerMillion: 0.125, outputPerMillion: 10)
+        let data = try JSONEncoder().encode(config)
+        let decoded = try JSONDecoder().decode(ArgusConfig.self, from: data)
+        #expect(decoded == config)
+    }
+
+    @Test("a missing codexUsage key uses its defaults")
+    func missingCodexUsageUsesDefaults() throws {
+        let decoded = try decode("{}")
+        #expect(decoded.codexUsage == ArgusConfig.CodexUsage())
+    }
+
+    @Test("a malformed codexUsage.modelPrices entry drops only that model")
+    func malformedModelPriceDropsOnlyThatEntry() throws {
+        let decoded = try decode(
+            """
+            {"codexUsage": {"modelPrices": {"good": {"inputPerMillion": 1.0}, "bad": "not an object"}}}
+            """)
+        #expect(decoded.codexUsage.modelPrices["good"]?.inputPerMillion == 1.0)
+        #expect(decoded.codexUsage.modelPrices["bad"] == nil)
+    }
+
+    @Test("openCodexUsage defaults to \"u\" and can be overridden")
+    func openCodexUsageBinding() throws {
+        #expect(ArgusConfig().keyBindings.openCodexUsage == "u")
+        let decoded = try decode(
+            """
+            {"keyBindings": {"openCodexUsage": "z"}}
+            """)
+        #expect(decoded.keyBindings.openCodexUsage == "z")
+    }
+
     private func decode(_ json: String) throws -> ArgusConfig {
         try JSONDecoder().decode(ArgusConfig.self, from: Data(json.utf8))
     }
