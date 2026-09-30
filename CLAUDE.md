@@ -278,7 +278,8 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 | `App/Views/PanePool.swift` | Owns shell/claude/codex `TerminalHost`s; role registration driven by the open agent tabs |
 | `App/Views/TerminalTabsStore.swift` | Polls the selected worktree's shell tmux session's windows; issues select/new/close tmux commands |
 | `App/Views/TerminalTabBarView.swift` | Tab bar UI above the shell pane, one tab per tmux window |
-| `App/Views/AppShellView+TabBindings.swift` | Routes leader `t`/`]`/`[`/`x`/`s` to the terminal or agent tab store based on focused pane |
+| `App/Views/AppShellView+TabBindings.swift` | Routes new/next/previous/close-tab and split-toggle leader keys to the terminal or agent tab store based on focused pane (next/previous tab ship with no default key) |
+| `App/Views/AppShellView+TmuxPaneBindings.swift` | Routes leader `h`/`j`/`k`/`l` to a literal `tmux select-pane -L/-D/-U/-R` against the focused role's tmux session |
 | `Packages/ArgusCore/Sources/Monitors/TmuxWindowParser.swift` | Parses `tmux list-windows` output into `TmuxWindow` (folder-name label from `pane_current_path`) |
 | `App/Views/PopupTerminalWindow.swift` | User-defined popup terminal windows (key/command/size), incl. lazygit default |
 | `App/Views/NvimWindow.swift` | nvim popup with tmux-persisted session |
