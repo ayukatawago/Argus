@@ -19,7 +19,7 @@ private enum CodexUsageCodingKeys: String, CodingKey {
 }
 
 private enum CodexModelPriceCodingKeys: String, CodingKey {
-    case inputPerMillion, cachedInputPerMillion, outputPerMillion
+    case inputPerMillion, cachedInputPerMillion, cacheWritePerMillion, outputPerMillion
 }
 
 extension ArgusConfig {
@@ -69,23 +69,35 @@ extension ArgusConfig {
     public struct CodexModelPrice: Codable, Equatable, Sendable {
         public var inputPerMillion: Double = 0
         public var cachedInputPerMillion: Double = 0
+        /// USD per 1M tokens written to cache — a separate, usually-premium rate over
+        /// `inputPerMillion` (e.g. 1.25x on some models): writing a prefix to cache for later reuse
+        /// is itself billed, distinct from both a plain fresh input token and a cached-read one.
+        public var cacheWritePerMillion: Double = 0
         public var outputPerMillion: Double = 0
 
-        public init(inputPerMillion: Double = 0, cachedInputPerMillion: Double = 0, outputPerMillion: Double = 0) {
+        public init(
+            inputPerMillion: Double = 0,
+            cachedInputPerMillion: Double = 0,
+            cacheWritePerMillion: Double = 0,
+            outputPerMillion: Double = 0
+        ) {
             self.inputPerMillion = inputPerMillion
             self.cachedInputPerMillion = cachedInputPerMillion
+            self.cacheWritePerMillion = cacheWritePerMillion
             self.outputPerMillion = outputPerMillion
         }
 
         // Each field decoded independently and defaulted rather than relying on synthesized
-        // Decodable (which would require all three keys present): the Settings UI only ever writes
-        // complete triples, but a hand-edited config with just one rate set should still decode
+        // Decodable (which would require all four keys present): the Settings UI only ever writes
+        // complete quadruples, but a hand-edited config with just one rate set should still decode
         // that rate rather than dropping the whole entry via CodexUsage's per-key `try?`.
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodexModelPriceCodingKeys.self)
             inputPerMillion = (try? container.decodeIfPresent(Double.self, forKey: .inputPerMillion)) ?? 0
             cachedInputPerMillion =
                 (try? container.decodeIfPresent(Double.self, forKey: .cachedInputPerMillion)) ?? 0
+            cacheWritePerMillion =
+                (try? container.decodeIfPresent(Double.self, forKey: .cacheWritePerMillion)) ?? 0
             outputPerMillion = (try? container.decodeIfPresent(Double.self, forKey: .outputPerMillion)) ?? 0
         }
     }

@@ -37,6 +37,14 @@ public struct CodexTokenUsage: Equatable, Sendable {
     /// rather than produce a nonsensical negative token count.
     public var uncachedInputTokens: Int { max(0, inputTokens - cachedInputTokens) }
 
+    /// The portion of `uncachedInputTokens` that is neither a cache read nor a cache write — the
+    /// genuinely new tokens billed at the plain input rate. `cacheWriteInputTokens` is itself a
+    /// subset of `uncachedInputTokens` (a token being written to cache was, by definition, not
+    /// already a cache hit), so without this split every cache-write token would otherwise be
+    /// billed twice: once here and once at the cache-write rate. Clamped for the same reason as
+    /// `uncachedInputTokens`.
+    public var freshInputTokens: Int { max(0, uncachedInputTokens - cacheWriteInputTokens) }
+
     public static func + (lhs: Self, rhs: Self) -> Self {
         CodexTokenUsage(
             inputTokens: lhs.inputTokens + rhs.inputTokens,

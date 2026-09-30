@@ -14,6 +14,7 @@ extension AppShellView {
             let rate = CodexModelRate(
                 inputPerMillion: price.inputPerMillion,
                 cachedInputPerMillion: price.cachedInputPerMillion,
+                cacheWritePerMillion: price.cacheWritePerMillion,
                 outputPerMillion: price.outputPerMillion)
             // Cost is omitted from the chip (not shown as a misleading "$0.00") when nothing
             // priced this model at all — matches CodexUsageView's per-row "—" treatment.
