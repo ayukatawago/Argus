@@ -45,7 +45,7 @@ arbitrary shell like Terminal.app/iTerm2, so macOS expects that grant rather tha
 Packages/
   ArgusCore/        local SPM package (macOS 14+, Swift 6) — testable logic, no AppKit/SwiftUI
     ArgusSupport/     Foundation only — ProcessRunner, LoginShell, JSONLTailer, PollingTask,
-                       TmuxSessionName, CanvasLayout
+                       TmuxSessionName
     ArgusConfigKit/   Foundation only — ArgusConfig struct, ArgusConfigStore, AgentSelection/
                        WindowLayout/PaneRole/AgentPaneMode enums, AgentTabs, LeaderKey,
                        PaneLayoutResolver
@@ -139,7 +139,7 @@ nothing is written to the transcript while a permission dialog is open. All thre
 Claude and Codex can each have an open agent tab at once (see Window layout & pane pool below) and
 each tab's chip needs its own indicator. `state(for:agent:)` reads one agent's state;
 `worktreeState(for:)` collapses both into the single `WorktreeAgentState` a worktree-level indicator
-(sidebar dot/row, canvas card, window tint) shows, via `WorktreeAgentState.aggregate` — highest
+(sidebar dot/row, window tint) shows, via `WorktreeAgentState.aggregate` — highest
 `AgentState.displayPriority` wins (`waitingForApproval > done > running > idle`), ties resolve to
 Claude. `reset(for:)` clears every agent for a worktree (panes released); `reset(for:agent:)` clears
 one (a specific tmux session was killed); `dismissAttentionStates(for:)` is the "user interacted,
@@ -227,7 +227,7 @@ The one remaining hook script lives at `~/Library/Application Support/argus/hook
 
 The agent view (`App/Views/AgentPaneView.swift`) is a single pane holding up to two **agent tabs** — Claude and Codex — with its own tab bar (`App/Views/AgentTabBarView.swift`). Only the default agent has a tab when a worktree is first selected; the other opens on demand (`+` chip, or leader `t` while the agent pane has focus). That default is `config.agent` unless the worktree's repo has a per-project override — set from the sidebar repo header's context menu, persisted in `ArgusConfig.projectAgents` (keyed by repo `mainPath`) and resolved via `ArgusConfig.agent(forProjectPath:)` — in which case the override wins; switching a project's override has no effect on a worktree already seeded, same as changing `config.agent` itself. `AgentTabsStore` (`App/Views/AgentTabsStore.swift`) owns each worktree's open/active tabs (`ArgusConfigKit.AgentTabs`) and the app-global **display mode** (`ArgusConfigKit.AgentPaneMode`, persisted): `full` shows only the active tab; `split` shows every open tab side by side (Claude left, Codex right), toggled by the toolbar button or leader `s`. Unlike the terminal tab bar below, agent tabs are **not** a tmux mirror — `AgentTabsStore` is the source of truth, and `PanePool` role registration is its projection.
 
-`App/Views/PanePool.swift` owns all three `TerminalHost`s (shell/claude/codex). `PaneLayoutResolver.requiredRoles(tabs:)` (`Packages/ArgusCore/Sources/ArgusConfigKit/PaneLayoutResolver.swift`) returns every role a worktree's *open* agent tabs need, visible or not — a hidden tab keeps its agent running, like a background tmux window — so the Codex session is never spun up until its tab is opened. `PaneLayoutResolver.visibleAgentRoles(tabs:mode:)` is what the agent view actually renders. There is no more "primary agent role" concept: the canvas view and leader `a` (`reloadAgentPane`) target whichever tab is **active**. Closing an agent tab (`AgentTabsStore.closeTab`) kills that agent's tmux session outright — like the terminal tab bar's `kill-window` — so reopening it starts a fresh `claude --continue` / `codex resume` rather than re-attaching; relaunching Argus, by contrast, re-attaches a still-running session because `tmux new-session -A` ignores the launch command on an existing session.
+`App/Views/PanePool.swift` owns all three `TerminalHost`s (shell/claude/codex). `PaneLayoutResolver.requiredRoles(tabs:)` (`Packages/ArgusCore/Sources/ArgusConfigKit/PaneLayoutResolver.swift`) returns every role a worktree's *open* agent tabs need, visible or not — a hidden tab keeps its agent running, like a background tmux window — so the Codex session is never spun up until its tab is opened. `PaneLayoutResolver.visibleAgentRoles(tabs:mode:)` is what the agent view actually renders. There is no more "primary agent role" concept: leader `a` (`reloadAgentPane`) targets whichever tab is **active**. Closing an agent tab (`AgentTabsStore.closeTab`) kills that agent's tmux session outright — like the terminal tab bar's `kill-window` — so reopening it starts a fresh `claude --continue` / `codex resume` rather than re-attaching; relaunching Argus, by contrast, re-attaches a still-running session because `tmux new-session -A` ignores the launch command on an existing session.
 
 `PanePool.closeRole`/`reloadAgentPanes` always kill a role's tmux session *before* releasing its
 cached `AppTerminalView` (`WorktreePane.discardView`), never after: releasing a pane's last strong
@@ -303,7 +303,7 @@ a misleading `$0.00`, both in the chip and in the popover's per-row breakdown.
 
 | File | Role |
 |---|---|
-| `App/ArgusApp.swift` | App entry, keyboard leader, canvas overlay |
+| `App/ArgusApp.swift` | App entry, keyboard leader |
 | `App/Views/AppShellView.swift` | Main split layout, agent state border/tint |
 | `App/Views/SidebarView.swift` | Repo/worktree list, `AgentDot`, drag reorder |
 | `App/Views/WorktreeContentView.swift` | Per-worktree layout (terminal pane + agent view per `WindowLayout`) |
