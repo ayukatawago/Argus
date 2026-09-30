@@ -32,13 +32,12 @@ ArgusApp (App)
 | `popups` | `PopupTerminalManager` | User-configured popup terminal windows (default: lazygit) |
 | `selectedWorktreeID` | `String?` | Which worktree row is active |
 | `focusedRole` | `PaneRole` | Which pane (`.shell`/`.claude`/`.codex`) directional focus and the tab-key bindings target |
-| `isCanvasMode` | `Bool` | Whether the grid-of-all-worktrees canvas view is showing |
 | `codexUsageStore` | `CodexUsageStore` | Today's per-model Codex token usage, injected as an `@EnvironmentObject` (shared with the Settings scene) rather than owned here |
 | `isCodexUsagePopoverPresented` | `Bool` | Whether the toolbar's Codex usage chip's popover is open |
 
 `PanePool` (`App/Views/PanePool.swift`) holds three shared `TerminalHost` NSViews (shell/claude/codex) and a dictionary of `WorktreePane` instances keyed by worktree id. Which roles are registered for a worktree is decided *outside* `PanePool` — by `PaneLayoutResolver.requiredRoles(tabs:)` given that worktree's `AgentTabs` — and passed in as an explicit `roles:` argument; `PanePool` itself has no notion of layout or open tabs.
 
-The toolbar (`AppShellView+Toolbar.swift`) is canvas-toggle, diff-review, `codexUsageChip`, `agentPaneModeToggle`, then `layoutPicker`, in that order. `codexUsageChip` reads `codexUsageStore.today` plus `configStore.config.codexUsage.modelPrices` to render a token count and (once at least one visible model is priced) an estimated cost, and opens `CodexUsageView` as a `.popover` on click or leader `u`.
+The toolbar (`AppShellView+Toolbar.swift`) is diff-review, `codexUsageChip`, `agentPaneModeToggle`, then `layoutPicker`, in that order. `codexUsageChip` reads `codexUsageStore.today` plus `configStore.config.codexUsage.modelPrices` to render a token count and (once at least one visible model is priced) an estimated cost, and opens `CodexUsageView` as a `.popover` on click or leader `u`.
 
 The agent-state visual (background tint on the detail area) is computed in `AppShellView` from `agentBus.worktreeState(for: selectedWorktreeID)` — the worktree-level aggregate across both agents — and applied as `.background` on `terminalDetail`. Per-agent borders are drawn per pane inside `AgentPaneView` instead (see below).
 
