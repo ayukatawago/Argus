@@ -50,6 +50,10 @@ struct KeyboardSettingsView: View {
             VStack(spacing: 4) {
                 bindingRow("Focus pane left", key: $config.keyBindings.focusPaneLeft)
                 bindingRow("Focus pane right", key: $config.keyBindings.focusPaneRight)
+                bindingRow("Tmux pane left", key: $config.keyBindings.tmuxPaneLeft)
+                bindingRow("Tmux pane down", key: $config.keyBindings.tmuxPaneDown)
+                bindingRow("Tmux pane up", key: $config.keyBindings.tmuxPaneUp)
+                bindingRow("Tmux pane right", key: $config.keyBindings.tmuxPaneRight)
                 bindingRow("Next worktree", key: $config.keyBindings.selectNextWorktree)
                 bindingRow("Previous worktree", key: $config.keyBindings.selectPreviousWorktree)
                 bindingRow("Open nvim", key: $config.keyBindings.openNvim)
@@ -71,6 +75,12 @@ struct KeyboardSettingsView: View {
             Text("Tab keys act on the focused pane — tmux windows in the terminal, agent tabs in the agent view.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Text(
+                "Tmux pane keys send select-pane to the focused pane's tmux session —"
+                    + " only useful if you've split it yourself with tmux."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
     }
 

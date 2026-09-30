@@ -125,8 +125,17 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
     }
 
     public struct KeyBindings: Codable, Equatable, Sendable {
-        public var focusPaneLeft: String = "h"
-        public var focusPaneRight: String = "l"
+        public var focusPaneLeft: String = "["
+        public var focusPaneRight: String = "]"
+        // These four send a literal `tmux select-pane -L/-D/-U/-R` to whichever tmux session
+        // `focusedRole` currently points to — distinct from focusPaneLeft/Right above, which
+        // switch which of Argus's own shell/claude/codex roles is focused. Only meaningful if
+        // that session's window was manually split with tmux's own `split-window`; a no-op
+        // otherwise.
+        public var tmuxPaneLeft: String = "h"
+        public var tmuxPaneDown: String = "j"
+        public var tmuxPaneUp: String = "k"
+        public var tmuxPaneRight: String = "l"
         public var selectNextWorktree: String = "n"
         public var selectPreviousWorktree: String = "p"
         public var openNvim: String = "v"
@@ -137,10 +146,10 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
         public var openDiskStatus: String = "d"
         public var openDiffReview: String = "w"
         // These four act on whichever pane has focus: tmux windows in the shell pane, agent tabs
-        // in the agent pane.
+        // in the agent pane. No default key (still user-settable) — freed up for focusPaneLeft/Right.
         public var newTerminalTab: String = "t"
-        public var nextTerminalTab: String = "]"
-        public var previousTerminalTab: String = "["
+        public var nextTerminalTab: String = ""
+        public var previousTerminalTab: String = ""
         public var closeTerminalTab: String = "x"
         public var toggleAgentSplit: String = "s"
 
@@ -162,8 +171,12 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
                 }
                 return dflt
             }
-            focusPaneLeft = read("focusPaneLeft", legacy: "focusShellPane", default: "h")
-            focusPaneRight = read("focusPaneRight", legacy: "focusAgentPane", default: "l")
+            focusPaneLeft = read("focusPaneLeft", legacy: "focusShellPane", default: "[")
+            focusPaneRight = read("focusPaneRight", legacy: "focusAgentPane", default: "]")
+            tmuxPaneLeft = read("tmuxPaneLeft", default: "h")
+            tmuxPaneDown = read("tmuxPaneDown", default: "j")
+            tmuxPaneUp = read("tmuxPaneUp", default: "k")
+            tmuxPaneRight = read("tmuxPaneRight", default: "l")
             selectNextWorktree = read("selectNextWorktree", default: "n")
             selectPreviousWorktree = read("selectPreviousWorktree", default: "p")
             openNvim = read("openNvim", default: "v")
@@ -174,8 +187,8 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
             openDiskStatus = read("openDiskStatus", default: "d")
             openDiffReview = read("openDiffReview", default: "w")
             newTerminalTab = read("newTerminalTab", default: "t")
-            nextTerminalTab = read("nextTerminalTab", default: "]")
-            previousTerminalTab = read("previousTerminalTab", default: "[")
+            nextTerminalTab = read("nextTerminalTab", default: "")
+            previousTerminalTab = read("previousTerminalTab", default: "")
             closeTerminalTab = read("closeTerminalTab", default: "x")
             toggleAgentSplit = read("toggleAgentSplit", default: "s")
         }

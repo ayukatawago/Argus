@@ -241,6 +241,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             [
                 (bindings.focusPaneLeft, Notification.Name.focusPaneLeft),
                 (bindings.focusPaneRight, .focusPaneRight),
+                (bindings.tmuxPaneLeft, .tmuxPaneLeft),
+                (bindings.tmuxPaneDown, .tmuxPaneDown),
+                (bindings.tmuxPaneUp, .tmuxPaneUp),
+                (bindings.tmuxPaneRight, .tmuxPaneRight),
                 (bindings.selectNextWorktree, .selectNextWorktree),
                 (bindings.selectPreviousWorktree, .selectPreviousWorktree),
                 (bindings.openNvim, .openNvim),
