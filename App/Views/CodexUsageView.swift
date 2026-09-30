@@ -15,6 +15,7 @@ struct CodexUsageView: View {
                     CodexModelRate(
                         inputPerMillion: $0.inputPerMillion,
                         cachedInputPerMillion: $0.cachedInputPerMillion,
+                        cacheWritePerMillion: $0.cacheWritePerMillion,
                         outputPerMillion: $0.outputPerMillion)
                 } ?? .unset
             let cost = rate.isUnset ? nil : CodexUsageCost.cost(usage, rate: rate)
@@ -103,8 +104,9 @@ struct CodexUsageView: View {
             }
             .font(.callout)
             Text(
-                "in \(TokenCountFormatter.short(row.usage.uncachedInputTokens))"
+                "in \(TokenCountFormatter.short(row.usage.freshInputTokens))"
                     + " · cached \(TokenCountFormatter.short(row.usage.cachedInputTokens))"
+                    + " · write \(TokenCountFormatter.short(row.usage.cacheWriteInputTokens))"
                     + " · out \(TokenCountFormatter.short(row.usage.outputTokens))"
             )
             .font(.caption2)

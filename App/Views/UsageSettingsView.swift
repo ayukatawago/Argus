@@ -31,14 +31,16 @@ struct UsageSettingsView: View {
             Text("Codex Usage")
                 .font(.headline)
             Text(
-                "Prices are USD per 1M tokens. Cost = (input − cached) × input rate"
-                    + " + cached × cached rate + output × output rate."
+                "Prices are USD per 1M tokens. Cost = fresh input × input rate"
+                    + " + cached × cached rate + cache write × write rate + output × output rate."
             )
             .font(.caption)
             .foregroundStyle(.secondary)
             Text(
-                "Reasoning tokens are already counted inside output; cache-write tokens are"
-                    + " already counted inside the uncached input portion."
+                "\"Fresh input\" excludes both cache reads and cache writes — Codex reports"
+                    + " cache-write tokens as part of input, so they're billed at the write rate"
+                    + " instead of the input rate, not both. Reasoning tokens are already counted"
+                    + " inside output."
             )
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -66,6 +68,7 @@ struct UsageSettingsView: View {
                 Text("Model").frame(width: 130, alignment: .leading)
                 Text("Input").frame(width: 70, alignment: .trailing)
                 Text("Cached").frame(width: 70, alignment: .trailing)
+                Text("Write").frame(width: 70, alignment: .trailing)
                 Text("Output").frame(width: 70, alignment: .trailing)
                 Spacer().frame(width: 20)
             }
@@ -86,6 +89,7 @@ struct UsageSettingsView: View {
                 .frame(width: 130, alignment: .leading)
             priceField(model: model, keyPath: \.inputPerMillion)
             priceField(model: model, keyPath: \.cachedInputPerMillion)
+            priceField(model: model, keyPath: \.cacheWritePerMillion)
             priceField(model: model, keyPath: \.outputPerMillion)
             Button {
                 config.codexUsage.modelPrices.removeValue(forKey: model)
