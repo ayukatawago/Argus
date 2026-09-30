@@ -174,7 +174,7 @@ struct ArgusConfigTests {
         config.codexUsage.refreshIntervalSeconds = 60
         config.codexUsage.scanDayWindow = 3
         config.codexUsage.modelPrices["gpt-6-luna"] = .init(
-            inputPerMillion: 1.25, cachedInputPerMillion: 0.125, outputPerMillion: 10)
+            inputPerMillion: 1.25, cachedInputPerMillion: 0.125, cacheWritePerMillion: 1.5625, outputPerMillion: 10)
         let data = try JSONEncoder().encode(config)
         let decoded = try JSONDecoder().decode(ArgusConfig.self, from: data)
         #expect(decoded == config)
@@ -193,6 +193,7 @@ struct ArgusConfigTests {
             {"codexUsage": {"modelPrices": {"good": {"inputPerMillion": 1.0}, "bad": "not an object"}}}
             """)
         #expect(decoded.codexUsage.modelPrices["good"]?.inputPerMillion == 1.0)
+        #expect(decoded.codexUsage.modelPrices["good"]?.cacheWritePerMillion == 0)
         #expect(decoded.codexUsage.modelPrices["bad"] == nil)
     }
 
