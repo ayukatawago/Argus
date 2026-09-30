@@ -1,7 +1,7 @@
 import Foundation
 
-/// The single state + agent identity a worktree-level indicator (sidebar dot/row, canvas card,
-/// window tint) shows for a worktree that may have both a Claude and a Codex session.
+/// The single state + agent identity a worktree-level indicator (sidebar dot/row, window tint)
+/// shows for a worktree that may have both a Claude and a Codex session.
 public struct WorktreeAgentState: Equatable, Sendable {
     public let state: AgentState
     public let agent: AgentType

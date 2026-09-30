@@ -2,7 +2,7 @@ import Foundation
 
 /// Arbitrates the many session files that can be bound to one worktree — the Argus project dir
 /// alone accumulates over a dozen Claude transcripts across sessions — down to the one state its
-/// sidebar/canvas/window indicator shows. Pure and filesystem-free so it's testable without a
+/// sidebar/window indicator shows. Pure and filesystem-free so it's testable without a
 /// watcher; shared by `ClaudeTranscriptWatcher` and `CodexSessionWatcher`, which each reduce their
 /// own file set to `SessionObservation`s before calling in.
 public enum SessionActivityArbiter {

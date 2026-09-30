@@ -28,10 +28,8 @@ struct AppShellView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var selectedWorktreeID: String?
     @State private var hasRestoredOpenWorktrees = false
-    @State private var isCanvasMode = false
     @State var isCodexUsagePopoverPresented = false
     @State var focusedRole: PaneRole = .shell
-    @State private var detailSize: CGSize = .zero
     @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
 
     var body: some View {
@@ -133,22 +131,8 @@ struct AppShellView: View {
             }
         } detail: {
             terminalDetail
-                .background(
-                    GeometryReader { geo in
-                        Color.clear
-                            .onAppear { detailSize = geo.size }
-                            .onChange(of: geo.size) { _, size in detailSize = size }
-                    }
-                )
         }
         .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Button(action: toggleCanvas) {
-                    Image(systemName: isCanvasMode ? "rectangle.split.3x1" : "square.grid.2x2")
-                }
-                .help(isCanvasMode ? "Exit canvas (⌘⇧C)" : "Canvas view (⌘⇧C)")
-                .keyboardShortcut("c", modifiers: [.command, .shift])
-            }
             ToolbarItem(placement: .automatic) {
                 Button {
                     NotificationCenter.default.post(name: .openDiffReview, object: nil)
@@ -269,19 +253,7 @@ extension AppShellView {
     @ViewBuilder
     fileprivate var terminalDetail: some View {
         let config = configStore.config
-        if isCanvasMode {
-            CanvasView(
-                worktrees: activeWorktrees,
-                canvasViews: pool.canvasViews,
-                agentBus: agentBus,
-                onSelect: { id in
-                    selectedWorktreeID = id
-                    isCanvasMode = false
-                    pool.closeCanvas()
-                }
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let worktreePath = agentTabs.worktreePath {
+        if let worktreePath = agentTabs.worktreePath {
             WorktreeContentView(
                 layout: config.layout,
                 shellHost: pool.shellHost,
@@ -302,34 +274,8 @@ extension AppShellView {
         }
     }
 
-    fileprivate var activeWorktrees: [WorktreeCard] {
-        store.repos.flatMap(\.worktrees)
-            .filter { pool.activeIDs.contains($0.id) }
-            .map { worktree in
-                WorktreeCard(
-                    id: worktree.id,
-                    name: URL(fileURLWithPath: worktree.path).lastPathComponent,
-                    branch: worktree.branch
-                )
-            }
-    }
-
-    fileprivate func toggleCanvas() {
-        if isCanvasMode {
-            pool.closeCanvas()
-            isCanvasMode = false
-        } else {
-            let layout = CanvasLayout(count: activeWorktrees.count, available: detailSize)
-            let worktrees = activeWorktrees.map {
-                CanvasWorktree(id: $0.id, path: $0.id, role: agentTabs.tabs(for: $0.id).active.paneRole)
-            }
-            pool.openCanvas(worktrees: worktrees, fontSize: layout.fontSize)
-            isCanvasMode = true
-        }
-    }
-
-    /// Reattaches every worktree that had a live pane open when the app last quit, so canvas mode
-    /// and worktree-cycling show them again immediately instead of only the last selection. Runs
+    /// Reattaches every worktree that had a live pane open when the app last quit, so
+    /// worktree-cycling shows them again immediately instead of only the last selection. Runs
     /// once per launch, the first time the scan produces a non-empty worktree list; the selected
     /// worktree (already handled above) is skipped here to avoid double-registering its roles.
     fileprivate func restoreOpenWorktreesIfNeeded(all: [GitWorktree]) {

@@ -5,8 +5,7 @@ import GhosttyTerminal
 
 /// Owns the terminal stack for one worktree — a shell pane (always eager) and
 /// optional agent panes (created lazily on first request). All sessions are
-/// backed by named tmux sessions so they persist across worktree release and
-/// can be shared with canvas card views.
+/// backed by named tmux sessions so they persist across worktree release.
 @MainActor
 final class WorktreePane {
     let workingDirectory: String
@@ -102,7 +101,7 @@ final class WorktreePane {
         return state
     }
 
-    static func makeView(state: TerminalViewState, sessionName: String) -> AppTerminalView {
+    private static func makeView(state: TerminalViewState, sessionName: String) -> AppTerminalView {
         let view = ArgusTerminalView(frame: .zero)
         view.sessionName = sessionName
         view.delegate = state
