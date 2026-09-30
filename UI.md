@@ -114,10 +114,11 @@ Components communicate through `NotificationCenter` rather than direct reference
 |---|---|---|
 | `.workspaceInteracted` | `AppDelegate` (any keypress or click) | `AppShellView` — `dismissAttentionIfNeeded()`, clearing `done`/`waitingForApproval` for the selected worktree |
 | `.openPopupTerminal` | `AppDelegate` (leader key, dynamic per `popupShortcuts`) | `AppShellView` — opens `PopupTerminalManager` window for the matched shortcut |
-| `.focusPaneLeft` / `.focusPaneRight` | `AppDelegate` (leader `h`/`l`) | `AppShellView.stepFocus` — walks `PaneLayoutResolver.orderedRoles(layout:tabs:mode:)`, skipping panes hidden by the current display mode |
+| `.focusPaneLeft` / `.focusPaneRight` | `AppDelegate` (leader `[`/`]`) | `AppShellView.stepFocus` — walks `PaneLayoutResolver.orderedRoles(layout:tabs:mode:)`, skipping panes hidden by the current display mode |
+| `.tmuxPaneLeft` / `.tmuxPaneDown` / `.tmuxPaneUp` / `.tmuxPaneRight` | `AppDelegate` (leader `h`/`j`/`k`/`l`) | `View.onReceiveTmuxPaneBindings` (`AppShellView+TmuxPaneBindings.swift`) — sends `tmux select-pane -L/-D/-U/-R` to the focused role's tmux session |
 | `.selectNextWorktree` / `.selectPreviousWorktree` | `AppDelegate` (leader `n`/`p`) | `AppShellView` — advances/retreats `selectedWorktreeID` |
 | `.refreshWorkspace` | `AppDelegate` (leader `r`) | `AppShellView` — calls `store.refresh()` |
-| `.newTerminalTab` / `.nextTerminalTab` / `.previousTerminalTab` / `.closeTerminalTab` | `AppDelegate` (leader `t`/`]`/`[`/`x`) | `View.onReceiveTabBindings` (`AppShellView+TabBindings.swift`) — routed to `TerminalTabsStore` or `AgentTabsStore` based on `focusedRole` |
+| `.newTerminalTab` / `.nextTerminalTab` / `.previousTerminalTab` / `.closeTerminalTab` | `AppDelegate` (leader `t`/-/-/`x` — next/previous ship with no default key) | `View.onReceiveTabBindings` (`AppShellView+TabBindings.swift`) — routed to `TerminalTabsStore` or `AgentTabsStore` based on `focusedRole` |
 | `.toggleAgentSplit` | `AppDelegate` (leader `s`) | `AppShellView+TabBindings.swift` — `agentTabs.toggleMode()` |
 | `.reloadAgentPane` | `AppDelegate` (leader `a`) | `AppShellView` — kills every open agent tab's tmux session via `pool.reloadAgentPanes`, resets their state |
 
