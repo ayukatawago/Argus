@@ -63,6 +63,7 @@ struct KeyboardSettingsView: View {
                 bindingRow("Reload agent pane", key: $config.keyBindings.reloadAgentPane)
                 bindingRow("Open disk status", key: $config.keyBindings.openDiskStatus)
                 bindingRow("Open diff review", key: $config.keyBindings.openDiffReview)
+                bindingRow("Open Codex usage", key: $config.keyBindings.openCodexUsage)
                 bindingRow("New tab", key: $config.keyBindings.newTerminalTab)
                 bindingRow("Next tab", key: $config.keyBindings.nextTerminalTab)
                 bindingRow("Previous tab", key: $config.keyBindings.previousTerminalTab)

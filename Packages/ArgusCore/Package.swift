@@ -57,7 +57,9 @@ let package = Package(
         ),
         .testTarget(
             name: "MonitorsTests",
-            dependencies: ["Monitors"],
+            // ArgusSupport needed directly (not just transitively via Monitors) so
+            // CodexUsageParserTests can build expected dates with ISO8601Timestamp.
+            dependencies: ["Monitors", "ArgusSupport"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]

@@ -59,6 +59,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
     public var environmentVariables: [String: String] = [:]
     public var popupShortcuts: [PopupShortcut] = [.lazygitDefault]
     public var agentDisplayPatterns = AgentDisplayPatterns()
+    public var codexUsage = CodexUsage()
     /// Per-project agent override, keyed by repo `mainPath` (the same key `Workspaces`' own
     /// `repoOrder`/`excludedRepoPaths` use). Absent key = use `agent`. Lives here rather than in
     /// `Workspaces`/`workspaces.json` because `AgentSelection` is an `ArgusConfigKit` type and that
@@ -89,6 +90,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
         agentDisplayPatterns =
             (try? container.decodeIfPresent(AgentDisplayPatterns.self, forKey: .agentDisplayPatterns))
             ?? AgentDisplayPatterns()
+        codexUsage = (try? container.decodeIfPresent(CodexUsage.self, forKey: .codexUsage)) ?? CodexUsage()
         // Decoded as raw strings first rather than `[String: AgentSelection]` directly, so one
         // unrecognized value (a future third agent, a hand-edited typo) drops just that entry
         // instead of failing the whole dictionary decode and resetting every override to none.
@@ -100,7 +102,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case leaderKey, leaderTimeoutSeconds, keyBindings, agent, layout, agentPaneMode
         case claudeCommand, codexCommand, diskMonitor, github, environmentVariables, popupShortcuts
-        case agentDisplayPatterns, projectAgents
+        case agentDisplayPatterns, projectAgents, codexUsage
     }
 
     public func launchCommand(for selection: AgentSelection) -> String {
@@ -145,6 +147,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
         public var reloadAgentPane: String = "a"
         public var openDiskStatus: String = "d"
         public var openDiffReview: String = "w"
+        public var openCodexUsage: String = "u"
         // These four act on whichever pane has focus: tmux windows in the shell pane, agent tabs
         // in the agent pane. No default key (still user-settable) — freed up for focusPaneLeft/Right.
         public var newTerminalTab: String = "t"
@@ -186,6 +189,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
             reloadAgentPane = read("reloadAgentPane", default: "a")
             openDiskStatus = read("openDiskStatus", default: "d")
             openDiffReview = read("openDiffReview", default: "w")
+            openCodexUsage = read("openCodexUsage", default: "u")
             newTerminalTab = read("newTerminalTab", default: "t")
             nextTerminalTab = read("nextTerminalTab", default: "")
             previousTerminalTab = read("previousTerminalTab", default: "")

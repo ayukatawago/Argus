@@ -1,9 +1,46 @@
 import ArgusConfigKit
+import Monitors
 import SwiftUI
 
 /// The window-layout and agent-pane-mode toolbar controls, factored out of `AppShellView.swift` to
 /// keep its type body under SwiftLint's line-count limit.
 extension AppShellView {
+    /// Today's Codex token/cost chip. Always shown (even at "0") so the toolbar doesn't reflow
+    /// across a day with no Codex activity; the popover it opens is `CodexUsageView`.
+    var codexUsageChip: some View {
+        let usage = codexUsageStore.today.values.reduce(.zero, +)
+        let costs = codexUsageStore.today.compactMap { model, modelUsage -> Double? in
+            guard let price = configStore.config.codexUsage.modelPrices[model] else { return nil }
+            let rate = CodexModelRate(
+                inputPerMillion: price.inputPerMillion,
+                cachedInputPerMillion: price.cachedInputPerMillion,
+                outputPerMillion: price.outputPerMillion)
+            // Cost is omitted from the chip (not shown as a misleading "$0.00") when nothing
+            // priced this model at all — matches CodexUsageView's per-row "—" treatment.
+            return rate.isUnset ? nil : CodexUsageCost.cost(modelUsage, rate: rate)
+        }
+        let cost = costs.isEmpty ? nil : costs.reduce(0, +)
+        let bindings = configStore.config.keyBindings
+        return Button {
+            isCodexUsagePopoverPresented.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "bolt.fill")
+                Text(TokenCountFormatter.short(usage.totalTokens))
+                if let cost {
+                    Text("· \(CostFormatter.usd(cost))")
+                }
+            }
+            .font(.caption)
+            .monospacedDigit()
+        }
+        .help("Codex usage today (\(configStore.config.leaderKey) then \(bindings.openCodexUsage))")
+        .popover(isPresented: $isCodexUsagePopoverPresented, arrowEdge: .bottom) {
+            CodexUsageView(store: codexUsageStore)
+                .environmentObject(configStore)
+        }
+    }
+
     /// A toolbar toggle, not a row in `layoutPicker`: the display mode is orthogonal to layout —
     /// available in both — so folding it into a single-selection layout menu would read as a
     /// third layout, exactly the confusion dropping `terminalClaudeCodex` was meant to remove.
