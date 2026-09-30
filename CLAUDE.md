@@ -263,6 +263,38 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 - **GitHub PR monitor** (`App/Views/PRMonitorStore.swift`, `PRMonitorView.swift`): fetches via the GitHub REST API directly (`URLSession` + bearer token), not the `gh` CLI. Configured on the Settings → GitHub page (`apiBaseURL`, `token`, `refreshIntervalSeconds`). Groups PRs into My Open / My Drafts / Assigned / a collapsed "Do Not Merge" section; highlights PRs whose approvals changed since the last poll; grays out approved/draft PRs. Each row has a hover "hide" button (`PRHiddenList.hide`, `Monitors` target); a hidden PR's section header shows the hidden count and a reveal-all button (`PRHiddenList.reveal`) rather than dropping the header, so an all-hidden section stays recoverable. Hidden ids persist to `~/Library/Application Support/argus/hidden-prs.json` (`PRHiddenFile`) and are pruned against each successful fetch so merged/closed/unassigned PRs don't linger in the file.
 - **Disk space monitor** (`App/Views/DiskMonitorStore.swift`, `DiskCleanupScanner.swift`, `DiskStatusView.swift`, `DiskStatusWindow.swift`): opened via leader `d` or a low-disk banner. Shows a free-space gauge and cleanup candidates (Xcode DerivedData, package manager caches, workspace git repos, `~/Library` subdirectories, …) sized via `du -sk` at concurrency 4, sortable by name/size with a size filter. Config block `diskMonitor` (`checkIntervalSeconds`, `alertThresholdPercent`, `sizeCheckIntervalSeconds`).
 
+## Codex usage monitor
+
+The toolbar's Codex usage chip (`App/Views/AppShellView+Toolbar.swift`'s `codexUsageChip`, opened via
+click or leader `u`) shows today's total Codex tokens and estimated USD cost; its popover
+(`App/Views/CodexUsageView.swift`) breaks both down per model.
+
+Codex writes no aggregate usage anywhere — no CLI subcommand, no sqlite table, nothing in
+`config.toml`. The only signal is the `token_usage_record` line Codex appends to a session's
+rollout JSONL (`~/.codex/sessions/<year>/<month>/<day>/*.jsonl`) after every API response; the
+model name isn't on that line, only on the same turn's `turn_context` line, so
+`CodexUsageParser.scanDaily` (`Packages/ArgusCore/Sources/Monitors/`) does a single pass collecting
+both, then joins each usage record to its model by `turn_id` (falling back to `root_turn_id`, then
+`unknownModel`) once the whole file has been seen — correct regardless of line order, unlike relying
+on `turn_context` always preceding its records (true in every rollout observed locally, but not
+guaranteed). `CodexUsageStore` (App/) polls this on a `PollingTask` timer, caching each file's parsed
+per-day totals by `(mtime, size)` so only actively-growing files are re-parsed.
+
+Unlike `CodexSessionWatcher` (which excludes `thread_source: "subagent"` rollouts so a subagent
+spawn/finish doesn't flap the sidebar's *state* dot), the usage scan **includes** subagent rollouts —
+they cost real tokens, and usage is additive rather than a single state pick. The scan also looks
+back `codexUsage.scanDayWindow` days (default 7), not just today's directory: `codex resume` keeps
+appending to a session's *original* day's rollout file indefinitely, so a session resumed days past
+its creation would otherwise vanish from every subsequent day's total. "Today" itself is decided
+per-record from its own `timestamp` (UTC) against the local calendar, not from which day-directory a
+file lives in or its mtime — a single rollout can span several calendar days once resumed.
+
+Because Codex records no pricing data, USD cost is entirely user-supplied on the Settings → Usage
+page (`App/Views/UsageSettingsView.swift`): a price per model is USD per 1M tokens, split into
+input/cached-input/output rates (`CodexUsageCost.cost`) since `usage.input_tokens` already includes
+`cached_input_tokens` — billing both at the same rate would double-count. A model with no price set
+shows `—`, not a misleading `$0.00`, both in the chip and in the popover's per-row breakdown.
+
 ## Key files
 
 | File | Role |
@@ -289,6 +321,13 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 | `Packages/ArgusCore/Sources/Monitors/PRHiddenList.swift` | Pure hide/reveal/prune/split logic over a set of hidden PR ids |
 | `Packages/ArgusCore/Sources/Monitors/PRHiddenFile.swift` | hidden-prs.json read/write against an injectable URL |
 | `App/Views/DiskMonitorStore.swift` / `DiskCleanupScanner.swift` / `DiskStatusWindow.swift` | Disk space poll, cleanup candidate scan, popup host |
+| `App/Views/CodexUsageStore.swift` | Polls Codex rollout JSONL files, publishes today's per-model token usage for the toolbar chip |
+| `App/Views/CodexUsageView.swift` | Toolbar chip's popover — per-model token/cost breakdown table |
+| `App/Views/UsageSettingsView.swift` | Settings UI — Usage page (per-model USD prices, scan refresh interval/lookback window) |
+| `Packages/ArgusCore/Sources/Monitors/CodexUsageParser.swift` | Pure: joins `token_usage_record` lines to their model via `turn_context`, buckets by local day |
+| `Packages/ArgusCore/Sources/Monitors/CodexUsageCost.swift` | Pure: USD cost from token usage + per-model input/cached-input/output rates |
+| `Packages/ArgusCore/Sources/Monitors/CodexRolloutLocator.swift` | Pure: `~/.codex/sessions/<year>/<month>/<day>/` path math for a multi-day lookback window |
+| `Packages/ArgusCore/Sources/ArgusSupport/JSONLFileReader.swift` | Bounded-memory whole-file JSONL line reader (vs. `JSONLTailer`'s append-streaming) |
 | `App/Views/SettingsWindow.swift` | Settings UI — Agent page (agent picker + commands) and GitHub/Environment pages |
 | `App/Views/KeyboardSettingsView.swift` | Settings UI — Keyboard page (key bindings + popup terminal shortcuts editor) |
 | `App/ShellStateBus.swift` | Shell-busy tracking (fish hooks / tmux fallback) → sidebar border |
