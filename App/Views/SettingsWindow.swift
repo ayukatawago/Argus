@@ -8,6 +8,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case keyboard = "Keyboard"
     case github = "GitHub"
     case environment = "Environment"
+    case usage = "Usage"
 
     var id: String { rawValue }
 
@@ -17,12 +18,14 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .keyboard: "keyboard"
         case .github: "network"
         case .environment: "terminal"
+        case .usage: "chart.bar"
         }
     }
 }
 
 struct SettingsRootView: View {
     @EnvironmentObject private var configStore: ArgusConfigStore
+    @EnvironmentObject private var codexUsageStore: CodexUsageStore
     @State private var selected: SettingsCategory = .agent
 
     var body: some View {
@@ -64,6 +67,10 @@ struct SettingsRootView: View {
 
                 case .environment:
                     EnvironmentSettingsView(config: $configStore.config)
+                        .onChange(of: configStore.config) { _, _ in configStore.save() }
+
+                case .usage:
+                    UsageSettingsView(config: $configStore.config, usageStore: codexUsageStore)
                         .onChange(of: configStore.config) { _, _ in configStore.save() }
                 }
             }

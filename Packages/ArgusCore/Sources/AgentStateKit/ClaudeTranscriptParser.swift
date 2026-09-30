@@ -1,3 +1,4 @@
+import ArgusSupport
 import Foundation
 
 /// Pure parsing of Claude Code's session transcript JSONL files: extracting the session's working
@@ -228,11 +229,8 @@ public enum ClaudeTranscriptParser {
         return value.isEmpty ? nil : value
     }
 
-    private static let isoFormatterWithFraction = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
-    private static let isoFormatterWithoutFraction = Date.ISO8601FormatStyle()
-
     private static func parseTimestamp(_ value: String) -> Date? {
-        (try? isoFormatterWithFraction.parse(value)) ?? (try? isoFormatterWithoutFraction.parse(value))
+        ISO8601Timestamp.parse(value)
     }
 
     private static func firstText(in message: [String: Any]?) -> String? {

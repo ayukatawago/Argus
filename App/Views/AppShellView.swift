@@ -22,10 +22,14 @@ struct AppShellView: View {
     @StateObject private var diskStatusWindow = DiskStatusWindow()
     @StateObject private var diffReview = DiffReviewWindow()
     @EnvironmentObject var configStore: ArgusConfigStore
+    // Not `private`: read by the `AppShellView+Toolbar` extension in another file, same reasoning
+    // as `agentTabs` above.
+    @EnvironmentObject var codexUsageStore: CodexUsageStore
     @Environment(\.openWindow) private var openWindow
     @State private var selectedWorktreeID: String?
     @State private var hasRestoredOpenWorktrees = false
     @State private var isCanvasMode = false
+    @State var isCodexUsagePopoverPresented = false
     @State var focusedRole: PaneRole = .shell
     @State private var detailSize: CGSize = .zero
     @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
@@ -75,6 +79,9 @@ struct AppShellView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .openDiskStatus)) { _ in
                 diskStatusWindow.open(store: diskMonitor, scanner: diskScanner)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openCodexUsage)) { _ in
+                isCodexUsagePopoverPresented.toggle()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openDiffReview)) { _ in
                 guard let id = selectedWorktreeID,
@@ -152,6 +159,9 @@ struct AppShellView: View {
                 .disabled(selectedWorktreeID == nil)
             }
             ToolbarItem(placement: .automatic) {
+                codexUsageChip
+            }
+            ToolbarItem(placement: .automatic) {
                 agentPaneModeToggle
             }
             ToolbarItem(placement: .automatic) {
@@ -168,6 +178,7 @@ struct AppShellView: View {
             diskMonitor.start()
             diskScanner.start()
             prMonitor.start()
+            codexUsageStore.start()
             // Lets AppDelegate know it's safe to deliver a CLI-originated `argus://diff` request
             // instead of buffering it — see .openDiffReviewForPath above. A direct call (not a
             // NotificationCenter round trip) since ordering against AppDelegate's own setup isn't
@@ -180,6 +191,7 @@ struct AppShellView: View {
             diskMonitor.stop()
             diskScanner.stop()
             prMonitor.stop()
+            codexUsageStore.stop()
         }
         .withAgentDisplayWatcher(agentDisplayWatcher, agentBus: agentBus, repos: store.repos)
         .onChange(of: pool.activeIDs) { _, ids in

@@ -254,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 (bindings.reloadAgentPane, .reloadAgentPane),
                 (bindings.openDiskStatus, .openDiskStatus),
                 (bindings.openDiffReview, .openDiffReview),
+                (bindings.openCodexUsage, .openCodexUsage),
                 (bindings.newTerminalTab, .newTerminalTab),
                 (bindings.nextTerminalTab, .nextTerminalTab),
                 (bindings.previousTerminalTab, .previousTerminalTab),
@@ -273,6 +274,7 @@ struct ArgusApp: App {
         Window("Argus", id: "main") {
             ContentView()
                 .environmentObject(ArgusConfigStore.shared)
+                .environmentObject(CodexUsageStore.shared)
         }
         .defaultSize(width: 1200, height: 800)
         .windowStyle(.titleBar)
@@ -294,6 +296,7 @@ struct ArgusApp: App {
         Window("Settings", id: "settings") {
             SettingsRootView()
                 .environmentObject(ArgusConfigStore.shared)
+                .environmentObject(CodexUsageStore.shared)
         }
         .defaultSize(width: 540, height: 460)
         .windowResizability(.contentMinSize)
