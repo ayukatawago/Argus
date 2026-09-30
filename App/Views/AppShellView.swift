@@ -85,6 +85,7 @@ struct AppShellView: View {
             .onReceiveTabBindings(
                 focusedRole: $focusedRole, terminalTabs: terminalTabs, agentTabs: agentTabs, pool: pool
             )
+            .onReceiveTmuxPaneBindings(focusedRole: $focusedRole, worktreePath: agentTabs.worktreePath)
             .onReceiveFocusSync(focusedRole: $focusedRole, pool: pool)
             .onReceive(NotificationCenter.default.publisher(for: .openDiffReviewForPath)) { notification in
                 // CLI-originated (`argus diff`) request — the path is used as-is, independent of
