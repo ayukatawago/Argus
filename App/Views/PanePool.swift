@@ -1,21 +1,7 @@
 import AgentStateKit
 import ArgusConfigKit
 import ArgusSupport
-import GhosttyTerminal
 import SwiftUI
-
-struct WorktreeCard {
-    let id: String
-    let name: String
-    let branch: String?
-}
-
-/// One worktree's canvas attachment target — the session `PanePool.openCanvas` attaches to.
-struct CanvasWorktree {
-    let id: String
-    let path: String
-    let role: PaneRole
-}
 
 @MainActor
 final class PanePool: ObservableObject {
@@ -24,7 +10,6 @@ final class PanePool: ObservableObject {
     let codexHost = TerminalHost(frame: .zero)
     private var panes: [String: WorktreePane] = [:]
     @Published private(set) var activeIDs: Set<String> = []
-    @Published private(set) var canvasViews: [String: AppTerminalView] = [:]
 
     func host(for role: PaneRole) -> TerminalHost {
         switch role {
@@ -69,7 +54,6 @@ final class PanePool: ObservableObject {
         claudeHost.unregister(id: id)
         codexHost.unregister(id: id)
         activeIDs.remove(id)
-        canvasViews.removeValue(forKey: id)
     }
 
     /// The agent-tab analogue of tmux `kill-window`: kills the role's tmux session, then unmounts
@@ -89,33 +73,6 @@ final class PanePool: ObservableObject {
         _ = await ProcessRunner.run(WorktreePane.tmuxExecutable, ["kill-session", "-t", session])
         host(for: role).unregister(id: id)
         panes[id]?.discardView(for: role)
-        canvasViews.removeValue(forKey: id)
-    }
-
-    func openCanvas(worktrees: [CanvasWorktree], fontSize: Int) {
-        for worktree in worktrees where canvasViews[worktree.id] == nil {
-            let id = worktree.id
-            let path = worktree.path
-            let session = WorktreePane.sessionName(for: worktree.role, path: path)
-            let tmux = WorktreePane.tmuxExecutable
-            let attachCmd =
-                "\(tmux) attach-session -t \(session)"
-                + " \\; set -s extended-keys on"
-                + " \\; set-option -t \(session) status off"
-            let state = TerminalViewState(
-                terminalConfiguration: TerminalConfiguration {
-                    $0.withFontSize(Float(fontSize))
-                    $0.withCursorStyleBlink(false)
-                    $0.withCustom("command", attachCmd)
-                }
-            )
-            state.configuration = TerminalSurfaceOptions(backend: .exec, workingDirectory: path)
-            canvasViews[id] = WorktreePane.makeView(state: state, sessionName: session)
-        }
-    }
-
-    func closeCanvas() {
-        canvasViews.removeAll()
     }
 
     /// Kills every currently-open agent role's tmux session, then rebuilds the worktree's pane
