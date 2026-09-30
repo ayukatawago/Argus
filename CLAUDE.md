@@ -290,10 +290,14 @@ per-record from its own `timestamp` (UTC) against the local calendar, not from w
 file lives in or its mtime — a single rollout can span several calendar days once resumed.
 
 Because Codex records no pricing data, USD cost is entirely user-supplied on the Settings → Usage
-page (`App/Views/UsageSettingsView.swift`): a price per model is USD per 1M tokens, split into
-input/cached-input/output rates (`CodexUsageCost.cost`) since `usage.input_tokens` already includes
-`cached_input_tokens` — billing both at the same rate would double-count. A model with no price set
-shows `—`, not a misleading `$0.00`, both in the chip and in the popover's per-row breakdown.
+page (`App/Views/UsageSettingsView.swift`): a price per model is USD per 1M tokens, split into four
+rates — fresh input, cached-read input, cache-write input, and output (`CodexUsageCost.cost`).
+`usage.input_tokens` already includes both `cached_input_tokens` (a cache hit) and
+`cache_write_input_tokens` (a subset of the uncached remainder — writing a prefix to cache for later
+reuse is itself billed, typically at a premium over the plain input rate); `CodexTokenUsage
+.freshInputTokens` is what's left of `input_tokens` after removing both, so each input token is
+billed at exactly one of the three input rates, never two. A model with no price set shows `—`, not
+a misleading `$0.00`, both in the chip and in the popover's per-row breakdown.
 
 ## Key files
 
