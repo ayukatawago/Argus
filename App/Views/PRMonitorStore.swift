@@ -267,7 +267,8 @@ final class PRMonitorStore: ObservableObject {
                 let repoPath = "\(components[reposIdx + 1])/\(components[reposIdx + 2])"
                 group.addTask {
                     guard let detailURL = URL(string: "\(apiBase)/repos/\(repoPath)/pulls/\(prNumber)"),
-                        let reviewsURL = URL(string: "\(apiBase)/repos/\(repoPath)/pulls/\(prNumber)/reviews")
+                        let reviewsURL = URL(
+                            string: "\(apiBase)/repos/\(repoPath)/pulls/\(prNumber)/reviews?per_page=100")
                     else {
                         return (prID, PREnrichment())
                     }
