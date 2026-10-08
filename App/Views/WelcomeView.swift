@@ -117,8 +117,8 @@ struct WelcomeView: View {
     /// the user's shell profile is honored rather than this app's own minimal environment.
     private static func canResolve(_ executable: String) async -> Bool {
         if executable.hasPrefix("/") { return FileManager.default.isExecutableFile(atPath: executable) }
-        let quoted = "'" + executable.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        let result = await ProcessRunner.run(LoginShell.current, ["-l", "-c", "command -v \(quoted)"], timeout: 5)
+        let result = await ProcessRunner.run(
+            LoginShell.current, ["-l", "-c", "command -v \(ShellQuote.quote(executable))"], timeout: 5)
         return result.succeeded
     }
 }

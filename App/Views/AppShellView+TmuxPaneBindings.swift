@@ -31,6 +31,6 @@ private func selectTmuxPane(direction: String, focusedRole: PaneRole, worktreePa
     guard let worktreePath else { return }
     let session = WorktreePane.sessionName(for: focusedRole, path: worktreePath)
     Task {
-        _ = await ProcessRunner.run(WorktreePane.tmuxExecutable, ["select-pane", "-t", session, direction])
+        await Tmux.run(TmuxCommand.selectPane(session: session, direction: direction))
     }
 }

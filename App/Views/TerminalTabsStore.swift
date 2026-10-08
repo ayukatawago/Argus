@@ -57,7 +57,7 @@ final class TerminalTabsStore: ObservableObject {
             windows[targetIndex] = withActive(windows[targetIndex], true)
         }
         return Task {
-            _ = await ProcessRunner.run(WorktreePane.tmuxExecutable, ["select-window", "-t", "\(session):\(index)"])
+            await Tmux.run(TmuxCommand.selectWindow(session: session, index: index))
             await self.poll()
         }
     }
@@ -66,12 +66,9 @@ final class TerminalTabsStore: ObservableObject {
     func newTab() -> Task<Void, Never> {
         guard let session, let worktreePath else { return Task {} }
         actionGeneration += 1
-        let command = "\(WorktreePane.envExportPreamble())exec \(LoginShell.current) -l"
+        let command = "\(WorktreePane.envExportPreamble())exec \(ShellQuote.quote(LoginShell.current)) -l"
         return Task {
-            _ = await ProcessRunner.run(
-                WorktreePane.tmuxExecutable,
-                ["new-window", "-a", "-t", "\(session):{end}", "-c", worktreePath, command]
-            )
+            await Tmux.run(TmuxCommand.newWindow(session: session, directory: worktreePath, shellCommand: command))
             await self.poll()
         }
     }
@@ -84,7 +81,7 @@ final class TerminalTabsStore: ObservableObject {
             windows.remove(at: removeAt)
         }
         return Task {
-            _ = await ProcessRunner.run(WorktreePane.tmuxExecutable, ["kill-window", "-t", "\(session):\(index)"])
+            await Tmux.run(TmuxCommand.killWindow(session: session, index: index))
             await self.poll()
         }
     }
@@ -103,8 +100,7 @@ final class TerminalTabsStore: ObservableObject {
     private func poll() async {
         guard let session else { return }
         let generation = actionGeneration
-        let result = await ProcessRunner.run(
-            WorktreePane.tmuxExecutable, ["list-windows", "-t", session, "-F", TmuxWindowParser.listFormat])
+        let result = await Tmux.run(TmuxCommand.listWindows(session: session, format: TmuxWindowParser.listFormat))
         guard generation == actionGeneration else {
             // An action (or a worktree switch) started after this poll did; its own follow-up
             // poll (or the cleared state) is authoritative instead, not this now-stale result.

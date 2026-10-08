@@ -69,9 +69,7 @@ final class ShellStateBus: ObservableObject {
             if !busyPaths.isEmpty { busyPaths = [] }
             return
         }
-        let tmux = WorktreePane.tmuxExecutable
-        let result = await ProcessRunner.run(
-            tmux, ["list-panes", "-a", "-F", "#{session_name}|#{pane_current_command}"])
+        let result = await Tmux.run(TmuxCommand.listAllPanes(format: "#{session_name}|#{pane_current_command}"))
 
         let pathBySession = Dictionary(
             paths.map { (WorktreePane.sessionName(for: .shell, path: $0), $0) },
