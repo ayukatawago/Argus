@@ -96,6 +96,30 @@ struct RepoHeader: View {
     }
 }
 
+// MARK: - Empty state
+
+/// Shown in place of the repo list while no folder has been added yet.
+struct SidebarEmptyState: View {
+    let onAddFolder: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text("No folders yet")
+                .font(.callout)
+            Text("Add a git repository, or a folder that contains several.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Add Folder…", action: onAddFolder)
+            Button("Open Settings") { NotificationCenter.default.post(name: .openSettings, object: nil) }
+                .buttonStyle(.link)
+                .font(.caption)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+    }
+}
+
 // MARK: - Agent state dot
 
 struct AgentDot: View {

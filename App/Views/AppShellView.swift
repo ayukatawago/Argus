@@ -294,6 +294,8 @@ extension AppShellView {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(terminalBackground)
+        } else {
+            WelcomeView(store: store)
         }
     }
 

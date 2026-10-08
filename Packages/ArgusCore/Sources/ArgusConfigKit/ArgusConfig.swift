@@ -65,6 +65,8 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
     /// `Workspaces`/`workspaces.json` because `AgentSelection` is an `ArgusConfigKit` type and that
     /// target may not import `Workspaces` (see CLAUDE.md's module layout rule).
     public var projectAgents: [String: AgentSelection] = [:]
+    /// Set once the user dismisses the first-run checklist shown in the empty detail area.
+    public var onboardingDismissed = false
 
     // Needed because we declare a custom init(from:).
     public init() {}
@@ -97,12 +99,13 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
         let rawProjectAgents =
             (try? container.decodeIfPresent([String: String].self, forKey: .projectAgents)) ?? [:]
         projectAgents = rawProjectAgents.compactMapValues(AgentSelection.init(rawValue:))
+        onboardingDismissed = (try? container.decodeIfPresent(Bool.self, forKey: .onboardingDismissed)) ?? false
     }
 
     private enum CodingKeys: String, CodingKey {
         case leaderKey, leaderTimeoutSeconds, keyBindings, agent, layout, agentPaneMode
         case claudeCommand, codexCommand, diskMonitor, github, environmentVariables, popupShortcuts
-        case agentDisplayPatterns, projectAgents, codexUsage
+        case agentDisplayPatterns, projectAgents, codexUsage, onboardingDismissed
     }
 
     public func launchCommand(for selection: AgentSelection) -> String {
