@@ -39,7 +39,7 @@ ArgusApp (App)
 
 The toolbar (`AppShellView+Toolbar.swift`) is diff-review, `codexUsageChip`, `agentPaneModeToggle`, then `layoutPicker`, in that order. `codexUsageChip` reads `codexUsageStore.today` plus `configStore.config.codexUsage.modelPrices` to render a token count and (once at least one visible model is priced) an estimated cost, and opens `CodexUsageView` as a `.popover` on click or leader `u`.
 
-The agent-state visual (background tint on the detail area) is computed in `AppShellView` from `agentBus.worktreeState(for: selectedWorktreeID)` — the worktree-level aggregate across both agents — and applied as `.background` on `terminalDetail`. Per-agent borders are drawn per pane inside `AgentPaneView` instead (see below).
+The agent-state visual (background tint on the detail area) is computed in `AppShellView` from `agentBus.worktreeState(for: selectedWorktreeID)` — the worktree-level aggregate across both agents — and applied as `.background` on `terminalDetail`. All state visuals (dot color/symbol, row and pane borders, tint, VoiceOver text) come from `AgentState`'s extension in `AgentStateStyle.swift` — change a state's look there, not at the call sites. With no worktree selected, `terminalDetail` shows `WelcomeView` (empty-state hint plus the first-run checklist, dismissal persisted as `ArgusConfig.onboardingDismissed`). Per-agent borders are drawn per pane inside `AgentPaneView` instead (see below).
 
 ---
 
@@ -53,7 +53,7 @@ SidebarView
             ├── RepoHeader  — repo name, +worktree, remove, unhide buttons
             │   └── (draggable for repo reordering)
             └── WorktreeRow  [repeated per Worktree]
-                ├── AgentDot  — colored dot (idle/running/waitingForApproval/done)
+                ├── AgentDot  — state dot (idle/running/waitingForApproval/done; done/approval use distinct symbols, not just color, and carry an accessibility label). Rows also have a context menu (reveal, copy path, diff review, release, hide, delete) and the list responds to up/down arrows
                 ├── worktree name
                 ├── release button  (if terminal is active)
                 └── delete button  (if not the main worktree)
@@ -70,7 +70,7 @@ SidebarView
 ```
 WorktreeContentView (SwiftUI View)
 ├── .terminalAgent:       HSplitView { shellPane | agentPane }
-└── .agentsOverTerminal:  RatioVSplitView { agentPane / shellPane }  (70/30, draggable)
+└── .agentsOverTerminal:  RatioVSplitView { agentPane / shellPane }  (70/30 by default, draggable; ratio saved to `ArgusConfig.agentsOverTerminalRatio`)
 
 shellPane
 ├── TerminalTabBarView   — tmux-window tabs, mirrors the shell session
