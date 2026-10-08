@@ -49,3 +49,33 @@ struct WorktreeNavigatorTests {
         #expect(WorktreeNavigator.next(from: "only", in: ["only"], forward: false) == "only")
     }
 }
+
+struct WorktreeNavigatorAttentionTests {
+    private let ids = ["a", "b", "c", "d"]
+
+    @Test func picksHighestPriorityOverNearer() {
+        let priorities = ["b": 1, "d": 2]
+        #expect(WorktreeNavigator.nextAttention(from: "a", in: ids) { priorities[$0] } == "d")
+    }
+
+    @Test func tiesResolveToNextAfterCurrentWrappingAround() {
+        let priorities = ["a": 1, "c": 1]
+        #expect(WorktreeNavigator.nextAttention(from: "c", in: ids) { priorities[$0] } == "a")
+        #expect(WorktreeNavigator.nextAttention(from: "a", in: ids) { priorities[$0] } == "c")
+    }
+
+    @Test func neverReturnsCurrent() {
+        let priorities = ["a": 5]
+        #expect(WorktreeNavigator.nextAttention(from: "a", in: ids) { priorities[$0] } == nil)
+    }
+
+    @Test func nilWhenNothingNeedsAttentionOrListEmpty() {
+        #expect(WorktreeNavigator.nextAttention(from: "a", in: ids) { _ in nil } == nil)
+        #expect(WorktreeNavigator.nextAttention(from: nil, in: []) { _ in 1 } == nil)
+    }
+
+    @Test func nilCurrentStartsFromTheTop() {
+        let priorities = ["b": 1, "c": 1]
+        #expect(WorktreeNavigator.nextAttention(from: nil, in: ids) { priorities[$0] } == "b")
+    }
+}
