@@ -54,6 +54,7 @@ struct AgentTabBarView: View {
                 }
                 .buttonStyle(.plain)
                 .focusable(false)
+                .accessibilityLabel("Close \(agent.displayName) tab")
             }
         }
         .padding(.horizontal, 12)
@@ -63,6 +64,9 @@ struct AgentTabBarView: View {
         .onHover { isHovering in hoveredAgent = isHovering ? agent : nil }
         .onTapGesture { select(agent) }
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { select(agent) }
     }
 
     @ViewBuilder
@@ -75,6 +79,7 @@ struct AgentTabBarView: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
+            .accessibilityLabel("Open \(store.tabs.closed?.displayName ?? "agent") tab")
         }
     }
 

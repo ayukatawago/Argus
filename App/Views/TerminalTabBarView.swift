@@ -47,6 +47,7 @@ struct TerminalTabBarView: View {
                 }
                 .buttonStyle(.plain)
                 .focusable(false)
+                .accessibilityLabel("Close \(window.label) tab")
             }
         }
         .padding(.horizontal, 12)
@@ -56,6 +57,9 @@ struct TerminalTabBarView: View {
         .onHover { isHovering in hoveredIndex = isHovering ? window.index : nil }
         .onTapGesture { select(window) }
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(window.isActive ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { select(window) }
     }
 
     private var newTabButton: some View {
@@ -66,6 +70,7 @@ struct TerminalTabBarView: View {
         }
         .buttonStyle(.plain)
         .focusable(false)
+        .accessibilityLabel("New terminal tab")
     }
 
     private func select(_ window: TmuxWindow) {

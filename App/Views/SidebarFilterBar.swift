@@ -63,6 +63,7 @@ struct SidebarFilterBar: View {
                     }
                     .buttonStyle(.borderless)
                     .help("Clear filter")
+                    .accessibilityLabel("Clear filter")
                 }
                 Button {
                     attentionOnly.toggle()
@@ -72,6 +73,8 @@ struct SidebarFilterBar: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Only show worktrees that need attention")
+                .accessibilityLabel("Only show worktrees that need attention")
+                .accessibilityValue(attentionOnly ? "On" : "Off")
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
