@@ -1,4 +1,5 @@
 import AgentStateKit
+import AppKit
 import ArgusConfigKit
 import ArgusSupport
 import SwiftUI
@@ -112,6 +113,10 @@ struct SidebarView: View {
                 }
                 .padding(.bottom, 4)
             }
+            .focusable()
+            .focusEffectDisabled()
+            .onKeyPress(.upArrow) { moveSelection(forward: false, in: shownRepos) }
+            .onKeyPress(.downArrow) { moveSelection(forward: true, in: shownRepos) }
 
             if !ArgusConfigStore.shared.config.github.token.isEmpty {
                 Divider()
@@ -220,6 +225,7 @@ struct SidebarView: View {
             .padding(.vertical, 1)
             .contentShape(Rectangle())
             .onTapGesture { selectedWorktreeID = worktree.id }
+            .contextMenu { worktreeContextMenu(worktree, in: repo, isActive: isActive) }
         }
     }
 
@@ -271,5 +277,44 @@ struct SidebarView: View {
             showAddWorktreeError = true
         }
         await store.refresh()
+    }
+}
+
+extension SidebarView {
+    @ViewBuilder
+    private func worktreeContextMenu(_ worktree: GitWorktree, in repo: GitRepo, isActive: Bool) -> some View {
+        Button("Reveal in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: worktree.path)])
+        }
+        Button("Copy Path") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(worktree.path, forType: .string)
+        }
+        Button("Open Diff Review") {
+            selectedWorktreeID = worktree.id
+            DispatchQueue.main.async { NotificationCenter.default.post(name: .openDiffReview, object: nil) }
+        }
+        Divider()
+        if isActive {
+            Button("Release Terminal Sessions") { onRelease(worktree.id) }
+        }
+        Button("Hide Worktree") {
+            if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
+            store.hideWorktree(id: worktree.id)
+        }
+        if !worktree.isMain {
+            Button("Delete Worktree…", role: .destructive) { deleteWorktree(worktree, in: repo) }
+        }
+    }
+
+    /// Up/down in the sidebar moves the selection through whatever worktrees are currently shown
+    /// (after filtering, hidden ones excluded), wrapping at either end.
+    private func moveSelection(forward: Bool, in repos: [GitRepo]) -> KeyPress.Result {
+        let ids = repos.flatMap(\.worktrees).map(\.id).filter { !store.hiddenWorktreeIDs.contains($0) }
+        guard let next = WorktreeNavigator.next(from: selectedWorktreeID, in: ids, forward: forward) else {
+            return .ignored
+        }
+        selectedWorktreeID = next
+        return .handled
     }
 }

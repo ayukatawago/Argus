@@ -4,6 +4,7 @@ import ArgusConfigKit
 import SwiftUI
 
 struct WorktreeContentView: View {
+    @EnvironmentObject private var configStore: ArgusConfigStore
     var layout: WindowLayout
     @ObservedObject var shellHost: TerminalHost
     @ObservedObject var claudeHost: TerminalHost
@@ -39,15 +40,19 @@ struct WorktreeContentView: View {
         }
     }
 
-    /// Top: the agent view. Bottom: full-width terminal. Initial split is 70% agents / 30%
-    /// terminal; the divider remains user-draggable.
+    /// Top: the agent view. Bottom: full-width terminal. The split starts at the saved ratio
+    /// (70/30 by default); the divider remains user-draggable and the new position is saved.
     @ViewBuilder
     private var agentsOverTerminalLayout: some View {
-        RatioVSplitView(topFraction: 0.7) {
-            agentPane
-        } bottom: {
-            shellPane
-        }
+        RatioVSplitView(
+            topFraction: configStore.config.clampedAgentsOverTerminalRatio,
+            onRatioChange: { ratio in
+                configStore.config.agentsOverTerminalRatio = ratio
+                configStore.save()
+            },
+            top: { agentPane },
+            bottom: { shellPane }
+        )
     }
 
     private var agentPane: some View {
@@ -84,19 +89,25 @@ struct WorktreeContentView: View {
 /// so the initial position is set here by driving `NSSplitView` directly.
 private struct RatioVSplitView<Top: View, Bottom: View>: NSViewRepresentable {
     let topFraction: CGFloat
+    /// Called (debounced) with the new top-pane fraction after the user moves the divider.
+    let onRatioChange: (Double) -> Void
     let top: Top
     let bottom: Bottom
 
     private static var minPaneHeight: CGFloat { 120 }
 
-    init(topFraction: CGFloat, @ViewBuilder top: () -> Top, @ViewBuilder bottom: () -> Bottom) {
+    init(
+        topFraction: CGFloat, onRatioChange: @escaping (Double) -> Void = { _ in },
+        @ViewBuilder top: () -> Top, @ViewBuilder bottom: () -> Bottom
+    ) {
         self.topFraction = topFraction
+        self.onRatioChange = onRatioChange
         self.top = top()
         self.bottom = bottom()
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(topFraction: topFraction)
+        Coordinator(topFraction: topFraction, onRatioChange: onRatioChange)
     }
 
     func makeNSView(context: Context) -> NSSplitView {
@@ -121,12 +132,33 @@ private struct RatioVSplitView<Top: View, Bottom: View>: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSSplitViewDelegate {
         let topFraction: CGFloat
+        let onRatioChange: (Double) -> Void
         var topHost: NSHostingView<Top>?
         var bottomHost: NSHostingView<Bottom>?
         private var didSetInitialPosition = false
+        private var pendingSave: DispatchWorkItem?
+        private lazy var lastReportedRatio = Double(topFraction)
 
-        init(topFraction: CGFloat) {
+        init(topFraction: CGFloat, onRatioChange: @escaping (Double) -> Void) {
             self.topFraction = topFraction
+            self.onRatioChange = onRatioChange
+        }
+
+        /// Fires for the initial placement too, hence the `didSetInitialPosition` guard; the write
+        /// is debounced so a drag saves once when it settles rather than on every frame.
+        func splitViewDidResizeSubviews(_ notification: Notification) {
+            guard didSetInitialPosition, let splitView = notification.object as? NSSplitView,
+                let top = splitView.arrangedSubviews.first, splitView.bounds.height > 0
+            else { return }
+            let ratio = Double(top.frame.height / splitView.bounds.height)
+            guard abs(ratio - lastReportedRatio) > 0.005 else { return }
+            pendingSave?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                self?.lastReportedRatio = ratio
+                self?.onRatioChange(ratio)
+            }
+            pendingSave = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
         }
 
         func splitView(_ splitView: NSSplitView, resizeSubviewsWithOldSize oldSize: NSSize) {

@@ -67,6 +67,10 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
     public var projectAgents: [String: AgentSelection] = [:]
     /// Set once the user dismisses the first-run checklist shown in the empty detail area.
     public var onboardingDismissed = false
+    /// Fraction of the height the agent view takes in the `agentsOverTerminal` layout. Written back
+    /// when the user drags the divider; clamped on read so a hand-edited value can't hide a pane.
+    public var agentsOverTerminalRatio = ArgusConfig.defaultAgentsOverTerminalRatio
+    public static let defaultAgentsOverTerminalRatio = 0.7
 
     // Needed because we declare a custom init(from:).
     public init() {}
@@ -100,12 +104,22 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
             (try? container.decodeIfPresent([String: String].self, forKey: .projectAgents)) ?? [:]
         projectAgents = rawProjectAgents.compactMapValues(AgentSelection.init(rawValue:))
         onboardingDismissed = (try? container.decodeIfPresent(Bool.self, forKey: .onboardingDismissed)) ?? false
+        agentsOverTerminalRatio =
+            (try? container.decodeIfPresent(Double.self, forKey: .agentsOverTerminalRatio))
+            ?? Self.defaultAgentsOverTerminalRatio
     }
 
     private enum CodingKeys: String, CodingKey {
         case leaderKey, leaderTimeoutSeconds, keyBindings, agent, layout, agentPaneMode
         case claudeCommand, codexCommand, diskMonitor, github, environmentVariables, popupShortcuts
         case agentDisplayPatterns, projectAgents, codexUsage, onboardingDismissed
+        case agentsOverTerminalRatio
+    }
+
+    /// `agentsOverTerminalRatio` limited to a range where both panes stay usable.
+    public var clampedAgentsOverTerminalRatio: Double {
+        guard agentsOverTerminalRatio.isFinite else { return Self.defaultAgentsOverTerminalRatio }
+        return min(max(agentsOverTerminalRatio, 0.2), 0.9)
     }
 
     public func launchCommand(for selection: AgentSelection) -> String {
