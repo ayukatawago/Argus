@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import Monitors
+@testable import ArgusSupport
 
 @Suite("CodexRolloutLocator")
 struct CodexRolloutLocatorTests {

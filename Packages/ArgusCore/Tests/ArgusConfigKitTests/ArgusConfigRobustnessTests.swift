@@ -86,4 +86,32 @@ struct ArgusConfigRobustnessTests {
         let backups = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.contains(".corrupt-") }
         #expect(backups.count == 1)
     }
+
+    @Test("decoding an empty object yields exactly the default config (decoder and declarations agree)")
+    func emptyObjectIsDefault() throws {
+        #expect(try decode("{}") == ArgusConfig())
+        #expect(try decode(#"{"keyBindings":{}}"#).keyBindings == ArgusConfig.KeyBindings())
+    }
+
+    @Test("legacy key-binding names still populate the renamed fields, and new names win")
+    func legacyKeyBindings() throws {
+        let legacy = try decode(#"{"keyBindings":{"focusShellPane":"<","focusAgentPane":">"}}"#)
+        #expect(legacy.keyBindings.focusPaneLeft == "<")
+        #expect(legacy.keyBindings.focusPaneRight == ">")
+        let both = try decode(#"{"keyBindings":{"focusShellPane":"<","focusPaneLeft":"("}}"#)
+        #expect(both.keyBindings.focusPaneLeft == "(")
+    }
+
+    @Test("a wrong-typed value for one field falls back for that field only")
+    func wrongTypeIsolated() throws {
+        let config = try decode(#"{"leaderKey":42,"claudeCommand":"claude -c"}"#)
+        #expect(config.leaderKey == ArgusConfig().leaderKey)
+        #expect(config.claudeCommand == "claude -c")
+    }
+
+    @Test("an unknown project agent value drops only that entry")
+    func unknownProjectAgent() throws {
+        let config = try decode(#"{"projectAgents":{"/a":"codex","/b":"gemini"}}"#)
+        #expect(config.projectAgents == ["/a": .codex])
+    }
 }

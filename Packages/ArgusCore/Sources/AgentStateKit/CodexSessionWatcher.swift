@@ -21,15 +21,25 @@ public final class CodexSessionWatcher: @unchecked Sendable {
     /// timestamp read.
     private nonisolated static let activityWindow: TimeInterval = 900
 
-    public init() {}
+    /// `<year>/<month>/<day>/` rollout tree. Injectable so the scan can run against a temp directory.
+    private let sessionsRoot: URL
+
+    public init(sessionsRoot: URL = CodexSessionWatcher.defaultSessionsRoot) {
+        self.sessionsRoot = sessionsRoot
+    }
+
+    public nonisolated static var defaultSessionsRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions")
+    }
 
     public func start() {
         let state = PollState()
+        let root = sessionsRoot
         pollTask = PollingTask.repeating(
             order: .actThenSleep,
             interval: { 500_000_000 },
             action: { [weak self] in
-                await Self.scanOnce(state: state) { payload in
+                await Self.scanOnce(state: state, root: root, now: Date()) { payload in
                     await MainActor.run { self?.onPayload?(payload) }
                 }
             }
@@ -45,7 +55,7 @@ public final class CodexSessionWatcher: @unchecked Sendable {
     /// than captured `var`s in a loop. Deliberately not actor-isolated: PollingTask calls the
     /// action strictly sequentially — one call finishes before the next starts — so plain mutation
     /// here needs no lock or actor (same reasoning as ClaudeTranscriptWatcher.PollState).
-    private final class PollState: @unchecked Sendable {
+    final class PollState: @unchecked Sendable {
         var lastMtimes: [URL: Date] = [:]
         // Worktree cwd a tracked session file is bound to, and its last-known parsed contribution —
         // kept even once a file goes stale so a resumed-elsewhere sibling can still be told apart
@@ -56,12 +66,12 @@ public final class CodexSessionWatcher: @unchecked Sendable {
         var lastEmitted: [String: String] = [:]
     }
 
-    private nonisolated static func scanOnce(
+    nonisolated static func scanOnce(
         state: PollState,
+        root: URL,
+        now: Date,
         handler: @Sendable (HookPayload) async -> Void
     ) async {
-        let now = Date()
-
         // `recentSessionFiles()` only looks at today's and yesterday's day-bucketed directories —
         // enough to *discover* newly created sessions. But `codex resume` (the default
         // codexCommand) keeps appending to the *original* rollout file indefinitely, which lives
@@ -70,7 +80,7 @@ public final class CodexSessionWatcher: @unchecked Sendable {
         // forever and its worktree's state silently freezes. Once a file is discovered (present in
         // `state.cwds`), keep polling it here regardless of which day it lives in, until it falls
         // out of `activityWindow` below.
-        let files = Set(recentSessionFiles()).union(state.cwds.keys)
+        let files = Set(recentSessionFiles(under: root, now: now)).union(state.cwds.keys)
 
         for fileURL in files {
             guard
@@ -119,31 +129,14 @@ public final class CodexSessionWatcher: @unchecked Sendable {
 
     // MARK: - File helpers
 
-    private nonisolated static func recentSessionFiles() -> [URL] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let sessionsBase = home.appendingPathComponent(".codex/sessions")
-        let calendar = Calendar.current
-        let now = Date()
-
-        var results: [URL] = []
-        for dayOffset in 0...1 {
-            guard let day = calendar.date(byAdding: .day, value: -dayOffset, to: now) else { continue }
-            let comps = calendar.dateComponents([.year, .month, .day], from: day)
-            guard let year = comps.year, let month = comps.month, let dayVal = comps.day else { continue }
-            let dir =
-                sessionsBase
-                .appendingPathComponent(String(format: "%04d", year))
-                .appendingPathComponent(String(format: "%02d", month))
-                .appendingPathComponent(String(format: "%02d", dayVal))
-            guard
-                let files = try? FileManager.default.contentsOfDirectory(
-                    at: dir,
-                    includingPropertiesForKeys: [.contentModificationDateKey]
-                )
-            else { continue }
-            results.append(contentsOf: files.filter { $0.pathExtension == "jsonl" })
+    private nonisolated static func recentSessionFiles(under root: URL, now: Date) -> [URL] {
+        // Today and yesterday only — enough to *discover* new sessions; older, already-discovered
+        // ones keep being polled through `PollState.cwds` (see `scanOnce`).
+        CodexRolloutLocator.dayDirectories(base: root, days: 2, now: now, calendar: .current).flatMap { dir in
+            let files = try? FileManager.default.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: [.contentModificationDateKey])
+            return (files ?? []).filter { $0.pathExtension == "jsonl" }
         }
-        return results
     }
 
     private nonisolated static let initialTailBytes: UInt64 = 4_096
