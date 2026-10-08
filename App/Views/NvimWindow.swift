@@ -38,8 +38,7 @@ final class NvimWindow: NSObject, NSWindowDelegate, ObservableObject {
         termView.configuration = state.configuration
         termView.controller = state.controller
 
-        let screen = NSApp.keyWindow?.screen ?? NSApp.mainWindow?.screen ?? NSScreen.main ?? NSScreen.screens[0]
-        let screenFrame = screen.visibleFrame
+        let screenFrame = NSScreen.popupVisibleFrame
         let size = CGSize(width: screenFrame.width * 0.8, height: screenFrame.height * 0.8)
         let origin = NSPoint(x: screenFrame.midX - size.width / 2, y: screenFrame.midY - size.height / 2)
 

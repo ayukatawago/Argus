@@ -54,6 +54,7 @@ public final class ClaudeTranscriptWatcher: @unchecked Sendable {
     }
 
     public func start() {
+        pollTask?.cancel()  // a repeated start must not leak the previous poll loop
         let state = PollState()
         let root = projectsRoot
         pollTask = PollingTask.repeating(

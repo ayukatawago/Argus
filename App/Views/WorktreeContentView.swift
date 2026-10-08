@@ -126,13 +126,16 @@ private struct RatioVSplitView<Top: View, Bottom: View>: NSViewRepresentable {
     }
 
     func updateNSView(_: NSSplitView, context: Context) {
+        context.coordinator.onRatioChange = onRatioChange
         context.coordinator.topHost?.rootView = top
         context.coordinator.bottomHost?.rootView = bottom
     }
 
     final class Coordinator: NSObject, NSSplitViewDelegate {
         let topFraction: CGFloat
-        let onRatioChange: (Double) -> Void
+        /// Refreshed on every `updateNSView`: SwiftUI hands over a new closure each render, and the
+        /// one captured at creation would keep writing through stale state.
+        var onRatioChange: (Double) -> Void
         var topHost: NSHostingView<Top>?
         var bottomHost: NSHostingView<Bottom>?
         private var didSetInitialPosition = false

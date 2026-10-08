@@ -17,8 +17,7 @@ final class DiskStatusWindow: NSObject, NSWindowDelegate, ObservableObject {
             existing.makeKeyAndOrderFront(nil)
             return
         }
-        let screen = NSApp.keyWindow?.screen ?? NSApp.mainWindow?.screen ?? NSScreen.main ?? NSScreen.screens[0]
-        let screenFrame = screen.visibleFrame
+        let screenFrame = NSScreen.popupVisibleFrame
         let size = CGSize(width: 560, height: 540)
         let origin = NSPoint(x: screenFrame.midX - size.width / 2, y: screenFrame.midY - size.height / 2)
         let win = NSWindow(

@@ -1,4 +1,5 @@
 import AppKit
+import ArgusSupport
 import UniformTypeIdentifiers
 import WebKit
 
@@ -32,7 +33,22 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, WKScriptMessageHa
             return
         }
 
-        guard let html = buildHTML(for: fileURL), let htmlURL = writePreviewHTML(html, next: fileURL) else { return }
+        // The tree walk touches the whole worktree, so it runs off the main actor; the window is
+        // presented once it's ready.
+        let rootPath = currentWorktreePath ?? fileURL.deletingLastPathComponent().path
+        Task { [weak self] in
+            let tree = await Task.detached(priority: .userInitiated) { MarkdownFileTree.build(at: rootPath) }.value
+            self?.present(fileURL: fileURL, tree: tree)
+        }
+    }
+
+    private func present(fileURL: URL, tree: [MarkdownTreeNode]) {
+        if currentFilePath == fileURL.path, let existing = window {
+            existing.makeKeyAndOrderFront(nil)
+            return
+        }
+        guard let html = buildHTML(for: fileURL, tree: tree), let htmlURL = writePreviewHTML(html, next: fileURL)
+        else { return }
         let directoryURL = fileURL.deletingLastPathComponent()
 
         if let win = window, let webView = win.contentView as? WKWebView {
@@ -48,8 +64,7 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, WKScriptMessageHa
             let webView = WKWebView(frame: .zero, configuration: config)
             webView.loadFileURL(htmlURL, allowingReadAccessTo: directoryURL)
 
-            let screen = NSApp.keyWindow?.screen ?? NSApp.mainWindow?.screen ?? NSScreen.main ?? NSScreen.screens[0]
-            let screenFrame = screen.visibleFrame
+            let screenFrame = NSScreen.popupVisibleFrame
             let size = CGSize(width: screenFrame.width * 0.85, height: screenFrame.height * 0.85)
             let origin = NSPoint(x: screenFrame.midX - size.width / 2, y: screenFrame.midY - size.height / 2)
 
@@ -73,7 +88,7 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, WKScriptMessageHa
 
     // Inline marked.js so the base URL is the file's own directory,
     // enabling relative links (e.g. CONVENTIONS.md) to resolve correctly.
-    private func buildHTML(for fileURL: URL) -> String? {
+    private func buildHTML(for fileURL: URL, tree: [MarkdownTreeNode]) -> String? {
         let encoder = JSONEncoder()
         guard let content = try? String(contentsOf: fileURL, encoding: .utf8),
             let templateURL = Bundle.main.url(forResource: "markdown-preview", withExtension: "html"),
@@ -84,15 +99,13 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, WKScriptMessageHa
             let pathJSON = String(data: (try? encoder.encode(fileURL.path)) ?? Data(), encoding: .utf8)
         else { return nil }
 
-        let rootPath = currentWorktreePath ?? fileURL.deletingLastPathComponent().path
-        let tree = buildFileTree(at: rootPath)
         let treeJSON = String(data: (try? encoder.encode(tree)) ?? Data(), encoding: .utf8) ?? "[]"
 
-        let html =
-            template
-            .replacingOccurrences(of: "{{MARKDOWN_JSON}}", with: mdJSON)
-            .replacingOccurrences(of: "{{FILE_TREE_JSON}}", with: treeJSON)
-            .replacingOccurrences(of: "{{CURRENT_FILE_JSON}}", with: pathJSON)
+        // One pass over the template: chained replacements re-scanned inserted text, so markdown that
+        // quotes a literal `{{FILE_TREE_JSON}}` had it replaced by the file tree.
+        let html = TemplateFill.fill(
+            template,
+            with: ["MARKDOWN_JSON": mdJSON, "FILE_TREE_JSON": treeJSON, "CURRENT_FILE_JSON": pathJSON])
         return html.replacingOccurrences(
             of: #"<script src="marked.min.js"></script>"#,
             with: "<script>\(markedJS)</script>")
@@ -110,35 +123,6 @@ final class MarkdownPreviewWindow: NSObject, NSWindowDelegate, WKScriptMessageHa
         }
         previewHTMLURL = htmlURL
         return htmlURL
-    }
-
-    private struct TreeNode: Encodable {
-        let type: String
-        let name: String
-        let path: String?
-        let children: [TreeNode]?
-    }
-
-    private func buildFileTree(at dirPath: String) -> [TreeNode] {
-        let fileManager = FileManager.default
-        guard let entries = try? fileManager.contentsOfDirectory(atPath: dirPath) else { return [] }
-        var dirs: [TreeNode] = []
-        var files: [TreeNode] = []
-        for name in entries.sorted() {
-            guard !name.hasPrefix(".") else { continue }
-            let fullPath = (dirPath as NSString).appendingPathComponent(name)
-            var isDir: ObjCBool = false
-            fileManager.fileExists(atPath: fullPath, isDirectory: &isDir)
-            if isDir.boolValue {
-                let children = buildFileTree(at: fullPath)
-                if !children.isEmpty {
-                    dirs.append(TreeNode(type: "dir", name: name, path: nil, children: children))
-                }
-            } else if name.hasSuffix(".md") {
-                files.append(TreeNode(type: "file", name: name, path: fullPath, children: nil))
-            }
-        }
-        return dirs + files
     }
 
     func windowWillClose(_: Notification) {

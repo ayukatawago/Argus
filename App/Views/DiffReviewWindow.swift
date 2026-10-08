@@ -39,8 +39,7 @@ final class DiffReviewWindow: NSObject, NSWindowDelegate, ObservableObject {
             )
         )
 
-        let screen = NSApp.keyWindow?.screen ?? NSApp.mainWindow?.screen ?? NSScreen.main ?? NSScreen.screens[0]
-        let screenFrame = screen.visibleFrame
+        let screenFrame = NSScreen.popupVisibleFrame
         let size = CGSize(width: screenFrame.width * 0.95, height: screenFrame.height * 0.95)
         let origin = NSPoint(x: screenFrame.midX - size.width / 2, y: screenFrame.midY - size.height / 2)
 
