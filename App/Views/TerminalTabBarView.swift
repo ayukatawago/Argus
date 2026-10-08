@@ -57,6 +57,11 @@ struct TerminalTabBarView: View {
         .onHover { isHovering in hoveredIndex = isHovering ? window.index : nil }
         .onTapGesture { select(window) }
         .contentShape(Rectangle())
+        .contextMenu {
+            if store.windows.count > 1 {
+                Button("Close Tab") { close(window) }
+            }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(window.isActive ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { select(window) }

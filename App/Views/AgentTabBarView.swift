@@ -64,6 +64,11 @@ struct AgentTabBarView: View {
         .onHover { isHovering in hoveredAgent = isHovering ? agent : nil }
         .onTapGesture { select(agent) }
         .contentShape(Rectangle())
+        .contextMenu {
+            if store.tabs.open.count > 1 {
+                Button("Close \(agent.displayName) Tab") { close(agent) }
+            }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { select(agent) }
