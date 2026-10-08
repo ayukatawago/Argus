@@ -27,8 +27,14 @@ public enum LeaderKey {
     /// drops empty components by default, so a trailing `+` doesn't produce an empty character
     /// (`"b+"` parses the same as `"b"`); returns `nil` only when there's no non-empty component
     /// at all (`""`, `"+"`, `"++"`, ...).
+    ///
+    /// A `+` *key* is written as a doubled trailing plus after at least one modifier (`"ctrl++"` is
+    /// control and the `+` character); with no modifier before it (`"++"`) there is nothing to bind
+    /// and it stays `nil`.
     public static func parse(_ key: String) -> LeaderChord? {
-        let parts = key.lowercased().split(separator: "+").map(String.init)
+        let lowered = key.lowercased()
+        var parts = lowered.split(separator: "+").map(String.init)
+        if lowered.hasSuffix("++"), !parts.isEmpty { parts.append("+") }
         guard let char = parts.last, !char.isEmpty else { return nil }
         var modifiers: Set<LeaderChord.Modifier> = []
         for part in parts.dropLast() {

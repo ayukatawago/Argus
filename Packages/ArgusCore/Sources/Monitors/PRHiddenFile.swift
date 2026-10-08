@@ -1,3 +1,4 @@
+import ArgusSupport
 import Foundation
 
 /// hidden-prs.json read/write against an injectable URL, so persistence is testable without
@@ -9,9 +10,11 @@ public enum PRHiddenFile {
         struct Payload: Decodable {
             let hiddenPRIDs: [Int]
         }
-        guard let data = try? Data(contentsOf: url),
-            let payload = try? JSONDecoder().decode(Payload.self, from: data)
-        else { return [] }
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        guard let payload = try? JSONDecoder().decode(Payload.self, from: data) else {
+            CorruptFileBackup.preserve(url)
+            return []
+        }
         return Set(payload.hiddenPRIDs)
     }
 
@@ -25,7 +28,9 @@ public enum PRHiddenFile {
         struct Encoded: Encodable {
             let hiddenPRIDs: [Int]
         }
-        let data = try? JSONEncoder().encode(Encoded(hiddenPRIDs: Array(ids)))
-        try? data?.write(to: url)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try? encoder.encode(Encoded(hiddenPRIDs: ids.sorted()))
+        try? data?.write(to: url, options: .atomic)
     }
 }

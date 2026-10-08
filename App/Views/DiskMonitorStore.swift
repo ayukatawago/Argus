@@ -20,7 +20,7 @@ final class DiskMonitorStore: ObservableObject {
             order: .sleepThenAct,
             interval: {
                 let seconds = await ArgusConfigStore.shared.config.diskMonitor.checkIntervalSeconds
-                return UInt64(seconds * 1_000_000_000)
+                return ArgusConfig.intervalNanoseconds(seconds, default: 60)
             },
             action: { [weak self] in await self?.refresh() }
         )

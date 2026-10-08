@@ -57,12 +57,8 @@ struct JSONLTailerTests {
         #expect(lines.map { String(data: $0, encoding: .utf8) } == ["one", "two", "three"])
     }
 
-    @Test("text without a trailing newline is emitted as soon as the file grows, not buffered")
-    func noTrailingNewlineIsNotBuffered() async throws {
-        // Documents an actual quirk of the original polling loop this type replaces: it reads
-        // and splits whatever is currently in the file rather than buffering an incomplete final
-        // line until a newline arrives. A write that lands mid-line without its newline yet
-        // therefore comes through as two separate emissions, not one concatenated line.
+    @Test("a line written in two halves is held until its newline arrives, then emitted whole")
+    func partialLineIsBufferedUntilNewline() async throws {
         let path = try Self.makeEmptyFile()
         defer { try? FileManager.default.removeItem(atPath: path) }
         let collector = LineCollector()
@@ -70,12 +66,12 @@ struct JSONLTailerTests {
         defer { task.cancel() }
 
         try Self.append("partial", to: path)
-        let firstBatch = try await collector.waitForCount(1)
-        #expect(String(data: firstBatch[0], encoding: .utf8) == "partial")
+        try await Task.sleep(nanoseconds: 40_000_000)
+        #expect(await collector.lines.isEmpty)
 
         try Self.append(" line\n", to: path)
-        let secondBatch = try await collector.waitForCount(2)
-        #expect(String(data: secondBatch[1], encoding: .utf8) == " line")
+        let lines = try await collector.waitForCount(1)
+        #expect(String(data: lines[0], encoding: .utf8) == "partial line")
     }
 
     @Test("truncating the file resets the read offset to zero")
@@ -98,8 +94,8 @@ struct JSONLTailerTests {
         #expect(String(data: lines[1], encoding: .utf8) == "after")
     }
 
-    @Test("a chunk containing invalid UTF-8 is dropped whole, not partially decoded")
-    func invalidUTF8DropsWholeChunk() async throws {
+    @Test("a line containing invalid UTF-8 is dropped on its own; its neighbours survive")
+    func invalidUTF8DropsOnlyThatLine() async throws {
         let path = try Self.makeEmptyFile()
         defer { try? FileManager.default.removeItem(atPath: path) }
         let collector = LineCollector()
@@ -107,19 +103,13 @@ struct JSONLTailerTests {
         defer { task.cancel() }
 
         // 0xFF is never valid UTF-8, anywhere in a byte stream.
-        var invalidChunk = Data("valid\n".utf8)
-        invalidChunk.append(0xFF)
-        try Self.appendData(invalidChunk, to: path)
+        var data = Data("before\n".utf8)
+        data.append(contentsOf: [0x62, 0xFF, 0x0A])
+        data.append(Data("after\n".utf8))
+        try Self.appendData(data, to: path)
 
-        // Give it a few poll cycles; the whole chunk (including the otherwise-valid "valid\n"
-        // prefix) should be dropped, so nothing arrives.
-        try await Task.sleep(nanoseconds: 60_000_000)
-        #expect(await collector.lines.isEmpty)
-
-        // The tailer recovers on the next well-formed write.
-        try Self.append("recovered\n", to: path)
-        let lines = try await collector.waitForCount(1)
-        #expect(String(data: lines[0], encoding: .utf8) == "recovered")
+        let lines = try await collector.waitForCount(2)
+        #expect(lines.map { String(data: $0, encoding: .utf8) } == ["before", "after"])
     }
 
     // MARK: - Helpers

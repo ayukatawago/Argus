@@ -13,7 +13,7 @@ public enum WorktreeListParser {
     /// of this refactor.
     public static func parse(_ output: String) -> [GitWorktree] {
         let blocks = output.components(separatedBy: "\n\n")
-        return blocks.enumerated().compactMap { index, block -> GitWorktree? in
+        let parsed = blocks.compactMap { block -> GitWorktree? in
             var path: String?
             var branch: String?
             var isDetached = false
@@ -29,7 +29,12 @@ public enum WorktreeListParser {
                 }
             }
             guard let wtPath = path, !wtPath.isEmpty else { return nil }
-            return GitWorktree(path: wtPath, branch: isDetached ? nil : branch, isMain: index == 0)
+            return GitWorktree(path: wtPath, branch: isDetached ? nil : branch, isMain: false)
+        }
+        // Git lists the main worktree first, so it is the first block that *parsed* — keyed off the
+        // raw block index, a malformed or empty leading block left the output with no main worktree.
+        return parsed.enumerated().map { index, worktree in
+            GitWorktree(path: worktree.path, branch: worktree.branch, isMain: index == 0)
         }
     }
 }

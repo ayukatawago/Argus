@@ -81,6 +81,7 @@ public enum CodexUsageParser {
         guard
             let data = line.data(using: .utf8),
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            obj["type"] as? String == "turn_context",
             let payload = obj["payload"] as? [String: Any],
             let turnID = payload["turn_id"] as? String,
             let model = payload["model"] as? String
@@ -92,6 +93,7 @@ public enum CodexUsageParser {
         guard
             let data = line.data(using: .utf8),
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            obj["type"] as? String == "token_usage_record",
             let payload = obj["payload"] as? [String: Any],
             let usage = payload["usage"] as? [String: Any]
         else { return nil }
@@ -99,7 +101,17 @@ public enum CodexUsageParser {
             turnID: payload["turn_id"] as? String,
             rootTurnID: payload["root_turn_id"] as? String,
             timestamp: obj["timestamp"] as? String,
-            usage: usage.compactMapValues { $0 as? Int }
+            usage: usage.compactMapValues(Self.tokenCount)
         )
+    }
+
+    /// A token count is a non-negative whole JSON number that fits in `Int`. `as? Int` alone would
+    /// also accept `true` (as 1), silently truncate `1.5`, and turn a number beyond `Int.max` into
+    /// nothing at all while accepting negatives — none of which is a real count.
+    static func tokenCount(_ value: Any) -> Int? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let double = number.doubleValue
+        guard double >= 0, double < 9.2e18, double == double.rounded(.towardZero) else { return nil }
+        return number.intValue
     }
 }

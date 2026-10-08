@@ -32,8 +32,8 @@ public enum ClaudeTranscriptParser {
     /// lines (`{"type":"mode",…}`, `{"type":"permission-mode",…}`) carry only `type`/`sessionId`
     /// and no `cwd`, so this scans forward rather than assuming line 1. Reading from the start
     /// (not the tail) means a `cd` mid-session doesn't re-key the worktree the session is bound to.
-    /// Avoids full JSON parsing per line for the common case via a quote-delimited scan, matching
-    /// CodexSessionParser.extractCwd — macOS paths cannot contain `"` so this is safe.
+    /// Avoids full JSON parsing per line for the common case via `JSONQuotedValue`, matching
+    /// CodexSessionParser.extractCwd; escape sequences (an escaped `"` or `\\` in a path) are decoded.
     public static func extractCwd(from headerText: String) -> String? {
         firstQuotedValue(forKey: "cwd", in: headerText)
     }
@@ -48,13 +48,8 @@ public enum ClaudeTranscriptParser {
     }
 
     private static func firstQuotedValue(forKey key: String, in text: String) -> String? {
-        let marker = "\"\(key)\":\""
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard let keyRange = line.range(of: marker) else { continue }
-            let afterKey = line[keyRange.upperBound...]
-            guard let endQuote = afterKey.firstIndex(of: "\"") else { continue }
-            let value = String(afterKey[..<endQuote])
-            if !value.isEmpty { return value }
+            if let value = JSONQuotedValue.first(forKey: key, in: line) { return value }
         }
         return nil
     }
@@ -164,15 +159,19 @@ public enum ClaudeTranscriptParser {
     /// line in a poll window would misreport "running" for a turn that may already be done.
     public static func scan(tail tailText: String) -> TranscriptScan {
         var state: String?
-        var newestTimestamp: String?
+        var newestActivity: Date?
         for line in tailText.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
             let lineStr = String(line)
             if state == nil { state = decisiveState(ofLine: lineStr) }
-            if let stamp = timestampField(in: lineStr), newestTimestamp.map({ stamp > $0 }) ?? true {
-                newestTimestamp = stamp
+            // Compare parsed instants, not strings: `…:00Z` sorts after `…:00.500Z` lexically, and
+            // two offsets for the same moment never compare equal as text.
+            if let activity = timestampField(in: lineStr).flatMap(parseTimestamp),
+                newestActivity.map({ activity > $0 }) ?? true
+            {
+                newestActivity = activity
             }
         }
-        return TranscriptScan(state: state, lastActivity: newestTimestamp.flatMap(parseTimestamp))
+        return TranscriptScan(state: state, lastActivity: newestActivity)
     }
 
     /// Convenience for callers that only need the state half of `scan(tail:)`.
@@ -221,12 +220,25 @@ public enum ClaudeTranscriptParser {
         return (Data(data[data.startIndex..<completeEnd]), Data(data[completeEnd...]))
     }
 
+    /// The entry's own top-level `timestamp`. A single occurrence of the key is taken as-is (the
+    /// common case — one cheap scan). Two or more means a nested object (a `tool_use` input, a
+    /// `toolUseResult`) carries a `timestamp` key too, and which one the scan hits first depends on
+    /// field order, so that line is decoded properly and its top-level value read instead.
     private static func timestampField(in line: String) -> String? {
-        guard let keyRange = line.range(of: #""timestamp":""#) else { return nil }
-        let afterKey = line[keyRange.upperBound...]
-        guard let endQuote = afterKey.firstIndex(of: "\"") else { return nil }
-        let value = String(afterKey[..<endQuote])
-        return value.isEmpty ? nil : value
+        switch JSONQuotedValue.occurrences(ofKey: "timestamp", in: line) {
+        case 0:
+            return nil
+
+        case 1:
+            return JSONQuotedValue.first(forKey: "timestamp", in: line)
+
+        default:
+            guard
+                let data = line.data(using: .utf8),
+                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
+            return obj["timestamp"] as? String
+        }
     }
 
     private static func parseTimestamp(_ value: String) -> Date? {

@@ -22,7 +22,7 @@ final class WorkspaceScanner: @unchecked Sendable {
                 let scanner = Unmanaged<WorkspaceScanner>.fromOpaque(info).takeUnretainedValue()
                 let cfArray = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue()
                 let changedPaths = (cfArray as? [String]) ?? []
-                guard scanner.isRelevant(changedPaths) else { return }
+                guard WorkspaceScanner.isRelevant(changedPaths, watchedRoots: scanner.watchedRoots) else { return }
                 DispatchQueue.main.async { scanner.onChange?() }
             },
             &ctx,
@@ -43,8 +43,14 @@ final class WorkspaceScanner: @unchecked Sendable {
     /// an existing top-level repo folder deleted). Without this filter, any write anywhere under a
     /// root — an agent editing source files, a build — triggered a full rescan of every repo on
     /// every settle of the 2s coalescing window, for as long as anything was writing.
-    private func isRelevant(_ changedPaths: [String]) -> Bool {
-        changedPaths.contains { path in path.contains("/.git") || watchedRoots.contains(path) }
+    ///
+    /// `.git` is matched as a whole path component: a bare `contains("/.git")` also matched
+    /// `.github/`, `.gitignore`, `.gitattributes` and `.gitlab-ci.yml` — ordinary source files whose
+    /// edits triggered exactly the full rescans this filter exists to avoid.
+    static func isRelevant(_ changedPaths: [String], watchedRoots: Set<String>) -> Bool {
+        changedPaths.contains { path in
+            watchedRoots.contains(path) || path.split(separator: "/").contains(".git")
+        }
     }
 
     func stop() {

@@ -249,10 +249,13 @@ public final class ClaudeTranscriptWatcher: @unchecked Sendable {
         }
         guard size > tracked.offset else { return }
         try? handle.seek(toOffset: tracked.offset)
-        let combined = tracked.carry + handle.readDataToEndOfFile()
-        // Safe to advance all the way to EOF: any bytes not resolved into a complete line below are
-        // retained in `carry`, not discarded.
-        tracked.offset = size
+        let newBytes = handle.readDataToEndOfFile()
+        let combined = tracked.carry + newBytes
+        // Advance by the bytes actually read, not the earlier `seekToEnd()` size: the file can grow
+        // between the two calls, and jumping to the stale size would re-read those bytes next poll
+        // and splice them onto a `carry` that already holds them. Any bytes not resolved into a
+        // complete line below are retained in `carry`, not discarded.
+        tracked.offset += UInt64(newBytes.count)
         applyScan(of: combined, to: &tracked)
     }
 

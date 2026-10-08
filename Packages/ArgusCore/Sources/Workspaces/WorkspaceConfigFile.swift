@@ -1,3 +1,4 @@
+import ArgusSupport
 import Foundation
 
 /// The persisted state of WorkspaceStore: configured root folders, hidden worktree IDs, repos the
@@ -32,19 +33,20 @@ public enum WorkspaceConfigFile {
     /// other field empty) if the file is missing or fails to decode.
     public static func load(from url: URL, defaultRoots: [String]) -> WorkspaceConfig {
         struct Payload: Decodable {
-            let roots: [String]
+            // Optional: a file missing `roots` must not discard the hidden/excluded/order state.
+            let roots: [String]?
             let hiddenWorktreeIDs: [String]?
             let excludedRepoPaths: [String]?
             let repoOrder: [String]?
             let openWorktreeIDs: [String]?
         }
-        guard let data = try? Data(contentsOf: url),
-            let payload = try? JSONDecoder().decode(Payload.self, from: data)
-        else {
+        guard let data = try? Data(contentsOf: url) else { return WorkspaceConfig(roots: defaultRoots) }
+        guard let payload = try? JSONDecoder().decode(Payload.self, from: data) else {
+            CorruptFileBackup.preserve(url)
             return WorkspaceConfig(roots: defaultRoots)
         }
         return WorkspaceConfig(
-            roots: payload.roots,
+            roots: payload.roots ?? defaultRoots,
             hiddenWorktreeIDs: Set(payload.hiddenWorktreeIDs ?? []),
             excludedRepoPaths: Set(payload.excludedRepoPaths ?? []),
             repoOrder: payload.repoOrder ?? [],
@@ -66,14 +68,19 @@ public enum WorkspaceConfigFile {
             let repoOrder: [String]
             let openWorktreeIDs: [String]
         }
-        let data = try? JSONEncoder().encode(
+        // Sorted keys and sorted set contents keep the file byte-stable across saves (a Set's
+        // iteration order is not), so it diffs and syncs cleanly; atomic so a crash mid-write can't
+        // leave a truncated file that the next load would treat as corrupt.
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try? encoder.encode(
             Encoded(
                 roots: config.roots,
-                hiddenWorktreeIDs: Array(config.hiddenWorktreeIDs),
-                excludedRepoPaths: Array(config.excludedRepoPaths),
+                hiddenWorktreeIDs: config.hiddenWorktreeIDs.sorted(),
+                excludedRepoPaths: config.excludedRepoPaths.sorted(),
                 repoOrder: config.repoOrder,
-                openWorktreeIDs: Array(config.openWorktreeIDs)
+                openWorktreeIDs: config.openWorktreeIDs.sorted()
             ))
-        try? data?.write(to: url)
+        try? data?.write(to: url, options: .atomic)
     }
 }

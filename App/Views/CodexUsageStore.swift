@@ -28,7 +28,7 @@ final class CodexUsageStore: ObservableObject {
             order: .actThenSleep,
             interval: {
                 let seconds = await ArgusConfigStore.shared.config.codexUsage.refreshIntervalSeconds
-                return UInt64(max(1, seconds) * 1_000_000_000)
+                return ArgusConfig.intervalNanoseconds(seconds, default: 30)
             },
             action: { [weak self] in
                 let window = await ArgusConfigStore.shared.config.codexUsage.scanDayWindow

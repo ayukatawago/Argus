@@ -15,33 +15,22 @@ public enum JSONLFileReader {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
 
-        // Carries an unterminated trailing fragment across chunk boundaries — a chunk edge is a
-        // byte-count cutoff, not a line boundary, so the last "line" in a chunk is frequently a
-        // partial one that must be glued to the start of the next chunk before decoding.
-        var pending = Data()
+        // The cursor carries an unterminated trailing fragment across chunk boundaries — a chunk edge
+        // is a byte-count cutoff, not a line boundary. Lines are cut at `\n`, which can never split a
+        // UTF-8 multibyte sequence, so `String(decoding:as:)` below is lossless (and, unlike the
+        // failable `String(bytes:encoding:)`, never fails).
+        var cursor = JSONLCursor(maxCarryBytes: .max)
         // swiftlint:disable optional_data_string_conversion
         while true {
             let chunk = try handle.read(upToCount: chunkSize) ?? Data()
             if chunk.isEmpty { break }
-            pending.append(chunk)
-
-            // Cut at the last newline in the buffer, not the whole thing: cutting on `\n` can never
-            // split a UTF-8 multibyte sequence (a newline byte never occurs inside one), so the
-            // "complete" half below always decodes losslessly (`String(decoding:as:)` never fails —
-            // deliberately used over the failable `String(bytes:encoding:)` for that reason). Mirrors
-            // ClaudeTranscriptParser.splitAtLastNewline's rationale.
-            guard let newlineIndex = pending.lastIndex(of: 0x0A) else { continue }
-            let completeEnd = pending.index(after: newlineIndex)
-            let complete = pending[pending.startIndex..<completeEnd]
-            pending = Data(pending[completeEnd...])
-
-            for line in complete.split(separator: 0x0A, omittingEmptySubsequences: true) {
+            for line in cursor.ingest(chunk) {
                 try body(String(decoding: line, as: UTF8.self))
             }
         }
 
-        if !pending.isEmpty {
-            try body(String(decoding: pending, as: UTF8.self))
+        if let last = cursor.finish() {
+            try body(String(decoding: last, as: UTF8.self))
         }
         // swiftlint:enable optional_data_string_conversion
     }

@@ -1,14 +1,18 @@
+import ArgusSupport
 import Foundation
 
 /// argus.json read/write against an injectable URL, so config persistence is testable without
 /// touching the real `~/.config/argus/argus.json`.
 public enum ArgusConfigFile {
     /// Loads the config at `url`, falling back to `ArgusConfig()` (every field default) if the
-    /// file is missing or fails to decode.
+    /// file is missing or fails to decode. An existing but undecodable file is copied aside
+    /// (`CorruptFileBackup`) first, so the next `save()` can't destroy the user's hand-edits.
     public static func load(from url: URL) -> ArgusConfig {
-        guard let data = try? Data(contentsOf: url),
-            let decoded = try? JSONDecoder().decode(ArgusConfig.self, from: data)
-        else { return ArgusConfig() }
+        guard let data = try? Data(contentsOf: url) else { return ArgusConfig() }
+        guard let decoded = try? JSONDecoder().decode(ArgusConfig.self, from: data) else {
+            CorruptFileBackup.preserve(url)
+            return ArgusConfig()
+        }
         return decoded
     }
 

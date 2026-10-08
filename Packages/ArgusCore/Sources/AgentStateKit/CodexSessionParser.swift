@@ -1,3 +1,4 @@
+import ArgusSupport
 import Foundation
 
 /// Pure parsing of Codex CLI session JSONL files: extracting the session's working directory and
@@ -7,7 +8,8 @@ public enum CodexSessionParser {
     /// Extracts the `cwd` value by searching for `"cwd":"<path>"` in raw text.
     /// Avoids full JSON parsing — the session_meta first line is ~22 KB due to the embedded
     /// system prompt, so parsing it as JSON from a fixed-size header read would fail.
-    /// macOS paths cannot contain `"` so a simple quote-delimited scan is safe.
+    /// `JSONQuotedValue` decodes escape sequences, so a path containing an escaped `"` or `\\` is
+    /// returned intact rather than cut short or left with its backslashes in it.
     public static func extractCwd(from header: String) -> String? {
         extractQuotedValue(forKey: "cwd", from: header)
     }
@@ -20,11 +22,7 @@ public enum CodexSessionParser {
     }
 
     private static func extractQuotedValue(forKey key: String, from header: String) -> String? {
-        guard let keyRange = header.range(of: "\"\(key)\":\"") else { return nil }
-        let afterKey = header[keyRange.upperBound...]
-        guard let endQuote = afterKey.firstIndex(of: "\"") else { return nil }
-        let value = String(afterKey[..<endQuote])
-        return value.isEmpty ? nil : value
+        JSONQuotedValue.first(forKey: key, in: header)
     }
 
     /// Scans the last lines of the tail text for `event_msg` entries and returns the state implied
