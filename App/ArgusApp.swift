@@ -1,5 +1,6 @@
 import AppKit
 import ArgusConfigKit
+import ArgusSupport
 import SwiftUI
 
 /// A parsed `argus://diff?workspace=...&from=...&to=...` request — see `AppDelegate.handleDiffRequest`.
@@ -9,13 +10,6 @@ private struct DiffReviewRequest {
     let workspace: String
     let base: String
     let head: String
-}
-
-/// The `mode` of an `argus://capture?mode=...&output=...&duration=...` request — see
-/// `AppDelegate.handleCaptureRequest`.
-private enum CaptureMode: String {
-    case screenshot
-    case video
 }
 
 @MainActor
@@ -51,26 +45,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// future subcommands can be added without breaking older callers.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where url.scheme == "argus" {
-            switch url.host {
-            case "diff": handleDiffRequest(url)
-            case "capture": handleCaptureRequest(url)
-            default: break
+            // Parsing/validation is `ArgusURLRequest.parse` (unit-tested); a rejected request —
+            // unknown host, or a capture whose output path fails its checks — is dropped.
+            guard case .success(let request) = ArgusURLRequest.parse(url) else { continue }
+            switch request {
+            case .diff(let workspace, let base, let head):
+                handleDiffRequest(workspace: workspace, base: base, head: head)
+
+            case .capture(let capture):
+                handleCaptureRequest(capture)
             }
         }
     }
 
-    private func handleDiffRequest(_ url: URL) {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
-        let items = components.queryItems ?? []
-        func value(_ name: String) -> String? { items.first(where: { $0.name == name })?.value }
-
-        guard let workspace = value("workspace"), !workspace.isEmpty else { return }
+    private func handleDiffRequest(workspace: String, base: String, head: String) {
         guard workspace.hasPrefix("/"), FileManager.default.fileExists(atPath: workspace) else {
             showInvalidWorkspaceAlert(path: workspace)
             return
         }
 
-        let request = DiffReviewRequest(workspace: workspace, base: value("from") ?? "", head: value("to") ?? "HEAD")
+        let request = DiffReviewRequest(workspace: workspace, base: base, head: head)
         if isAppShellReady {
             postDiffReviewRequest(request)
         } else {
@@ -112,22 +106,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// already-existing main window rather than opening new UI, and reports success/failure by
     /// writing to `output`/`output.error` on disk (`ScreenCaptureController`) rather than through
     /// a `NotificationCenter` round trip a SwiftUI view would need to be subscribed to receive.
-    private func handleCaptureRequest(_ url: URL) {
-        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
-        let items = components.queryItems ?? []
-        func value(_ name: String) -> String? { items.first(where: { $0.name == name })?.value }
-
-        guard let output = value("output"), output.hasPrefix("/") else { return }
-        guard let mode = value("mode").flatMap(CaptureMode.init(rawValue:)) else { return }
-        let duration = value("duration").flatMap(Double.init) ?? 10
-
+    private func handleCaptureRequest(_ capture: ArgusURLRequest.Capture) {
         Task {
-            switch mode {
+            switch capture.mode {
             case .screenshot:
-                await ScreenCaptureController.shared.captureScreenshot(outputPath: output)
+                await ScreenCaptureController.shared.captureScreenshot(outputPath: capture.outputPath)
 
             case .video:
-                await ScreenCaptureController.shared.captureVideo(outputPath: output, duration: duration)
+                await ScreenCaptureController.shared.captureVideo(
+                    outputPath: capture.outputPath, duration: capture.duration)
             }
         }
     }
