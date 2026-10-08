@@ -64,4 +64,19 @@ public enum TmuxCommand {
     public static func listAllPanes(format: String) -> [String] {
         ["list-panes", "-a", "-F", format]
     }
+
+    /// True when a failed tmux invocation's `stderr` says there is simply no tmux server — the
+    /// state after the last session exits. Unlike a launch failure or a crash, this is a definitive
+    /// answer ("no sessions exist"), so a poller should treat it as an empty listing and not as a
+    /// transient error to retry; otherwise the last known busy/agent state would stick forever.
+    public static func isServerAbsent(standardError: String) -> Bool {
+        standardError.contains("no server running") || standardError.contains("error connecting to")
+    }
+
+    /// `result` as a listing: its output when it succeeded, an empty listing when tmux reports no
+    /// server, and `nil` for any other failure (retry later).
+    public static func listing(from result: ProcessResult) -> String? {
+        if result.succeeded { return result.standardOutput }
+        return isServerAbsent(standardError: result.standardError) ? "" : nil
+    }
 }

@@ -7,9 +7,17 @@ import Foundation
 /// Deliberately synchronous, not routed through `ProcessRunner`: every call site (pane creation,
 /// hook install) is itself synchronous, and making the lookup async would force an async refactor
 /// of unrelated code just to reach a couple of duplicated `dscl` invocations.
+///
+/// Resolved once per process (a `static let` initializes lazily and exactly once, even under
+/// concurrent first access). Previously every access spawned `dscl` and blocked on it — several
+/// times per pane creation, on the main thread. Call `prewarm()` at launch, off the main thread, so
+/// the one remaining blocking lookup is not paid on a UI path.
 public enum LoginShell {
-    public static var current: String {
-        parse(dsclOutput: runDscl(), fallback: fallbackShell())
+    public static let current: String = parse(dsclOutput: runDscl(), fallback: fallbackShell())
+
+    /// Forces the one-time lookup now, on a background thread.
+    public static func prewarm() {
+        Task.detached(priority: .utility) { _ = current }
     }
 
     private static func runDscl() -> String {
@@ -20,8 +28,10 @@ public enum LoginShell {
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
         guard (try? process.run()) != nil else { return "" }
+        // Read before waiting, so output larger than the pipe buffer can never deadlock the child.
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        return String(data: data, encoding: .utf8) ?? ""
     }
 
     /// Parses `dscl -read <user> UserShell`'s `"UserShell: /bin/zsh"` output, falling back to

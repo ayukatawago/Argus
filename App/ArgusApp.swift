@@ -120,6 +120,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_: Notification) {
+        // The login-shell lookup spawns `dscl`; do that once, now, off the main thread, instead of
+        // on the first pane creation.
+        LoginShell.prewarm()
         installKeyEventMonitor()
 
         mouseEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in

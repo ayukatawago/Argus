@@ -70,12 +70,17 @@ final class ShellStateBus: ObservableObject {
             return
         }
         let result = await Tmux.run(TmuxCommand.listAllPanes(format: "#{session_name}|#{pane_current_command}"))
+        // A failed launch/exit (around sleep/wake, resource pressure) is empty output, which the
+        // parse below would read as "nothing is busy" and clear every border for one poll. Keep the
+        // last known state and retry. But "no server running" is a real answer — the last session
+        // is gone — so it is an empty listing, not a failure.
+        guard let listing = TmuxCommand.listing(from: result) else { return }
 
         let pathBySession = Dictionary(
             paths.map { (WorktreePane.sessionName(for: .shell, path: $0), $0) },
             uniquingKeysWith: { first, _ in first })
         let busySessions = TmuxPaneParser.busySessions(
-            from: result.standardOutput, activeSessions: Set(pathBySession.keys))
+            from: listing, activeSessions: Set(pathBySession.keys))
         let next = Set(busySessions.compactMap { pathBySession[$0] })
         if next != busyPaths { busyPaths = next }
     }

@@ -9,6 +9,9 @@ final class PanePool: ObservableObject {
     let claudeHost = TerminalHost(frame: .zero)
     let codexHost = TerminalHost(frame: .zero)
     private var panes: [String: WorktreePane] = [:]
+    /// Bumped whenever a role is (re)registered, so an in-flight `closeRole` can tell that the tab
+    /// was reopened while it was awaiting `kill-session` — see `closeRole`.
+    private var roleGenerations = GenerationCounter<String>()
     @Published private(set) var activeIDs: Set<String> = []
 
     func host(for role: PaneRole) -> TerminalHost {
@@ -31,6 +34,7 @@ final class PanePool: ObservableObject {
         }
         guard let pane = panes[id] else { return }
         for role in roles {
+            roleGenerations.bump(Self.roleKey(id: id, role: role))
             host(for: role).register(id: id, terminal: pane.view(for: role))
         }
     }
@@ -70,10 +74,22 @@ final class PanePool: ObservableObject {
     func closeRole(id: String, workingDirectory: String, role: PaneRole) async {
         guard role != .shell else { return }
         let session = WorktreePane.sessionName(for: role, path: workingDirectory)
+        let key = Self.roleKey(id: id, role: role)
+        let token = roleGenerations.current(key)
         await Tmux.run(TmuxCommand.killSession(session))
         host(for: role).unregister(id: id)
         panes[id]?.discardView(for: role)
+        // The tab was reopened while `kill-session` was in flight: that registration attached to the
+        // session being killed and was just unregistered above. Re-register against a fresh view
+        // (the old session is gone now, so this starts a new one) rather than leaving the reopened
+        // tab blank.
+        if !roleGenerations.isUnchanged(key, since: token), let pane = panes[id] {
+            roleGenerations.bump(key)
+            host(for: role).register(id: id, terminal: pane.view(for: role))
+        }
     }
+
+    private static func roleKey(id: String, role: PaneRole) -> String { "\(id)|\(role.tmuxSessionType)" }
 
     /// Kills every currently-open agent role's tmux session, then rebuilds the worktree's pane
     /// with `roles` registered again. The shell session is untouched. Answers "reload with both
