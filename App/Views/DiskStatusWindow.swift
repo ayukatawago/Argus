@@ -3,7 +3,6 @@ import SwiftUI
 
 extension Notification.Name {
     static let openDiskStatus = Notification.Name("argus.openDiskStatus")
-    static let diskSpaceLow = Notification.Name("argus.diskSpaceLow")
 }
 
 /// Floating popup showing disk usage and cleanup candidates.

@@ -84,7 +84,6 @@ targets:
         ENABLE_HARDENED_RUNTIME: "NO"
         COMBINE_HIDPI_IMAGES: "YES"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/App/Argus-Bridging-Header.h"
       configs:
         Debug:
           SWIFT_OPTIMIZATION_LEVEL: "-Onone"
