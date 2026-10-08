@@ -28,6 +28,8 @@ struct SidebarView: View {
     @State private var addWorktreeRepo: GitRepo?
     @State private var newBranchName = ""
     @State private var showAddWorktreeError = false
+    @State private var showDeleteError = false
+    @State private var deleteError = ""
     @State private var addWorktreeError = ""
     @State private var filterQuery = ""
     @State private var attentionOnly = false
@@ -67,6 +69,11 @@ struct SidebarView: View {
                 Button("Cancel", role: .cancel) { newBranchName = "" }
             } message: {
                 Text("Enter a branch name for the new worktree.")
+            }
+            .alert("Could not remove worktree", isPresented: $showDeleteError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(deleteError)
             }
             .alert("Could not create worktree", isPresented: $showAddWorktreeError) {
                 Button("OK", role: .cancel) {}
@@ -250,8 +257,17 @@ struct SidebarView: View {
         if selectedWorktreeID == worktree.id { selectedWorktreeID = nil }
         store.hideWorktree(id: worktree.id)
         Task {
-            _ = await ProcessRunner.run(
+            let result = await ProcessRunner.run(
                 "/usr/bin/git", ["-C", repo.mainPath, "worktree", "remove", "--force", worktree.path], timeout: 10)
+            // The row was hidden optimistically above. If git refused (a locked worktree, a path in
+            // use), bring it back and say why, rather than leaving a worktree that still exists on
+            // disk invisible in the sidebar.
+            if !result.succeeded {
+                store.unhideWorktree(id: worktree.id)
+                let detail = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines)
+                deleteError = detail.isEmpty ? "git could not remove \(worktree.path)." : detail
+                showDeleteError = true
+            }
             await store.refresh()
         }
     }
@@ -263,9 +279,11 @@ struct SidebarView: View {
     }
 
     private func createWorktree(branch: String, in repo: GitRepo) async {
-        let safeName = branch.replacingOccurrences(of: "/", with: "-")
-        let parent = URL(fileURLWithPath: repo.mainPath).deletingLastPathComponent().path
-        let newPath = (parent as NSString).appendingPathComponent(safeName)
+        guard let newPath = WorktreePathPlanner.path(forBranch: branch, repoMainPath: repo.mainPath) else {
+            addWorktreeError = "'\(branch)' can't be used as a worktree folder name."
+            showAddWorktreeError = true
+            return
+        }
         let result = await ProcessRunner.run(
             "/usr/bin/git", ["-C", repo.mainPath, "worktree", "add", newPath, "-b", branch], timeout: 10)
         if !result.succeeded {
