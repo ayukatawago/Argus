@@ -14,6 +14,8 @@ private struct SpawnableProcess {
     let process: Process
     let stdoutPipe: Pipe
     let stderrPipe: Pipe
+    let exitSignal: ExitSignal
+    let stderrCapture: StderrCapture
 }
 
 /// Spawns a headless run of Claude Code or Codex CLI in a given working directory and streams its
@@ -43,6 +45,8 @@ public struct AgentRunner: Sendable {
         let process = spawnable.process
         let stdoutPipe = spawnable.stdoutPipe
         let stderrPipe = spawnable.stderrPipe
+        let exitSignal = spawnable.exitSignal
+        let stderrCapture = spawnable.stderrCapture
 
         return AsyncStream { continuation in
             let cleanup = PipeCleanup(stdoutPipe: stdoutPipe, stderrPipe: stderrPipe)
@@ -71,7 +75,7 @@ public struct AgentRunner: Sendable {
                 // against a process that hadn't started running yet.
                 cancelGate.spawned(process)
 
-                let parser = StreamingOutputParser(kind: agent.kind)
+                var parser = StreamingOutputParser(kind: agent.kind)
                 do {
                     for try await line in stdoutPipe.fileHandleForReading.bytes.lines {
                         for event in parser.consumeLine(line) {
@@ -81,8 +85,14 @@ public struct AgentRunner: Sendable {
                 } catch {
                     continuation.yield(.failed(error.localizedDescription))
                 }
-                let exitCode = await Self.waitForExit(process)
+                let exitCode = await exitSignal.wait()
+                stderrPipe.fileHandleForReading.readabilityHandler = nil
+                stderrCapture.append(PipeDrain.nonBlocking(stderrPipe.fileHandleForReading))
                 cleanup.release()
+                if exitCode != 0 {
+                    let message = Self.failureMessage(kind: agent.kind, exitCode: exitCode, stderr: stderrCapture.text)
+                    continuation.yield(.failed(message))
+                }
                 continuation.yield(.finished(exitCode: exitCode))
                 continuation.finish()
             }
@@ -123,28 +133,28 @@ public struct AgentRunner: Sendable {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
-        // Drained but discarded: nothing surfaces stderr today, but leaving it unread lets a
-        // chatty CLI fill the ~64KB pipe buffer and block on write() forever, leaking the process
-        // (and both its pipes) for the lifetime of the app.
+        // Captured (bounded) rather than discarded so a non-zero exit can report why. Draining it
+        // continuously also keeps a chatty CLI from filling the ~64KB pipe buffer and blocking.
+        let stderrCapture = StderrCapture()
         stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-            _ = handle.availableData
+            stderrCapture.append(handle.availableData)
         }
 
-        return SpawnableProcess(process: process, stdoutPipe: stdoutPipe, stderrPipe: stderrPipe)
+        // Installed before `run()` (not after, as a late `terminationHandler` assignment is never
+        // called for a process that already exited, which lost the continuation).
+        let exitSignal = ExitSignal()
+        process.terminationHandler = { finished in
+            exitSignal.fulfill(finished.terminationStatus)
+        }
+
+        return SpawnableProcess(
+            process: process, stdoutPipe: stdoutPipe, stderrPipe: stderrPipe,
+            exitSignal: exitSignal, stderrCapture: stderrCapture)
     }
 
-    /// Awaits process exit without blocking a thread — `Process.waitUntilExit()` would otherwise
-    /// pin a Swift concurrency cooperative-pool thread for as long as the child runs, and forever
-    /// if it ignores `SIGTERM`.
-    private static func waitForExit(_ process: Process) async -> Int32 {
-        if !process.isRunning {
-            return process.terminationStatus
-        }
-        return await withCheckedContinuation { continuation in
-            process.terminationHandler = { finishedProcess in
-                continuation.resume(returning: finishedProcess.terminationStatus)
-            }
-        }
+    static func failureMessage(kind: DiffReviewAgent.Kind, exitCode: Int32, stderr: String) -> String {
+        let base = "\(kind.displayName) exited with code \(exitCode)"
+        return stderr.isEmpty ? base + "." : base + ":\n" + stderr
     }
 
     // MARK: - Command construction
@@ -159,12 +169,12 @@ public struct AgentRunner: Sendable {
     private func claudeCommandLine(prompt: String, mode: AgentRunMode, resumingSessionID: String?) -> String {
         var args = [
             agent.executablePath ?? "claude",
-            "-p", shellEscape(prompt),
+            "-p", Self.shellEscape(prompt),
             "--output-format", "stream-json",
             "--verbose",
         ]
         if let resumingSessionID {
-            args += ["--resume", shellEscape(resumingSessionID)]
+            args += ["--resume", Self.shellEscape(resumingSessionID)]
         }
         if mode == .apply {
             args += ["--permission-mode", "acceptEdits"]
@@ -177,9 +187,9 @@ public struct AgentRunner: Sendable {
     private func codexCommandLine(prompt: String, mode: AgentRunMode, resumingSessionID: String?) -> String {
         var args = [agent.executablePath ?? "codex", "exec"]
         if let resumingSessionID {
-            args += ["resume", shellEscape(resumingSessionID)]
+            args += ["resume", Self.shellEscape(resumingSessionID)]
         }
-        args += [shellEscape(prompt), "--json"]
+        args += [Self.shellEscape(prompt), "--json"]
         switch mode {
         case .reply:
             args += ["--sandbox", "read-only"]
@@ -190,7 +200,8 @@ public struct AgentRunner: Sendable {
         return args.joined(separator: " ")
     }
 
-    private func shellEscape(_ value: String) -> String {
+    /// Single-quotes `value` for a POSIX shell command line (an embedded quote becomes `'\''`).
+    static func shellEscape(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
@@ -258,7 +269,7 @@ private final class CancelGate: @unchecked Sendable {
         lock.lock()
         if case .cancelled = state {
             lock.unlock()
-            if process.isRunning { process.terminate() }
+            ProcessTree.terminate(process)
             return
         }
         state = .spawned(process)
@@ -271,76 +282,7 @@ private final class CancelGate: @unchecked Sendable {
         state = .cancelled
         lock.unlock()
         if case .spawned(let process) = previous, process.isRunning {
-            process.terminate()
+            ProcessTree.terminate(process)
         }
-    }
-}
-
-/// Best-effort parsing of each agent's streamed stdout into `AgentEvent`s. Both CLIs' line-delimited
-/// JSON schemas are treated leniently — unrecognized shapes fall back to raw text rather than
-/// dropping output, since the exact schema (especially Codex's) may vary across CLI versions.
-private struct StreamingOutputParser {
-    let kind: DiffReviewAgent.Kind
-
-    func consumeLine(_ line: String) -> [AgentEvent] {
-        guard !line.isEmpty else { return [] }
-        switch kind {
-        case .claude: return parseClaudeLine(line)
-        case .codex: return parseCodexLine(line)
-        }
-    }
-
-    // MARK: - Claude `--output-format stream-json`
-
-    private func parseClaudeLine(_ line: String) -> [AgentEvent] {
-        guard let object = jsonObject(from: line) else { return [.text(line)] }
-
-        var events: [AgentEvent] = []
-        if let sessionID = object["session_id"] as? String {
-            events.append(.sessionID(sessionID))
-        }
-
-        switch object["type"] as? String {
-        case "assistant":
-            if let message = object["message"] as? [String: Any],
-                let content = message["content"] as? [[String: Any]]
-            {
-                for block in content where block["type"] as? String == "text" {
-                    if let text = block["text"] as? String {
-                        events.append(.text(text))
-                    }
-                }
-            }
-
-        case "result":
-            if let text = object["result"] as? String {
-                events.append(.text(text))
-            }
-
-        default:
-            break
-        }
-
-        return events
-    }
-
-    // MARK: - Codex `exec --json`
-
-    private func parseCodexLine(_ line: String) -> [AgentEvent] {
-        guard let object = jsonObject(from: line) else { return [.text(line)] }
-
-        var events: [AgentEvent] = []
-        if let sessionID = (object["session_id"] ?? object["conversation_id"]) as? String {
-            events.append(.sessionID(sessionID))
-        }
-        if let text = (object["text"] ?? object["message"] ?? object["content"]) as? String {
-            events.append(.text(text))
-        }
-        return events
-    }
-
-    private func jsonObject(from line: String) -> [String: Any]? {
-        guard let data = line.data(using: .utf8) else { return nil }
-        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 }

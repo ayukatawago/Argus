@@ -125,4 +125,81 @@ struct AgentRunnerTests {
         let after = openFileDescriptorCount()
         #expect(after - before <= 10, "fd count grew from \(before) to \(after) over 10 cancelled runs")
     }
+
+    // MARK: - exit status, stderr and descendant cleanup
+
+    private func writeScript(_ body: String) throws -> String {
+        let path = NSTemporaryDirectory() + "agent-runner-script-\(UUID().uuidString).sh"
+        try "#!/bin/sh\n\(body)\n".write(toFile: path, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path)
+        return path
+    }
+
+    @Test("a non-zero exit is surfaced as a failure carrying the CLI's stderr")
+    func nonZeroExitFails() async throws {
+        let script = try writeScript("echo boom >&2\nexit 3")
+        defer { try? FileManager.default.removeItem(atPath: script) }
+        let agent = DiffReviewAgent(kind: .claude, executablePath: script)
+        let runner = AgentRunner(agent: agent, workingDirectory: NSTemporaryDirectory())
+        let events = await collectEvents(runner.run(prompt: "hi", mode: .reply, resumingSessionID: nil))
+        let failure = events.compactMap { event -> String? in
+            if case .failed(let message) = event { message } else { nil }
+        }.first
+        #expect(failure?.contains("code 3") == true)
+        #expect(failure?.contains("boom") == true)
+    }
+
+    @Test("a child that exits immediately never loses the exit status (terminationHandler set before run)")
+    func fastExitIsNotLost() async {
+        let runner = AgentRunner(
+            agent: DiffReviewAgent(kind: .claude, executablePath: "/usr/bin/true"),
+            workingDirectory: NSTemporaryDirectory()
+        )
+        for _ in 0..<30 {
+            let events = await collectEvents(runner.run(prompt: "x", mode: .reply, resumingSessionID: nil))
+            guard case .finished(let code) = events.last else {
+                Issue.record("run did not finish: \(events)")
+                return
+            }
+            #expect(code == 0)
+        }
+    }
+
+    @Test("cancelling a run also terminates the child's descendants")
+    func cancelKillsDescendants() async throws {
+        let pidFile = NSTemporaryDirectory() + "agent-runner-pid-\(UUID().uuidString)"
+        let script = try writeScript("sleep 60 &\necho $! > \(pidFile)\nwait")
+        defer {
+            try? FileManager.default.removeItem(atPath: script)
+            try? FileManager.default.removeItem(atPath: pidFile)
+        }
+        let previousShell = ProcessInfo.processInfo.environment["SHELL"]
+        setenv("SHELL", script, 1)
+        defer {
+            if let previousShell { setenv("SHELL", previousShell, 1) } else { unsetenv("SHELL") }
+        }
+
+        let runner = AgentRunner(agent: Self.echoAgent, workingDirectory: NSTemporaryDirectory())
+        let stream = runner.run(prompt: "hello", mode: .reply, resumingSessionID: nil)
+        let consumer = Task { for await _ in stream {} }
+
+        var grandchild: pid_t?
+        for _ in 0..<100 where grandchild == nil {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            grandchild = (try? String(contentsOfFile: pidFile, encoding: .utf8))
+                .flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        }
+        let pid = try #require(grandchild)
+        #expect(kill(pid, 0) == 0, "grandchild should be alive before cancel")
+
+        consumer.cancel()
+        _ = await consumer.value
+        var dead = false
+        for _ in 0..<100 where !dead {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            dead = kill(pid, 0) != 0
+        }
+        #expect(dead, "grandchild \(pid) survived cancellation")
+        if !dead { kill(pid, SIGKILL) }
+    }
 }

@@ -23,7 +23,7 @@ enum SideBySideBuilder {
             let line = lines[index]
             switch line.kind {
             case .context:
-                rows.append(SideBySideRow(id: line.id.uuidString, left: line, right: line))
+                rows.append(SideBySideRow(id: line.id, left: line, right: line))
                 index += 1
 
             case .deletion, .addition:
@@ -43,7 +43,7 @@ enum SideBySideBuilder {
                     let right = additions[safe: pairIndex]
                     rows.append(
                         SideBySideRow(
-                            id: "\(left?.id.uuidString ?? "-")|\(right?.id.uuidString ?? "-")",
+                            id: "\(left?.id ?? "-")|\(right?.id ?? "-")",
                             left: left,
                             right: right
                         )

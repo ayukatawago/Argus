@@ -15,8 +15,17 @@ public struct GitRunner: Sendable {
         public let standardOutput: String
         public let standardError: String
         public let exitCode: Int32
+        /// True when the run was killed for exceeding its `timeout` (`exitCode` is then -1).
+        public let timedOut: Bool
 
-        public var succeeded: Bool { exitCode == 0 }
+        public var succeeded: Bool { exitCode == 0 && !timedOut }
+
+        public init(standardOutput: String, standardError: String, exitCode: Int32, timedOut: Bool = false) {
+            self.standardOutput = standardOutput
+            self.standardError = standardError
+            self.exitCode = exitCode
+            self.timedOut = timedOut
+        }
     }
 
     public enum GitError: Error, Sendable {
@@ -143,7 +152,7 @@ private final class Completer: @unchecked Sendable {
         let target = process
         lock.unlock()
         if target?.isRunning == true { target?.terminate() }
-        complete { GitRunner.Result(standardOutput: $0, standardError: $1, exitCode: -1) }
+        complete { GitRunner.Result(standardOutput: $0, standardError: $1, exitCode: -1, timedOut: true) }
     }
 
     func finishLaunchFailure(_ error: Error) {
@@ -176,8 +185,8 @@ private final class Completer: @unchecked Sendable {
         releasePipes(stdout, stderr)
 
         lock.lock()
-        let out = String(data: stdoutData, encoding: .utf8) ?? ""
-        let err = String(data: stderrData, encoding: .utf8) ?? ""
+        let out = String(decoding: stdoutData, as: UTF8.self)
+        let err = String(decoding: stderrData, as: UTF8.self)
         lock.unlock()
 
         do {
