@@ -314,6 +314,11 @@ a misleading `$0.00`, both in the chip and in the popover's per-row breakdown.
 | `App/Views/PanePool.swift` | Owns shell/claude/codex `TerminalHost`s; role registration driven by the open agent tabs |
 | `App/Views/TerminalTabsStore.swift` | Polls the selected worktree's shell tmux session's windows; issues select/new/close tmux commands |
 | `App/Views/TerminalTabBarView.swift` | Tab bar UI above the shell pane, one tab per tmux window |
+| `Packages/ArgusCore/Sources/ArgusConfigKit/LeaderActionCatalog.swift` | Pure: `LeaderAction` enum + `LeaderActionCatalog.entries/target(forKey:)` — the one table leader dispatch, the which-key HUD and the command palette all read; `App/LeaderAction+Notification.swift` maps each action to its `Notification.Name` |
+| `App/LeaderModeState.swift` / `App/Views/LeaderHUDView.swift` | Leader-pending state driven by `AppDelegate`'s key monitor, and the which-key overlay shown ~300 ms after the leader press |
+| `App/Views/CommandPaletteView.swift` | ⌘K / leader `/` palette: fuzzy-switch worktrees or run any leader action/popup by name (`PaletteItem` built in `AppShellView.paletteItems`) |
+| `Packages/ArgusCore/Sources/ArgusSupport/FuzzyMatcher.swift` | Pure: case-insensitive subsequence scoring/ranking shared by the palette and sidebar filter |
+| `Packages/ArgusCore/Sources/Workspaces/SidebarFilter.swift` | Pure: narrows repos/worktrees by query and/or an attention-ID set; `WorktreeNavigator.nextAttention` backs leader `e` (jump to waiting/done agent) |
 | `App/Views/AppShellView+TabBindings.swift` | Routes new/next/previous/close-tab and split-toggle leader keys to the terminal or agent tab store based on focused pane (next/previous tab ship with no default key) |
 | `App/Views/AppShellView+TmuxPaneBindings.swift` | Routes leader `h`/`j`/`k`/`l` to a literal `tmux select-pane -L/-D/-U/-R` against the focused role's tmux session |
 | `Packages/ArgusCore/Sources/Monitors/TmuxWindowParser.swift` | Parses `tmux list-windows` output into `TmuxWindow` (folder-name label from `pane_current_path`) |
