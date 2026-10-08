@@ -29,6 +29,14 @@ struct ArgusConfigTests {
         #expect(decoded.layout == .terminalAgent)
     }
 
+    @Test("agentsOverTerminalRatio defaults to 0.7 and is clamped on read")
+    func ratioClamped() throws {
+        #expect(ArgusConfig().clampedAgentsOverTerminalRatio == 0.7)
+        #expect(try decode(#"{"agentsOverTerminalRatio": 0.01}"#).clampedAgentsOverTerminalRatio == 0.2)
+        #expect(try decode(#"{"agentsOverTerminalRatio": 5}"#).clampedAgentsOverTerminalRatio == 0.9)
+        #expect(try decode(#"{"agentsOverTerminalRatio": 0.5}"#).clampedAgentsOverTerminalRatio == 0.5)
+    }
+
     @Test("a wrong-typed field falls back to its default alone, siblings still decode")
     func wrongTypedFieldFallsBackAlone() throws {
         let decoded = try decode(
