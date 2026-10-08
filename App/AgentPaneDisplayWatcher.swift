@@ -12,7 +12,7 @@ import Monitors
 /// both observed live) to idle. This reads what the pane actually shows instead, continuously
 /// re-asserted, so it isn't subject to that heuristic at all.
 ///
-/// Lives in App/ (not AgentStateKit) because it needs `WorktreePane.tmuxExecutable`/
+/// Lives in App/ (not AgentStateKit) because it needs `Tmux.executable`/
 /// `sessionName(for:path:)` from GhosttyBridge, which AgentStateKit cannot import — same reasoning
 /// as `ShellStateBus`. `TmuxPaneCaptureBatch` (Monitors) holds the pure batching/parsing logic;
 /// this file is the glue that runs it against real tmux processes and folds the result into
@@ -102,9 +102,7 @@ final class AgentPaneDisplayWatcher: ObservableObject {
             }
         }
 
-        let tmux = WorktreePane.tmuxExecutable
-        let listResult = await ProcessRunner.run(
-            tmux, ["list-panes", "-a", "-F", "#{session_name}|#{pane_height}"])
+        let listResult = await Tmux.run(TmuxCommand.listAllPanes(format: "#{session_name}|#{pane_height}"))
         // A failed launch/exit (e.g. around system sleep/wake, or transient resource pressure)
         // returns exit code -1 with empty output — indistinguishable, if fed straight into
         // parseSessionHeights, from "there are now zero live sessions". Treating that as a real
@@ -126,7 +124,7 @@ final class AgentPaneDisplayWatcher: ObservableObject {
         if !foundSessionNames.isEmpty {
             let captureArgs = TmuxPaneCaptureBatch.captureArguments(
                 sessionNames: foundSessionNames, heightBySession: heightBySession)
-            let captureResult = await ProcessRunner.run(tmux, captureArgs)
+            let captureResult = await Tmux.run(captureArgs)
             textBySession = TmuxPaneCaptureBatch.splitCapture(
                 captureResult.standardOutput, sessionNames: foundSessionNames)
         }

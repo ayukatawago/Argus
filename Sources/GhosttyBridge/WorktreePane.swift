@@ -27,21 +27,15 @@ final class WorktreePane {
         let surfaceOptions = TerminalSurfaceOptions(backend: .exec, workingDirectory: workingDirectory)
         let shell = LoginShell.current
         let session = sessionName(for: role)
-        let tmux = Self.tmuxExecutable
         let envPreamble = Self.envExportPreamble()
-        let command: String
+        let program: [String]
         if let agent = role.agent {
-            let cmd = "\(envPreamble)\(ArgusConfigStore.shared.config.launchCommand(for: agent)) || exec \(shell) -l"
-            command =
-                "\(tmux) new-session -A -s \(session) \(shell) -l -c '\(cmd)'"
-                + " \\; set -s extended-keys on"
-                + " \\; set-option -t \(session) status off"
+            let launch = ArgusConfigStore.shared.config.launchCommand(for: agent)
+            program = [shell, "-l", "-c", "\(envPreamble)\(launch) || exec \(ShellQuote.quote(shell)) -l"]
         } else {
-            command =
-                "\(tmux) new-session -A -s \(session) '\(envPreamble)exec \(shell) -l'"
-                + " \\; set -s extended-keys on"
-                + " \\; set-option -t \(session) status off"
+            program = ["\(envPreamble)exec \(ShellQuote.quote(shell)) -l"]
         }
+        let command = TmuxCommand.attachOrCreate(tmux: Tmux.executable, session: session, command: program)
         let state = Self.makeState(command: command)
         state.configuration = surfaceOptions
         let terminalView = Self.makeView(state: state, sessionName: session)
@@ -78,16 +72,6 @@ final class WorktreePane {
     // Changes take effect only when new tmux sessions are created (reload with leader+a).
     static func envExportPreamble() -> String {
         EnvExportPreamble.make(from: ArgusConfigStore.shared.config.environmentVariables)
-    }
-
-    static var tmuxExecutable: String {
-        let candidates = [
-            ProcessInfo.processInfo.environment["ARGUS_TMUX"],
-            "/opt/homebrew/bin/tmux",
-            "/usr/local/bin/tmux",
-            "/usr/bin/tmux",
-        ].compactMap { $0 }
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) } ?? "tmux"
     }
 
     private static func makeState(command: String? = nil) -> TerminalViewState {

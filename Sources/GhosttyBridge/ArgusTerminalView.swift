@@ -1,4 +1,5 @@
 import AppKit
+import ArgusSupport
 import GhosttyTerminal
 
 /// AppTerminalView subclass that opens URLs on Cmd+click.
@@ -31,63 +32,28 @@ final class ArgusTerminalView: AppTerminalView {
     }
 
     private func openURLAtClick(event: NSEvent) {
-        guard let sessionName,
-            let tmux = tmuxPath(),
-            let pane = runTmux(tmux, args: ["capture-pane", "-t", sessionName, "-p"])
-        else {
+        guard let sessionName else {
             super.mouseDown(with: event)
             return
         }
 
+        // Resolve the click cell now: the event and view geometry are only valid on this turn.
         let point = convert(event.locationInWindow, from: nil)
         let scale = window?.backingScaleFactor ?? 2.0
         let metrics = (delegate as? TerminalViewState)?.surfaceSize
         let (clickRow, clickCol) = clickCell(point: point, scale: scale, metrics: metrics)
 
-        let candidates = urlCandidates(in: pane)
-        guard let target = bestCandidate(candidates, clickRow: clickRow, clickCol: clickCol) else {
-            NSSound.beep()
-            super.mouseDown(with: event)
-            return
-        }
-
-        NSWorkspace.shared.open(target)
-    }
-
-    // MARK: - URL extraction
-
-    private struct URLCandidate {
-        let url: URL
-        let row: Int
-        let col: Int
-    }
-
-    private func urlCandidates(in pane: String) -> [URLCandidate] {
-        guard let regex = try? NSRegularExpression(pattern: #"https?://\S+"#) else { return [] }
-        var result: [URLCandidate] = []
-        for (lineIdx, line) in pane.components(separatedBy: "\n").enumerated() {
-            let nsLine = line as NSString
-            let full = NSRange(location: 0, length: nsLine.length)
-            for match in regex.matches(in: line, range: full) {
-                var raw = nsLine.substring(with: match.range)
-                while let last = raw.last, ".,;:)]}'\"".contains(last) {
-                    raw = String(raw.dropLast())
-                }
-                if let url = URL(string: raw) {
-                    result.append(URLCandidate(url: url, row: lineIdx, col: match.range.location))
-                }
+        // Off the main thread, with a timeout: this used to be a synchronous `Process` that blocked
+        // the UI for as long as tmux took (indefinitely if it wedged).
+        Task { @MainActor in
+            let capture = await Tmux.run(["capture-pane", "-t", sessionName, "-p"], timeout: 3)
+            let candidates = capture.succeeded ? TerminalURLDetector.candidates(in: capture.standardOutput) : []
+            guard let target = TerminalURLDetector.best(candidates, clickRow: clickRow, clickColumn: clickCol) else {
+                NSSound.beep()
+                return
             }
+            NSWorkspace.shared.open(target)
         }
-        return result
-    }
-
-    private func bestCandidate(_ candidates: [URLCandidate], clickRow: Int?, clickCol: Int) -> URL? {
-        guard !candidates.isEmpty else { return nil }
-        guard let clickRow else { return candidates[0].url }
-        return candidates.min {
-            abs($0.row - clickRow) * 1000 + abs($0.col - clickCol)
-                < abs($1.row - clickRow) * 1000 + abs($1.col - clickCol)
-        }?.url ?? candidates[0].url
     }
 
     private func clickCell(
@@ -105,33 +71,5 @@ final class ArgusTerminalView: AppTerminalView {
                 mtr.cellWidthPixels > 0 ? Int(point.x * scale) / Int(mtr.cellWidthPixels) : 0
             } ?? 0
         return (row, col)
-    }
-
-    // MARK: - Helpers
-
-    private func tmuxPath() -> String? {
-        ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"]
-            .first { FileManager.default.fileExists(atPath: $0) }
-    }
-
-    private func runTmux(_ path: String, args: [String]) -> String? {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: path)
-        task.arguments = args
-        let out = Pipe()
-        task.standardOutput = out
-        // Discarded, but must go somewhere other than the parent's own stderr — `nullDevice`
-        // avoids opening a pipe (and its fds) that nothing would ever read.
-        task.standardError = FileHandle.nullDevice
-        guard (try? task.run()) != nil else { return nil }
-        // Read before waiting: a `capture-pane` of a long scrollback can exceed the pipe's ~64KB
-        // kernel buffer, and reading only after `waitUntilExit()` would deadlock — tmux would
-        // block on write() waiting for buffer space that never frees because nothing is draining
-        // the pipe, so it would never reach the exit `waitUntilExit()` is waiting for.
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        try? out.fileHandleForReading.close()
-        guard task.terminationStatus == 0 else { return nil }
-        return String(data: data, encoding: .utf8)
     }
 }

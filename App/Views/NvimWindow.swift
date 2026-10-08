@@ -1,4 +1,5 @@
 import AppKit
+import ArgusSupport
 import GhosttyTerminal
 
 /// Manages a floating NSWindow running nvim in the active worktree directory.
@@ -18,11 +19,8 @@ final class NvimWindow: NSObject, NSWindowDelegate, ObservableObject {
 
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let session = WorktreePane.sessionName("n", path: workingDirectory)
-        let tmux = WorktreePane.tmuxExecutable
-        let command =
-            "\(tmux) new-session -A -s \(session) \(shell) -l -c 'nvim'"
-            + " \\; set -s extended-keys on"
-            + " \\; set-option -t \(session) status off"
+        let command = TmuxCommand.attachOrCreate(
+            tmux: Tmux.executable, session: session, command: [shell, "-l", "-c", "nvim"])
         let state = TerminalViewState(
             terminalConfiguration: TerminalConfiguration {
                 $0.withFontSize(13)

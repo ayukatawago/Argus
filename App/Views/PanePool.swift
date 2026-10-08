@@ -70,7 +70,7 @@ final class PanePool: ObservableObject {
     func closeRole(id: String, workingDirectory: String, role: PaneRole) async {
         guard role != .shell else { return }
         let session = WorktreePane.sessionName(for: role, path: workingDirectory)
-        _ = await ProcessRunner.run(WorktreePane.tmuxExecutable, ["kill-session", "-t", session])
+        await Tmux.run(TmuxCommand.killSession(session))
         host(for: role).unregister(id: id)
         panes[id]?.discardView(for: role)
     }
@@ -82,7 +82,7 @@ final class PanePool: ObservableObject {
     func reloadAgentPanes(id: String, workingDirectory: String, roles: [PaneRole]) async {
         for role in roles where role != .shell {
             let session = WorktreePane.sessionName(for: role, path: workingDirectory)
-            _ = await ProcessRunner.run(WorktreePane.tmuxExecutable, ["kill-session", "-t", session])
+            await Tmux.run(TmuxCommand.killSession(session))
         }
         release(id: id)
         getOrCreate(id: id, workingDirectory: workingDirectory, roles: roles)

@@ -1,5 +1,6 @@
 import AppKit
 import ArgusConfigKit
+import ArgusSupport
 import GhosttyTerminal
 
 extension Notification.Name {
@@ -55,7 +56,7 @@ final class PopupTerminalWindow: NSObject, NSWindowDelegate, ObservableObject {
             terminalConfiguration: TerminalConfiguration {
                 $0.withFontSize(13)
                 $0.withCursorStyleBlink(true)
-                $0.withCustom("command", "\(shell) -l -c '\(command)'")
+                $0.withCustom("command", ShellQuote.join([shell, "-l", "-c", command]))
             }
         )
         state.configuration = TerminalSurfaceOptions(backend: .exec, workingDirectory: workingDirectory)
