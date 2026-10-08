@@ -41,15 +41,26 @@ public final class ClaudeTranscriptWatcher: @unchecked Sendable {
     /// it rather than let `carry` grow unbounded.
     private nonisolated static let maxCarryBytes = 1_048_576
 
-    public init() {}
+    /// Directory holding one `<project>/` folder per working directory. Injectable so the whole
+    /// scan can be exercised against a temp directory instead of the real `~/.claude/projects`.
+    private let projectsRoot: URL
+
+    public init(projectsRoot: URL = ClaudeTranscriptWatcher.defaultProjectsRoot) {
+        self.projectsRoot = projectsRoot
+    }
+
+    public nonisolated static var defaultProjectsRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+    }
 
     public func start() {
         let state = PollState()
+        let root = projectsRoot
         pollTask = PollingTask.repeating(
             order: .actThenSleep,
             interval: { 500_000_000 },
             action: { [weak self] in
-                await Self.scanOnce(state: state) { payload in
+                await Self.scanOnce(state: state, root: root, now: Date()) { payload in
                     await MainActor.run { self?.onPayload?(payload) }
                 }
             }
@@ -65,7 +76,7 @@ public final class ClaudeTranscriptWatcher: @unchecked Sendable {
     /// than captured `var`s in a loop. Deliberately not actor-isolated: PollingTask calls the
     /// action strictly sequentially — one call finishes before the next starts — so plain mutation
     /// here needs no lock or actor (same reasoning as CodexSessionWatcher.PollState).
-    private final class PollState: @unchecked Sendable {
+    final class PollState: @unchecked Sendable {
         var files: [URL: TrackedFile] = [:]
         // Task-subagent sidechains, tracked with the same TrackedFile machinery as top-level
         // transcripts but never contributing a state of their own — see subagentFiles()/scanOnce.
@@ -77,7 +88,7 @@ public final class ClaudeTranscriptWatcher: @unchecked Sendable {
     /// One transcript file's tracked read position and last-known contribution to its cwd.
     /// `cwd == nil` marks a file deliberately not tracked (a headless `sdk-cli` run, or a complete
     /// header that never carries a `cwd`) so its header bytes aren't re-read on every 500ms poll.
-    private struct TrackedFile {
+    struct TrackedFile {
         var cwd: String?
         var offset: UInt64 = 0
         // Bytes read but not yet resolved into a complete line — see splitAtLastNewline.
@@ -108,13 +119,16 @@ public final class ClaudeTranscriptWatcher: @unchecked Sendable {
             cwd: observation.cwd, state: observation.state, lastActivity: sidechainActivity)
     }
 
-    private nonisolated static func scanOnce(
+    nonisolated static func scanOnce(
         state: PollState,
+        root: URL,
+        now: Date,
         handler: @Sendable (HookPayload) async -> Void
     ) async {
-        let now = Date()
+        // Listed once per poll and shared by both scans below, rather than once each.
+        let projectDirs = projectDirs(under: root)
 
-        for fileURL in transcriptFiles() {
+        for fileURL in transcriptFiles(in: projectDirs) {
             guard isRecentlyTouched(fileURL, now: now) else {
                 // Drop it rather than let a discovered-once file linger in `state.files` forever —
                 // if it resumes later it's treated as newly discovered and re-seeded from its tail.
@@ -127,7 +141,7 @@ public final class ClaudeTranscriptWatcher: @unchecked Sendable {
         // Task-subagent sidechains: read and tracked the same way, but only ever consulted for
         // liveness below (sidechainActivityByCwd) — a subagent's own decisive lines never drive
         // the worktree's published state.
-        for fileURL in subagentFiles() {
+        for fileURL in subagentFiles(in: projectDirs) {
             guard isRecentlyTouched(fileURL, now: now) else {
                 state.sidechainFiles.removeValue(forKey: fileURL)
                 continue
@@ -274,14 +288,12 @@ public final class ClaudeTranscriptWatcher: @unchecked Sendable {
 
     // MARK: - File helpers
 
-    /// Every `<project>/` directory directly under `~/.claude/projects/`, shared by
-    /// `transcriptFiles()` and `subagentFiles()`.
-    private nonisolated static func projectDirs() -> [URL] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let projectsBase = home.appendingPathComponent(".claude/projects")
+    /// Every `<project>/` directory directly under `root`, shared by `transcriptFiles(in:)` and
+    /// `subagentFiles(in:)`.
+    private nonisolated static func projectDirs(under root: URL) -> [URL] {
         guard
             let dirs = try? FileManager.default.contentsOfDirectory(
-                at: projectsBase,
+                at: root,
                 includingPropertiesForKeys: [.isDirectoryKey]
             )
         else { return [] }
@@ -291,10 +303,10 @@ public final class ClaudeTranscriptWatcher: @unchecked Sendable {
     /// Every `*.jsonl` directly under a `~/.claude/projects/<project>/` directory. Non-recursive,
     /// so subagent sidechains — written to `<project>/<sessionId>/subagents/agent-*.jsonl`, one
     /// directory deeper than a top-level transcript — are naturally excluded here: `<sessionId>/`
-    /// has no `.jsonl` extension itself, so it's dropped before ever being listed. `subagentFiles()`
+    /// has no `.jsonl` extension itself, so it's dropped before ever being listed. `subagentFiles(in:)`
     /// below is the sibling that looks one level deeper, for liveness only — see `scanOnce`.
-    private nonisolated static func transcriptFiles() -> [URL] {
-        projectDirs().flatMap { dir -> [URL] in
+    private nonisolated static func transcriptFiles(in projectDirs: [URL]) -> [URL] {
+        projectDirs.flatMap { dir -> [URL] in
             guard
                 let files = try? FileManager.default.contentsOfDirectory(
                     at: dir,
@@ -310,8 +322,8 @@ public final class ClaudeTranscriptWatcher: @unchecked Sendable {
     /// `cwd`/`timestamp` fields as a top-level transcript) but tracking a different unit of work.
     /// Consulted only for liveness (`sidechainActivityByCwd` in `scanOnce`) — never a state source
     /// of its own, so a subagent's own start/finish never itself flips the worktree's indicator.
-    private nonisolated static func subagentFiles() -> [URL] {
-        projectDirs().flatMap { projectDir -> [URL] in
+    private nonisolated static func subagentFiles(in projectDirs: [URL]) -> [URL] {
+        projectDirs.flatMap { projectDir -> [URL] in
             guard
                 let sessionDirs = try? FileManager.default.contentsOfDirectory(
                     at: projectDir,

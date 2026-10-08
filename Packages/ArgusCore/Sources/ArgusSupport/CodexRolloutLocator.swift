@@ -2,12 +2,9 @@ import Foundation
 
 /// Pure path math for Codex's `~/.codex/sessions/<year>/<month>/<day>/` layout.
 ///
-/// A separate, parameterized version of the day-directory math `CodexSessionWatcher` already
-/// does for its own (hardcoded `0...1` day, state-inference) purposes: that one is `private` and
-/// bakes the lookback window into its loop, so it can't be reused here where the usage scan needs
-/// a much wider window — a session resumed days after creation keeps appending to its *original*
-/// day's file indefinitely (see `CodexSessionWatcher.scanOnce`'s own comment on this), so a usage
-/// total that only looked at today's directory would silently miss that session's tokens.
+/// Shared by `CodexSessionWatcher` (state inference, a short lookback) and the usage scan (a much
+/// wider one): a session resumed days after creation keeps appending to its *original* day's file
+/// indefinitely, so a total that only looked at today's directory would silently miss it.
 public enum CodexRolloutLocator {
     /// Directories for `now` and the `days - 1` days before it, oldest first. Does not touch the
     /// filesystem — callers list each directory's contents themselves, so this stays testable

@@ -1,19 +1,9 @@
 import Foundation
 
-// Dynamic string-keyed CodingKey for decoding `modelPrices` entry-by-entry. A file-local twin of
-// the `RawStringKey` in ArgusConfig.swift, which is file-private (Swift's `private` is file-scoped).
-private struct ModelPriceKey: CodingKey {
-    let stringValue: String
-    init(_ string: String) { self.stringValue = string }
-    init?(stringValue: String) { self.stringValue = stringValue }
-    var intValue: Int? { nil }
-    init?(intValue: Int) { nil }
-}
-
 // `CodexUsage`/`CodexModelPrice` are each already one level deep (nested in `extension ArgusConfig`),
 // so their CodingKeys live as file-level enums rather than nested ones — a second nesting level
 // would trip SwiftLint's one-level type-nesting limit, the same reason `KeyBindings` reads its
-// fields through the file-level `RawStringKey` instead of a nested `CodingKeys`.
+// fields through the shared `RawStringKey` instead of a nested `CodingKeys`.
 private enum CodexUsageCodingKeys: String, CodingKey {
     case refreshIntervalSeconds, scanDayWindow, modelPrices
 }
@@ -50,7 +40,7 @@ extension ArgusConfig {
             // defensive intent as `ArgusConfig.projectAgents`, adapted for a struct-valued
             // dictionary (that one gets away with a raw-string intermediate decode; a price entry
             // has no such single-scalar fallback, so this decodes key-by-key instead).
-            if let pricesContainer = try? container.nestedContainer(keyedBy: ModelPriceKey.self, forKey: .modelPrices) {
+            if let pricesContainer = try? container.nestedContainer(keyedBy: RawStringKey.self, forKey: .modelPrices) {
                 var prices: [String: CodexModelPrice] = [:]
                 for key in pricesContainer.allKeys {
                     if let price = try? pricesContainer.decode(CodexModelPrice.self, forKey: key) {
