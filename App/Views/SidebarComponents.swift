@@ -35,6 +35,7 @@ struct RepoHeader: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Unhide \(hiddenCount) worktree\(hiddenCount == 1 ? "" : "s")")
+                .accessibilityLabel("Unhide \(hiddenCount) hidden worktree\(hiddenCount == 1 ? "" : "s")")
             }
             if isGitRepo {
                 agentMenu
@@ -44,6 +45,7 @@ struct RepoHeader: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Add worktree")
+                .accessibilityLabel("Add worktree to \(name)")
             }
             Button(action: onRemove) {
                 Image(systemName: "minus.circle")
@@ -51,6 +53,7 @@ struct RepoHeader: View {
             }
             .buttonStyle(.borderless)
             .help("Remove repository")
+            .accessibilityLabel("Remove repository \(name)")
         }
     }
 
@@ -80,6 +83,7 @@ struct RepoHeader: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Set agent for this project")
+        .accessibilityLabel("Set agent for \(name)")
     }
 
     private func agentMenuLabel(_ title: String, isSelected: Bool) -> some View {
@@ -110,20 +114,25 @@ struct AgentDot: View {
                         .foregroundStyle(agentColor(agentType))
                         .frame(width: 10, height: 10)
                 }
+            } else if state == .waitingForApproval || state == .done {
+                Image(systemName: state.symbolName)
+                    .resizable()
+                    .foregroundStyle(state.dotColor(for: agentType))
+                    .frame(width: 10, height: 10)
             } else {
                 Circle()
-                    .fill(dotColor)
+                    .fill(state.dotColor(for: agentType))
                     .frame(width: 10, height: 10)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(agentName): \(state.accessibilityText)")
     }
 
-    private var dotColor: Color {
-        switch state {
-        case .idle: Color.secondary.opacity(0.4)
-        case .running: agentColor(agentType)
-        case .waitingForApproval: Color.orange
-        case .done: Color.green.opacity(0.8)
+    private var agentName: String {
+        switch agentType {
+        case .claude: "Claude"
+        case .codex: "Codex"
         }
     }
 }
@@ -213,10 +222,8 @@ struct AgentStateBackground: View {
     /// separate `if/else` branches, so switching between them (or to no border) no longer changes
     /// the view's structural type.
     private var staticBorderStyle: (color: Color, lineWidth: CGFloat)? {
-        if agentState == .done {
-            return (Color.green.opacity(0.55), 1.5)
-        } else if agentState == .waitingForApproval {
-            return (Color.orange.opacity(0.7), 2)
+        if let attention = agentState.rowBorder {
+            return attention
         } else if isSelected {
             return (Color.accentColor, 2)
         }

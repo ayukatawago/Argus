@@ -316,18 +316,8 @@ extension AppShellView {
         }
     }
 
-    @ViewBuilder
     fileprivate var terminalBackground: some View {
-        switch currentWorktreeState.state {
-        case .done:
-            Color.green.opacity(0.05)
-
-        case .waitingForApproval:
-            Color.orange.opacity(0.07)
-
-        default:
-            Color.clear
-        }
+        currentWorktreeState.state.detailTint
     }
 
     fileprivate func dismissAttentionIfNeeded() {

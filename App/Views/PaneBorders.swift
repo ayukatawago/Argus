@@ -14,17 +14,9 @@ extension View {
 
     func agentStateBorder(_ state: AgentState) -> some View {
         overlay {
-            switch state {
-            case .done:
+            if let border = state.paneBorder {
                 Rectangle()
-                    .strokeBorder(Color.green.opacity(0.5), lineWidth: 2)
-
-            case .waitingForApproval:
-                Rectangle()
-                    .strokeBorder(Color.orange.opacity(0.7), lineWidth: 3)
-
-            default:
-                EmptyView()
+                    .strokeBorder(border.color, lineWidth: border.lineWidth)
             }
         }
     }
