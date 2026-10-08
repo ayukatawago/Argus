@@ -146,6 +146,9 @@ public final class CodexSessionWatcher: @unchecked Sendable {
         return results
     }
 
+    private nonisolated static let initialTailBytes: UInt64 = 4_096
+    private nonisolated static let maxTailBytes: UInt64 = 262_144
+
     private struct ParsedSession {
         let cwd: String
         let threadSource: String?
@@ -155,7 +158,7 @@ public final class CodexSessionWatcher: @unchecked Sendable {
     /// Reads the session file's header and tail in a single open. cwd appears at ~byte 156 and
     /// thread_source at ~byte 270-618; 2048 bytes is always enough regardless of system-prompt
     /// length. `state` is `nil` when the tail contains no decisive event (empty file, or the file
-    /// grew but nothing relevant landed in the last 4096 bytes).
+    /// grew but nothing relevant landed in the last 256 KB).
     ///
     /// Deliberately uses `String(decoding:as:)`, not the failable `String(bytes:encoding:)`: a
     /// fixed-size read can cut a UTF-8 codepoint in half, and a nil result previously made the
@@ -178,11 +181,19 @@ public final class CodexSessionWatcher: @unchecked Sendable {
             size > 0
         else { return ParsedSession(cwd: cwd, threadSource: threadSource, state: nil) }
 
-        let tailSize: UInt64 = min(size, 4_096)
-        try? handle.seek(toOffset: size - tailSize)
-        let tailData = handle.readDataToEndOfFile()
-        let tailText = String(decoding: tailData, as: UTF8.self)
+        // Grow the tail window until a decisive line shows up or the whole file has been read: a
+        // `task_complete` line carrying a long `last_agent_message` can exceed any fixed window,
+        // which would otherwise leave the state stuck on "running" until the staleness cutoff.
+        var tailSize = min(size, Self.initialTailBytes)
+        var state: String?
+        while true {
+            try? handle.seek(toOffset: size - tailSize)
+            let tailText = String(decoding: handle.readDataToEndOfFile(), as: UTF8.self)
+            state = CodexSessionParser.inferState(from: tailText)
+            if state != nil || tailSize >= min(size, Self.maxTailBytes) { break }
+            tailSize = min(size, tailSize * 2, Self.maxTailBytes)
+        }
         // swiftlint:enable optional_data_string_conversion
-        return ParsedSession(cwd: cwd, threadSource: threadSource, state: CodexSessionParser.inferState(from: tailText))
+        return ParsedSession(cwd: cwd, threadSource: threadSource, state: state)
     }
 }

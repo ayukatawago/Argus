@@ -45,19 +45,28 @@ public struct CodexTokenUsage: Equatable, Sendable {
     /// `uncachedInputTokens`.
     public var freshInputTokens: Int { max(0, uncachedInputTokens - cacheWriteInputTokens) }
 
+    /// Saturating: a corrupt rollout line carrying an absurd count must not trap the whole app on
+    /// overflow, and clamping at `Int.max` keeps the daily total visibly wrong rather than fatal.
     public static func + (lhs: Self, rhs: Self) -> Self {
         CodexTokenUsage(
-            inputTokens: lhs.inputTokens + rhs.inputTokens,
-            cachedInputTokens: lhs.cachedInputTokens + rhs.cachedInputTokens,
-            cacheWriteInputTokens: lhs.cacheWriteInputTokens + rhs.cacheWriteInputTokens,
-            outputTokens: lhs.outputTokens + rhs.outputTokens,
-            reasoningOutputTokens: lhs.reasoningOutputTokens + rhs.reasoningOutputTokens,
-            totalTokens: lhs.totalTokens + rhs.totalTokens,
-            responseCount: lhs.responseCount + rhs.responseCount
+            inputTokens: lhs.inputTokens.saturatingAdd(rhs.inputTokens),
+            cachedInputTokens: lhs.cachedInputTokens.saturatingAdd(rhs.cachedInputTokens),
+            cacheWriteInputTokens: lhs.cacheWriteInputTokens.saturatingAdd(rhs.cacheWriteInputTokens),
+            outputTokens: lhs.outputTokens.saturatingAdd(rhs.outputTokens),
+            reasoningOutputTokens: lhs.reasoningOutputTokens.saturatingAdd(rhs.reasoningOutputTokens),
+            totalTokens: lhs.totalTokens.saturatingAdd(rhs.totalTokens),
+            responseCount: lhs.responseCount.saturatingAdd(rhs.responseCount)
         )
     }
 
     public static func += (lhs: inout Self, rhs: Self) {
         lhs = lhs + rhs
+    }
+}
+
+extension Int {
+    fileprivate func saturatingAdd(_ other: Int) -> Int {
+        let (sum, overflow) = addingReportingOverflow(other)
+        return overflow ? (other < 0 ? .min : .max) : sum
     }
 }

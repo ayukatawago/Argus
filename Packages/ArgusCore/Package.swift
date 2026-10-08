@@ -23,6 +23,7 @@ let package = Package(
         ),
         .target(
             name: "ArgusConfigKit",
+            dependencies: ["ArgusSupport"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
@@ -37,7 +38,8 @@ let package = Package(
         ),
         .testTarget(
             name: "AgentStateKitTests",
-            dependencies: ["AgentStateKit"],
+            // ArgusSupport needed directly so tests can use ISO8601Timestamp and ProcessRunner.
+            dependencies: ["AgentStateKit", "ArgusSupport"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .target(

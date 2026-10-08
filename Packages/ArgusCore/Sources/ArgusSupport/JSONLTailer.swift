@@ -3,10 +3,9 @@ import Foundation
 /// Tails a JSON-Lines file, yielding each newly appended line's UTF-8 bytes as it arrives.
 ///
 /// Replaces the near-identical polling loop duplicated in HookIPC.pollEventLog and
-/// ShellStateBus.tailShellEvents: track a byte offset, poll for the file to grow past it, read
-/// the new bytes, split on newlines, and reset the offset to zero if the file shrank (log
-/// rotation/truncation). Consumers decode each line themselves — this type only knows about
-/// bytes and newlines, not JSON.
+/// ShellStateBus.tailShellEvents. The offset/carry/truncation bookkeeping lives in `JSONLCursor`;
+/// a write that lands mid-line is held until its newline arrives. Consumers decode each line
+/// themselves — this type only knows about bytes and newlines, not JSON.
 public struct JSONLTailer: Sendable {
     public let path: String
     private let pollIntervalNanoseconds: UInt64
@@ -34,41 +33,13 @@ public struct JSONLTailer: Sendable {
         intervalNanoseconds: UInt64,
         continuation: AsyncStream<Data>.Continuation
     ) async {
-        let url = URL(fileURLWithPath: path)
-        var offset: UInt64 = 0
-
+        var cursor = JSONLCursor()
         while !Task.isCancelled {
-            guard
-                let attrs = try? FileManager.default.attributesOfItem(atPath: path),
-                let fileSize = attrs[.size] as? NSNumber
-            else {
-                offset = 0
-                try? await Task.sleep(nanoseconds: intervalNanoseconds)
-                continue
-            }
-            let size = fileSize.uint64Value
-
-            if size < offset { offset = 0 }
-            guard size > offset, let handle = try? FileHandle(forReadingFrom: url) else {
-                try? await Task.sleep(nanoseconds: intervalNanoseconds)
-                continue
-            }
-
-            do {
-                try handle.seek(toOffset: offset)
-                let data = try handle.readToEnd() ?? Data()
-                offset = try handle.offset()
-                try handle.close()
-
-                // A chunk that isn't valid UTF-8 is dropped whole, not partially decoded — matches
-                // the original per-call-site behavior rather than attempting lossy recovery.
-                guard let text = String(data: data, encoding: .utf8) else { continue }
-                for line in text.split(separator: "\n") {
-                    guard let lineData = line.data(using: .utf8) else { continue }
-                    continuation.yield(lineData)
-                }
-            } catch {
-                try? handle.close()
+            for line in cursor.poll(path: path) {
+                // A line that isn't valid UTF-8 is dropped on its own, never partially decoded; the
+                // lines around it are unaffected.
+                guard String(data: line, encoding: .utf8) != nil else { continue }
+                continuation.yield(line)
             }
             try? await Task.sleep(nanoseconds: intervalNanoseconds)
         }

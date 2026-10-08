@@ -25,9 +25,17 @@ public enum WorktreeHookManager {
 
     /// Idempotent: writes the one remaining hook script and merges argus's hook
     /// entry into the worktree's .claude/settings.local.json.
-    public static func install(worktreePath: String) throws {
-        installFishHooksIfNeeded()
-        let hooksDir = try argusHooksDir()
+    ///
+    /// - Parameters:
+    ///   - hooksDirectory: where the script is written; defaults to `~/Library/Application
+    ///     Support/argus/hooks`. Injectable so tests never touch the real one.
+    ///   - installFishHooks: also (once per process) install the fish shell-busy hooks. Tests pass
+    ///     `false` so they don't write the real `~/.config/fish`.
+    public static func install(
+        worktreePath: String, hooksDirectory: URL? = nil, installFishHooks: Bool = true
+    ) throws {
+        if installFishHooks { installFishHooksIfNeeded() }
+        let hooksDir = try hooksDirectory.map(ensureDirectory) ?? argusHooksDir()
         let eventLogPath = HookIPC.eventLogPath
         let paths = ClaudeHookPaths(approval: hooksDir.appendingPathComponent("claude-waiting-approval.sh"))
         try writeExecutable(
@@ -50,21 +58,32 @@ public enum WorktreeHookManager {
                 for: .applicationSupportDirectory, in: .userDomainMask
             ).first
         else { throw Failure.noAppSupport }
-        let dir = support.appendingPathComponent("argus/hooks")
+        return try ensureDirectory(support.appendingPathComponent("argus/hooks"))
+    }
+
+    private static func ensureDirectory(_ dir: URL) throws -> URL {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
 
-    private static func hookScript(state: String, eventLogPath: String) -> String {
-        """
+    /// The path is JSON-escaped in bash before being printed into the event line: a worktree path
+    /// containing `"` or `\` (both legal in POSIX paths) would otherwise produce an invalid line,
+    /// which the reader silently drops — the approval state would simply never appear. Parameter
+    /// expansion keeps this dependency-free (no `jq`/`sed`) and works on macOS's bash 3.2.
+    static func hookScript(state: String, eventLogPath: String) -> String {
+        #"""
         #!/bin/bash
         WORKTREE=$(git rev-parse --show-toplevel 2>/dev/null)
         WORKTREE="${WORKTREE:-$PWD}"
         [ -z "$WORKTREE" ] && exit 0
-        EVENT_LOG='\(eventLogPath)'
-        printf '{"worktreePath":"%s","state":"\(state)","agent":"claude"}\\n' "$WORKTREE" \\
+        EVENT_LOG='\#(eventLogPath)'
+        ESCAPED=${WORKTREE//\\/\\\\}
+        ESCAPED=${ESCAPED//\"/\\\"}
+        ESCAPED=${ESCAPED//$'\n'/\\n}
+        ESCAPED=${ESCAPED//$'\t'/\\t}
+        printf '{"worktreePath":"%s","state":"\#(state)","agent":"claude"}\n' "$ESCAPED" \
             >> "$EVENT_LOG" 2>/dev/null || true
-        """
+        """#
     }
 
     private static func writeExecutable(at url: URL, content: String) throws {
@@ -87,9 +106,13 @@ public enum WorktreeHookManager {
     }
 
     private static func loadSettings(at url: URL) -> [String: Any] {
-        guard let data = try? Data(contentsOf: url),
-            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return [:] }
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return [:] }
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            // A user-edited file (comments, a trailing comma) we can't parse is about to be replaced
+            // by the merged result; keep a copy so nothing they wrote is lost.
+            CorruptFileBackup.preserve(url)
+            return [:]
+        }
         return obj
     }
 
@@ -108,11 +131,17 @@ public enum WorktreeHookManager {
     private static func installFishHooksIfNeeded() {
         guard !fishHooksInstalled, isFishShell else { return }
         guard let confDir = fishConfDir() else { return }
-        try? FileManager.default.createDirectory(at: confDir, withIntermediateDirectories: true)
         let hookFile = confDir.appendingPathComponent("argus.fish")
         let content = fishHookScript(eventLogPath: HookIPC.shellEventLogPath)
-        try? content.write(to: hookFile, atomically: true, encoding: .utf8)
-        fishHooksInstalled = true
+        do {
+            try FileManager.default.createDirectory(at: confDir, withIntermediateDirectories: true)
+            try content.write(to: hookFile, atomically: true, encoding: .utf8)
+            // Only after a successful write: marking it installed on failure would stop every later
+            // attempt, leaving shell-busy detection silently on the slower tmux fallback.
+            fishHooksInstalled = true
+        } catch {
+            return
+        }
     }
 
     private static func fishConfDir() -> URL? {

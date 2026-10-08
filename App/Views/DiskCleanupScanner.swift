@@ -30,7 +30,7 @@ final class DiskCleanupScanner: ObservableObject {
             order: .actThenSleep,
             interval: {
                 let seconds = await ArgusConfigStore.shared.config.diskMonitor.sizeCheckIntervalSeconds
-                return UInt64(seconds * 1_000_000_000)
+                return ArgusConfig.intervalNanoseconds(seconds, default: 1800)
             },
             action: { [weak self] in
                 await self?.loadCandidates()

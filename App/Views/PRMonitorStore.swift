@@ -145,7 +145,7 @@ final class PRMonitorStore: ObservableObject {
             order: .sleepThenAct,
             interval: {
                 let seconds = await ArgusConfigStore.shared.config.github.refreshIntervalSeconds
-                return UInt64(seconds * 1_000_000_000)
+                return ArgusConfig.intervalNanoseconds(seconds, default: 300)
             },
             action: { [weak self] in await self?.refresh() }
         )
