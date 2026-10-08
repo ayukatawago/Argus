@@ -113,8 +113,10 @@ final class AgentPaneDisplayWatcher: ObservableObject {
         // idle-then-done flicker with nothing having actually happened. Bail out and retry next
         // poll instead, same "no data this poll" treatment already given to a mid-batch capture
         // failure below.
-        guard listResult.succeeded else { return }
-        let heightBySession = TmuxPaneCaptureBatch.parseSessionHeights(from: listResult.standardOutput)
+        // "No server running" is the exception: it is tmux's definitive answer that every session is
+        // gone, and is treated as an empty listing so the agents idle instead of sticking forever.
+        guard let listing = TmuxCommand.listing(from: listResult) else { return }
+        let heightBySession = TmuxPaneCaptureBatch.parseSessionHeights(from: listing)
         let foundSessionNames = Array(Set(heightBySession.keys).intersection(sessionToKey.keys))
         let foundKeys = Set(foundSessionNames.compactMap { sessionToKey[$0] })
 

@@ -68,4 +68,28 @@ struct TmuxCommandTests {
         #expect(TmuxCommand.selectPane(session: "s", direction: "-L") == ["select-pane", "-t", "s", "-L"])
         #expect(TmuxCommand.listAllPanes(format: "#{a}") == ["list-panes", "-a", "-F", "#{a}"])
     }
+
+    @Test(
+        "no-server stderr is recognised; other failures are not",
+        arguments: [
+            ("no server running on /private/tmp/tmux-501/default", true),
+            ("error connecting to /private/tmp/tmux-501/default (No such file or directory)", true),
+            ("unknown option", false),
+            ("", false),
+        ])
+    func serverAbsent(stderr: String, expected: Bool) {
+        #expect(TmuxCommand.isServerAbsent(standardError: stderr) == expected)
+    }
+
+    @Test("a listing is the output on success, empty when no server, and nil for any other failure")
+    func listingFromResult() {
+        #expect(
+            TmuxCommand.listing(from: ProcessResult(exitCode: 0, standardOutput: "a|b\n", standardError: "")) == "a|b\n"
+        )
+        let noServer = ProcessResult(exitCode: 1, standardOutput: "", standardError: "no server running on /x")
+        #expect(TmuxCommand.listing(from: noServer) == "")
+        #expect(
+            TmuxCommand.listing(from: ProcessResult(exitCode: -1, standardOutput: "", standardError: "launch failed"))
+                == nil)
+    }
 }
