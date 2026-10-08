@@ -10,7 +10,10 @@ struct CleanupCandidate: Identifiable {
     var sizeBytes: Int64?
     var lastModifiedDate: Date?
     var isSelected: Bool
-    let isTrash: Bool
+    let kind: CleanupItem.Kind
+
+    var isTrash: Bool { kind == .trash }
+    var isGitRepository: Bool { kind == .gitRepository }
 }
 
 extension CleanupCandidate: SizedCandidate {}
@@ -21,8 +24,11 @@ final class DiskCleanupScanner: ObservableObject {
     @Published private(set) var isScanning = false
     @Published private(set) var isRemoving = false
     @Published private(set) var scanningCandidateIDs: Set<URL> = []
+    /// Display names of items the last removal could not delete; nil when it fully succeeded.
+    @Published var removalFailureMessage: String?
 
     private var backgroundTask: Task<Void, Never>?
+    private let home = FileManager.default.homeDirectoryForCurrentUser
 
     func start() {
         guard backgroundTask == nil else { return }
@@ -44,178 +50,25 @@ final class DiskCleanupScanner: ObservableObject {
         backgroundTask = nil
     }
 
-    private struct CatalogEntry {
-        let name: String
-        let relativePath: String
-        let isTrash: Bool
-    }
-
-    private static let catalogEntries: [CatalogEntry] = [
-        CatalogEntry(name: "Xcode Derived Data", relativePath: "Library/Developer/Xcode/DerivedData", isTrash: false),
-        CatalogEntry(name: "Xcode Archives", relativePath: "Library/Developer/Xcode/Archives", isTrash: false),
-        CatalogEntry(
-            name: "iOS Device Support",
-            relativePath: "Library/Developer/Xcode/iOS DeviceSupport", isTrash: false),
-        CatalogEntry(
-            name: "Simulator Runtimes",
-            relativePath: "Library/Developer/CoreSimulator/Profiles/Runtimes", isTrash: false),
-        CatalogEntry(name: "npm Cache", relativePath: ".npm/_cacache", isTrash: false),
-        CatalogEntry(name: "pnpm Store", relativePath: ".pnpm-store", isTrash: false),
-        CatalogEntry(name: "Android SDK", relativePath: ".android", isTrash: false),
-        CatalogEntry(name: "Claude Cache", relativePath: ".claude", isTrash: false),
-        CatalogEntry(name: "Codex Cache", relativePath: ".codex", isTrash: false),
-        CatalogEntry(name: "Webview Workspace", relativePath: "workspace/webview", isTrash: false),
-        CatalogEntry(name: "Trash", relativePath: ".Trash", isTrash: true),
-    ]
-
+    /// Re-discovers candidates, carrying size and selection over for any path still present — the
+    /// background poll calls this too, and must not untick what the user has selected.
     func loadCandidates() {
-        let existingSizes = Dictionary(
-            candidates.compactMap { candidate -> (URL, Int64)? in
-                guard let size = candidate.sizeBytes else { return nil }
-                return (candidate.path, size)
-            },
-            uniquingKeysWith: { first, _ in first }
-        )
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        var result = Self.catalogEntries.compactMap { entry -> CleanupCandidate? in
-            let url = home.appendingPathComponent(entry.relativePath)
-            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-            let modDate = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        let previous = Dictionary(
+            candidates.map { ($0.path, CleanupItemState(sizeBytes: $0.sizeBytes, isSelected: $0.isSelected)) },
+            uniquingKeysWith: { first, _ in first })
+        let items = DiskCleanupCatalog.discover(home: home)
+        let carried = DiskCleanupCatalog.carriedState(previous: previous, into: items)
+        candidates = items.map { item in
+            let state = carried[item.path]
             return CleanupCandidate(
-                displayName: entry.name,
-                path: url,
-                sizeBytes: nil,
-                lastModifiedDate: modDate,
-                isSelected: false,
-                isTrash: entry.isTrash
+                displayName: item.displayName,
+                path: item.path,
+                sizeBytes: state?.sizeBytes,
+                lastModifiedDate: item.lastModifiedDate,
+                isSelected: state?.isSelected ?? false,
+                kind: item.kind
             )
         }
-        result += Self.gradleVersionCandidates(home: home)
-        result += Self.libraryCandidates(home: home)
-        result += Self.workspaceRepoCandidates(home: home)
-        candidates = result
-        for idx in candidates.indices {
-            candidates[idx].sizeBytes = existingSizes[candidates[idx].path]
-        }
-    }
-
-    private static func gradleVersionCandidates(home: URL) -> [CleanupCandidate] {
-        let cachesURL = home.appendingPathComponent(".gradle/caches")
-        guard
-            let contents = try? FileManager.default.contentsOfDirectory(
-                at: cachesURL,
-                includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            )
-        else { return [] }
-        return
-            contents
-            .filter { url in
-                let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-                let name = url.lastPathComponent
-                let isVersion = name.range(of: #"^\d+(\.\d+)*$"#, options: .regularExpression) != nil
-                return isDir && isVersion
-            }
-            .sorted { $0.lastPathComponent > $1.lastPathComponent }
-            .map { url in
-                let modDate = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-                return CleanupCandidate(
-                    displayName: "Gradle \(url.lastPathComponent)",
-                    path: url,
-                    sizeBytes: nil,
-                    lastModifiedDate: modDate,
-                    isSelected: false,
-                    isTrash: false
-                )
-            }
-    }
-
-    private static func libraryCandidates(home: URL) -> [CleanupCandidate] {
-        let libraryURL = home.appendingPathComponent("Library")
-        guard
-            let topLevel = try? FileManager.default.contentsOfDirectory(
-                at: libraryURL,
-                includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            )
-        else { return [] }
-        var results: [CleanupCandidate] = []
-        for url in topLevel.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-            guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
-            if url.lastPathComponent == "Caches",
-                let cachesContents = try? FileManager.default.contentsOfDirectory(
-                    at: url,
-                    includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
-                    options: [.skipsHiddenFiles]
-                )
-            {
-                for child in cachesContents.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-                    guard (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
-                    let modDate =
-                        try? child.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-                    results.append(
-                        CleanupCandidate(
-                            displayName: "Library/Caches/\(child.lastPathComponent)",
-                            path: child,
-                            sizeBytes: nil,
-                            lastModifiedDate: modDate,
-                            isSelected: false,
-                            isTrash: false
-                        ))
-                }
-            } else {
-                let modDate =
-                    try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-                results.append(
-                    CleanupCandidate(
-                        displayName: "Library/\(url.lastPathComponent)",
-                        path: url,
-                        sizeBytes: nil,
-                        lastModifiedDate: modDate,
-                        isSelected: false,
-                        isTrash: false
-                    ))
-            }
-        }
-        return results
-    }
-
-    private static func workspaceRepoCandidates(home: URL) -> [CleanupCandidate] {
-        let workspaceURL = home.appendingPathComponent("workspace")
-        guard FileManager.default.fileExists(atPath: workspaceURL.path) else { return [] }
-        var results: [CleanupCandidate] = []
-
-        func scan(in dir: URL, depth: Int) {
-            guard depth > 0 else { return }
-            guard
-                let contents = try? FileManager.default.contentsOfDirectory(
-                    at: dir,
-                    includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
-                    options: [.skipsHiddenFiles]
-                )
-            else { return }
-            for url in contents {
-                let vals = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey])
-                guard vals?.isDirectory == true else { continue }
-                if FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) {
-                    let relName = String(url.path.dropFirst(workspaceURL.path.count + 1))
-                    results.append(
-                        CleanupCandidate(
-                            displayName: relName,
-                            path: url,
-                            sizeBytes: nil,
-                            lastModifiedDate: vals?.contentModificationDate,
-                            isSelected: false,
-                            isTrash: false
-                        ))
-                } else {
-                    scan(in: url, depth: depth - 1)
-                }
-            }
-        }
-
-        scan(in: workspaceURL, depth: 2)
-        return results.sorted { $0.displayName < $1.displayName }
     }
 
     func scanSizes() async {
@@ -252,26 +105,39 @@ final class DiskCleanupScanner: ObservableObject {
         candidates[idx].isSelected.toggle()
     }
 
-    func removeSelected() async {
+    /// Candidates that "Remove Selected" would delete right now: selected *and* among `visibleIDs`
+    /// (the list as currently filtered) *and* passing the deletion safety check. The confirmation
+    /// dialog lists exactly these, so what's confirmed is what's deleted.
+    func pendingRemovals(visibleIDs: Set<URL>) -> [CleanupCandidate] {
+        let allowed = Set(
+            DiskCleanupCatalog.removablePaths(
+                selected: candidates.filter(\.isSelected).map(\.path), visible: visibleIDs, home: home))
+        return candidates.filter { allowed.contains($0.path) }
+    }
+
+    func removeSelected(visibleIDs: Set<URL>) async {
         guard !isRemoving else { return }
         isRemoving = true
         defer { isRemoving = false }
-        let toRemove = candidates.filter(\.isSelected)
+        var failed: [String] = []
+        let toRemove = pendingRemovals(visibleIDs: visibleIDs)
         for candidate in toRemove {
-            if candidate.isTrash {
-                await Self.emptyTrashContents(at: candidate.path)
-            } else {
-                await Self.deletePermanently(candidate.path)
-            }
+            let succeeded =
+                candidate.isTrash
+                ? await Self.emptyTrashContents(at: candidate.path)
+                : await Self.deletePermanently(candidate.path)
+            if !succeeded { failed.append(candidate.displayName) }
         }
-        let sizeLookup = Dictionary(
-            candidates.compactMap { ($0.path, $0.sizeBytes) },
-            uniquingKeysWith: { first, _ in first }
-        )
+        removalFailureMessage = failed.isEmpty ? nil : failed.joined(separator: ", ")
+        // Removed items' old sizes are stale; drop them (and their selection) so the rescan below
+        // re-measures whatever survived (e.g. a partly emptied Trash) instead of showing old numbers.
+        let removedPaths = Set(toRemove.map(\.path))
+        for idx in candidates.indices where removedPaths.contains(candidates[idx].path) {
+            candidates[idx].sizeBytes = nil
+            candidates[idx].isSelected = false
+        }
         loadCandidates()
-        for idx in candidates.indices {
-            candidates[idx].sizeBytes = sizeLookup[candidates[idx].path] ?? nil
-        }
+        await scanSizes()
     }
 
     /// Returns `nil` (leaving the candidate's previously-known size untouched) when `du` fails,
@@ -288,15 +154,17 @@ final class DiskCleanupScanner: ObservableObject {
     /// recursive delete (which can touch hundreds of thousands of files for things like
     /// DerivedData or a stale git worktree) runs on a separate process instead of blocking this
     /// `@MainActor`-isolated type's thread for the duration of the delete.
-    private static nonisolated func deletePermanently(_ url: URL) async {
-        _ = await ProcessRunner.run("/bin/rm", ["-rf", url.path])
+    private static nonisolated func deletePermanently(_ url: URL) async -> Bool {
+        await ProcessRunner.run("/bin/rm", ["-rf", url.path]).succeeded
     }
 
-    private static nonisolated func emptyTrashContents(at url: URL) async {
+    private static nonisolated func emptyTrashContents(at url: URL) async -> Bool {
         let fileManager = FileManager.default
         let contents = (try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)) ?? []
-        for item in contents {
-            await deletePermanently(item)
+        var allSucceeded = true
+        for item in contents where !(await deletePermanently(item)) {
+            allSucceeded = false
         }
+        return allSucceeded
     }
 }
