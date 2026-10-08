@@ -193,6 +193,7 @@ struct AppShellView: View {
             AppDelegate.current?.markAppShellReady()
         }
         .onDisappear {
+            agentBus.stop()
             shellStateBus.stop()
             terminalTabs.stop()
             diskMonitor.stop()
