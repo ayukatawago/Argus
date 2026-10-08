@@ -2,6 +2,7 @@ import Foundation
 
 public enum DiffServiceError: Error, Sendable {
     case gitFailed(String)
+    case timedOut
 }
 
 extension DiffServiceError: LocalizedError {
@@ -9,6 +10,9 @@ extension DiffServiceError: LocalizedError {
         switch self {
         case .gitFailed(let message):
             return message.isEmpty ? "git reported an error." : message
+
+        case .timedOut:
+            return "git took too long to produce the diff and was stopped. Try a narrower revision range."
         }
     }
 }
@@ -16,6 +20,16 @@ extension DiffServiceError: LocalizedError {
 /// Produces a parsed diff between two revisions, optionally folding in uncommitted working-tree
 /// changes (staged, unstaged, and untracked files).
 public struct DiffService: Sendable {
+    /// SHA-1 hash of git's empty tree — the base to diff a root commit against.
+    public static let emptyTreeHash = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+    /// Diffing a large range legitimately takes longer than the 10s default meant for cheap
+    /// plumbing commands.
+    static let diffTimeout: TimeInterval = 60
+
+    /// Keeps non-ASCII paths literal instead of octal-escaped in diff headers.
+    private static let diffPrefix = ["-c", "core.quotePath=false"]
+
     public let git: GitRunner
 
     public init(git: GitRunner) {
@@ -31,7 +45,9 @@ public struct DiffService: Sendable {
     ///   show up without double-counting; untracked files are appended as synthetic additions.
     public func diff(base: String, head: String, includeUncommitted: Bool) async throws -> [DiffFile] {
         guard includeUncommitted else {
-            return try await runDiff(["diff", "--no-color", "\(base)...\(head)"])
+            // The empty tree isn't a commit, so it has no merge-base with `head`: diff directly.
+            let range = base == Self.emptyTreeHash ? [base, head] : ["\(base)...\(head)"]
+            return try await runDiff(["diff", "--no-color"] + range)
         }
         let mergeBase = await resolvedMergeBase(base: base, head: head)
         var files = try await runDiff(["diff", "--no-color", mergeBase])
@@ -43,7 +59,8 @@ public struct DiffService: Sendable {
     /// trailing newline dropped — used to reveal a diff hunk's collapsed context lines, which
     /// aren't present in the unified diff output itself.
     public func fileContent(ref: String, path: String) async throws -> [String] {
-        let result = try await git.run(["show", "\(ref):\(path)"])
+        let result = try await git.run(["show", "\(ref):\(path)"], timeout: Self.diffTimeout)
+        guard !result.timedOut else { throw DiffServiceError.timedOut }
         guard result.succeeded else {
             throw DiffServiceError.gitFailed(result.standardError)
         }
@@ -61,7 +78,8 @@ public struct DiffService: Sendable {
     }
 
     private func runDiff(_ arguments: [String]) async throws -> [DiffFile] {
-        let result = try await git.run(arguments)
+        let result = try await git.run(Self.diffPrefix + arguments, timeout: Self.diffTimeout)
+        guard !result.timedOut else { throw DiffServiceError.timedOut }
         guard result.succeeded else {
             throw DiffServiceError.gitFailed(result.standardError)
         }
@@ -69,7 +87,7 @@ public struct DiffService: Sendable {
     }
 
     private func untrackedFilesAsAdditions() async throws -> [DiffFile] {
-        let listing = try await git.run(["ls-files", "--others", "--exclude-standard"])
+        let listing = try await git.run(Self.diffPrefix + ["ls-files", "--others", "--exclude-standard"])
         guard listing.succeeded else { return [] }
         let paths = listing.standardOutput.split(separator: "\n").map(String.init)
 
@@ -77,7 +95,8 @@ public struct DiffService: Sendable {
         for path in paths where !path.isEmpty {
             // `--no-index` against /dev/null exits 1 (a diff was found), not 0 — check the output
             // itself rather than the exit code.
-            guard let result = try? await git.run(["diff", "--no-color", "--no-index", "/dev/null", path]),
+            guard let result = try? await git.run(
+                Self.diffPrefix + ["diff", "--no-color", "--no-index", "/dev/null", path], timeout: Self.diffTimeout),
                 !result.standardOutput.isEmpty
             else { continue }
             files.append(contentsOf: UnifiedDiffParser.parse(result.standardOutput))

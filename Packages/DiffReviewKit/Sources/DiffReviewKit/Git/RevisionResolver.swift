@@ -13,14 +13,26 @@ public struct RevisionResolver: Sendable {
         let result = try? await git.run([
             "for-each-ref",
             "--sort=-committerdate",
-            "--format=%(refname:short)",
+            "--format=%(refname)",
             "refs/heads/", "refs/remotes/",
         ])
         guard let result, result.succeeded else { return [] }
-        return result.standardOutput
+        return Self.parseBranches(result.standardOutput)
+    }
+
+    /// Turns full refnames into short branch names, dropping only the remotes' own `HEAD` symbolic
+    /// refs (`refs/remotes/<remote>/HEAD`) — not a local or remote branch merely named `.../HEAD`.
+    static func parseBranches(_ output: String) -> [String] {
+        output
             .split(separator: "\n")
             .map(String.init)
-            .filter { !$0.hasSuffix("/HEAD") }
+            .compactMap { ref in
+                if ref.hasPrefix("refs/heads/") { return String(ref.dropFirst("refs/heads/".count)) }
+                guard ref.hasPrefix("refs/remotes/") else { return nil }
+                let short = String(ref.dropFirst("refs/remotes/".count))
+                let parts = short.split(separator: "/", omittingEmptySubsequences: false)
+                return parts.count == 2 && parts[1] == "HEAD" ? nil : short
+            }
     }
 
     /// Best-effort default base ref: the remote's default branch (origin/HEAD), falling back to
@@ -55,24 +67,32 @@ public struct RevisionResolver: Sendable {
     /// `base` is empty/unresolved or the log fails (e.g. either ref doesn't exist yet).
     public func listCommits(base: String, head: String) async -> [Commit] {
         guard !base.isEmpty else { return [] }
-        let fieldSeparator = "\u{1f}"
         let result = try? await git.run([
             "log", "--no-color",
-            "--format=%H\(fieldSeparator)%h\(fieldSeparator)%s\(fieldSeparator)%an\(fieldSeparator)%ar",
+            "--format=\(Self.logFormat)",
             "\(base)..\(head)",
         ])
         guard let result, result.succeeded else { return [] }
-        return result.standardOutput
+        return Self.parseCommits(result.standardOutput)
+    }
+
+    private static let fieldSeparator = "\u{1f}"
+    private static let logFormat = ["%H", "%h", "%s", "%an", "%ar", "%P"].joined(separator: fieldSeparator)
+
+    /// Parses `git log --format=<logFormat>` output (one commit per line, six unit-separated fields).
+    static func parseCommits(_ output: String) -> [Commit] {
+        output
             .split(separator: "\n", omittingEmptySubsequences: true)
             .compactMap { line in
                 let fields = String(line).components(separatedBy: fieldSeparator)
-                guard fields.count == 5 else { return nil }
+                guard fields.count == 6 else { return nil }
                 return Commit(
                     hash: fields[0],
                     shortHash: fields[1],
                     subject: fields[2],
                     author: fields[3],
-                    relativeDate: fields[4]
+                    relativeDate: fields[4],
+                    isRoot: fields[5].trimmingCharacters(in: .whitespaces).isEmpty
                 )
             }
     }

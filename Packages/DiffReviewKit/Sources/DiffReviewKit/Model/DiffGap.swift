@@ -89,26 +89,3 @@ public enum DiffBlockBuilder {
         return DiffGap(id: "bottom", oldStart: oldStart, newStart: newStart, lineCount: nil, position: .bottom)
     }
 }
-
-extension DiffHunk {
-    /// The old-file `(start, count)` parsed from this hunk's `@@ -start,count +start,count @@`
-    /// header, used to compute the gaps of collapsed context around and between hunks.
-    var oldRange: (start: Int, count: Int)? {
-        Self.parseRange(header, tokenIndex: 1)
-    }
-
-    var newRange: (start: Int, count: Int)? {
-        Self.parseRange(header, tokenIndex: 2)
-    }
-
-    private static func parseRange(_ header: String, tokenIndex: Int) -> (start: Int, count: Int)? {
-        let parts = header.split(separator: " ", omittingEmptySubsequences: true)
-        guard parts.count > tokenIndex else { return nil }
-        let token = parts[tokenIndex]
-        guard let sign = token.first, sign == "-" || sign == "+" else { return nil }
-        let components = token.dropFirst().split(separator: ",")
-        guard let start = Int(components[0]) else { return nil }
-        let count = components.count > 1 ? (Int(components[1]) ?? 1) : 1
-        return (start, count)
-    }
-}

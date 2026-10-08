@@ -33,6 +33,11 @@ public final class DiffReviewModel {
     private let diffService: DiffService
     private let revisionResolver: RevisionResolver
     private var activeAgentTasks: [UUID: Task<Void, Never>] = [:]
+    /// Identifies the latest run per comment, so a superseded (cancelled) run can't append its
+    /// reply or clear the newer run's bookkeeping.
+    private var activeRunTokens: [UUID: UUID] = [:]
+    /// Bumped on every diff refresh; an in-flight gap expansion from an older diff is discarded.
+    private var diffGeneration = 0
 
     public init(repositoryPath: String, agent: DiffReviewAgent) {
         self.repositoryPath = repositoryPath
@@ -57,7 +62,9 @@ public final class DiffReviewModel {
     var effectiveBase: String {
         guard let range = currentRange else { return baseRef }
         guard range.upperBound >= 0 else { return headRef }
-        return "\(commits[range.upperBound].hash)^"
+        let oldest = commits[range.upperBound]
+        // A root commit has no parent, so `hash^` doesn't exist: diff against the empty tree.
+        return oldest.isRoot ? DiffService.emptyTreeHash : "\(oldest.hash)^"
     }
 
     var effectiveHead: String {
@@ -116,6 +123,9 @@ public final class DiffReviewModel {
     public func refreshDiff() async {
         isLoadingDiff = true
         loadError = nil
+        diffGeneration += 1
+        // Line numbers (and gap ids) refer to the previous diff; revealed context is stale.
+        expandedGapLines = [:]
         defer { isLoadingDiff = false }
         do {
             let newFiles = try await diffService.diff(
@@ -158,28 +168,36 @@ public final class DiffReviewModel {
 
     // MARK: - Hidden-context expansion
 
-    private var expandedGapLines: [String: [DiffLine]] = [:]
-    private var loadingGapIDs: Set<String> = []
-
-    /// The revealed lines for a previously collapsed gap, if `expandGap` has completed for it.
-    public func expandedLines(forGapID gapID: String) -> [DiffLine]? {
-        expandedGapLines[gapID]
+    /// Gap ids ("top", "bottom", "mid-…") repeat across files, so every key carries the file path.
+    private struct GapKey: Hashable {
+        let filePath: String
+        let gapID: String
     }
 
-    public func isLoadingGap(_ gapID: String) -> Bool {
-        loadingGapIDs.contains(gapID)
+    private var expandedGapLines: [GapKey: [DiffLine]] = [:]
+    private var loadingGapKeys: Set<GapKey> = []
+
+    /// The revealed lines for a previously collapsed gap, if `expandGap` has completed for it.
+    public func expandedLines(forGapID gapID: String, filePath: String) -> [DiffLine]? {
+        expandedGapLines[GapKey(filePath: filePath, gapID: gapID)]
+    }
+
+    public func isLoadingGap(_ gapID: String, filePath: String) -> Bool {
+        loadingGapKeys.contains(GapKey(filePath: filePath, gapID: gapID))
     }
 
     /// Fetches the file content needed to reveal a collapsed gap's lines (from disk for the
     /// working tree, otherwise via `git show`) and populates `expandedGapLines`. A no-op if the
     /// gap is already expanded or a fetch for it is already in flight.
     public func expandGap(_ gap: DiffGap, in file: DiffFile) async {
-        guard expandedGapLines[gap.id] == nil, !loadingGapIDs.contains(gap.id) else { return }
-        loadingGapIDs.insert(gap.id)
-        defer { loadingGapIDs.remove(gap.id) }
+        let key = GapKey(filePath: file.path, gapID: gap.id)
+        guard expandedGapLines[key] == nil, !loadingGapKeys.contains(key) else { return }
+        loadingGapKeys.insert(key)
+        defer { loadingGapKeys.remove(key) }
 
-        guard let sourceLines = await gapSourceLines(for: file) else { return }
-        expandedGapLines[gap.id] = Self.gapLines(gap, in: file, sourceLines: sourceLines)
+        let generation = diffGeneration
+        guard let sourceLines = await gapSourceLines(for: file), generation == diffGeneration else { return }
+        expandedGapLines[key] = Self.gapLines(gap, in: file, sourceLines: sourceLines)
     }
 
     /// The unchanged lines a gap spans are identical on both sides of the diff, so either
@@ -239,10 +257,17 @@ public final class DiffReviewModel {
         let priorSessionID = comment.replies.last?.sessionID
         let replyKind: ReviewReply.Kind = mode == .apply ? .apply : .reply
 
+        let token = UUID()
         activeAgentTasks[commentID]?.cancel()
+        activeRunTokens[commentID] = token
         activeAgentTasks[commentID] = Task { [weak self] in
             guard let self else { return }
-            defer { self.activeAgentTasks[commentID] = nil }
+            defer {
+                if self.activeRunTokens[commentID] == token {
+                    self.activeAgentTasks[commentID] = nil
+                    self.activeRunTokens[commentID] = nil
+                }
+            }
 
             var replyText = ""
             var sessionID: String?
@@ -256,6 +281,7 @@ public final class DiffReviewModel {
                     sessionID = id
 
                 case .failed(let message):
+                    guard self.activeRunTokens[commentID] == token else { return }
                     self.appendReply(commentID: commentID, kind: .error, text: message, sessionID: sessionID)
                     self.setStatus(commentID: commentID, status: .open)
                     return
@@ -265,6 +291,7 @@ public final class DiffReviewModel {
                 }
             }
 
+            guard self.activeRunTokens[commentID] == token, !Task.isCancelled else { return }
             let finalText = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
             self.appendReply(
                 commentID: commentID,

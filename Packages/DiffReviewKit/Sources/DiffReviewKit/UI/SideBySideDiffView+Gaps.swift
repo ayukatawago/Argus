@@ -5,7 +5,7 @@ import SwiftUI
 extension SideBySideDiffView {
     @ViewBuilder
     func gapView(_ gap: DiffGap) -> some View {
-        if let lines = model.expandedLines(forGapID: gap.id) {
+        if let lines = model.expandedLines(forGapID: gap.id, filePath: file.path) {
             if !lines.isEmpty {
                 ForEach(SideBySideBuilder.rows(for: lines)) { row in
                     rowView(row)
@@ -19,14 +19,14 @@ extension SideBySideDiffView {
                     Image(systemName: "arrow.up.and.down.text.horizontal")
                     Text(gapLabel(gap))
                     Spacer()
-                    if model.isLoadingGap(gap.id) {
+                    if model.isLoadingGap(gap.id, filePath: file.path) {
                         ProgressView().controlSize(.small)
                     }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(model.isLoadingGap(gap.id))
+            .disabled(model.isLoadingGap(gap.id, filePath: file.path))
             .font(.system(.caption, design: .monospaced))
             .foregroundStyle(.secondary)
             .padding(.vertical, 4)
