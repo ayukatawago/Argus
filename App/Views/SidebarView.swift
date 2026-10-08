@@ -28,6 +28,9 @@ struct SidebarView: View {
     @State private var newBranchName = ""
     @State private var showAddWorktreeError = false
     @State private var addWorktreeError = ""
+    @State private var filterQuery = ""
+    @State private var attentionOnly = false
+    @FocusState private var filterFocused: Bool
 
     var body: some View {
         repoList
@@ -82,7 +85,15 @@ struct SidebarView: View {
     }
 
     private var repoList: some View {
-        VStack(spacing: 0) {
+        let counts = AgentCounts(store: store, agentBus: agentBus)
+        let shownRepos = SidebarFilter.apply(
+            repos: store.repos, query: filterQuery,
+            attentionIDs: attentionOnly ? counts.needsAttention : nil)
+        return VStack(spacing: 0) {
+            if !store.repos.isEmpty {
+                SidebarFilterBar(
+                    query: $filterQuery, attentionOnly: $attentionOnly, counts: counts, isFocused: $filterFocused)
+            }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if store.repos.isEmpty {
@@ -90,8 +101,13 @@ struct SidebarView: View {
                             .foregroundStyle(.secondary)
                             .font(.caption)
                             .padding()
+                    } else if shownRepos.isEmpty {
+                        Text(attentionOnly && filterQuery.isEmpty ? "No worktrees need attention" : "No matches")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                            .padding()
                     } else {
-                        ForEach(store.repos) { repo in
+                        ForEach(shownRepos) { repo in
                             repoSection(for: repo, isDropTarget: dropTargetRepoID == repo.id)
                         }
                     }

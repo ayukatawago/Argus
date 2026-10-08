@@ -69,6 +69,9 @@ struct KeyboardSettingsView: View {
                 bindingRow("Previous tab", key: $config.keyBindings.previousTerminalTab)
                 bindingRow("Close tab", key: $config.keyBindings.closeTerminalTab)
                 bindingRow("Toggle agent side-by-side", key: $config.keyBindings.toggleAgentSplit)
+                bindingRow("Command palette", key: $config.keyBindings.openCommandPalette)
+                bindingRow("Jump to waiting agent", key: $config.keyBindings.jumpToAttention)
+                bindingRow("Filter sidebar", key: $config.keyBindings.focusSidebarFilter)
             }
             Text("Press \(config.leaderKey), then the key shown.")
                 .font(.caption)

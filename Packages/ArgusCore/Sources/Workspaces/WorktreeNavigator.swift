@@ -15,4 +15,21 @@ public enum WorktreeNavigator {
         let nextIndex = forward ? (idx + 1) % eligible.count : (idx - 1 + eligible.count) % eligible.count
         return eligible[nextIndex]
     }
+
+    /// The next worktree needing attention after `current`, wrapping around and never returning
+    /// `current` itself. `priority` rates an ID (nil = doesn't need attention); among candidates
+    /// the highest priority wins, with ties broken by position after `current`.
+    public static func nextAttention(
+        from current: String?, in ordered: [String], priority: (String) -> Int?
+    ) -> String? {
+        let start = current.flatMap { ordered.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
+        let rotated = (0..<ordered.count).map { ordered[(start + $0) % ordered.count] }.filter { $0 != current }
+        var best: (id: String, priority: Int)?
+        for id in rotated {
+            guard let value = priority(id) else { continue }
+            if let current = best, current.priority >= value { continue }
+            best = (id, value)
+        }
+        return best?.id
+    }
 }

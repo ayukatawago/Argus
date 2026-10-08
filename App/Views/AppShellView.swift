@@ -30,10 +30,33 @@ struct AppShellView: View {
     @State private var hasRestoredOpenWorktrees = false
     @State var isCodexUsagePopoverPresented = false
     @State var focusedRole: PaneRole = .shell
+    @State private var isPaletteOpen = false
     @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
 
-    var body: some View {
+    /// `coreView` plus the HUD/palette overlays, split out of `body` to keep its modifier chain
+    /// within what the type checker can solve.
+    private var overlaidCoreView: some View {
         coreView
+            .overlay(alignment: .bottom) { LeaderHUDView() }
+            .overlay {
+                if isPaletteOpen {
+                    CommandPaletteView(
+                        items: paletteItems(),
+                        onSelect: selectPaletteItem,
+                        onClose: closePalette
+                    )
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openCommandPalette)) { _ in
+                if isPaletteOpen { closePalette() } else { isPaletteOpen = true }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .jumpToAttention)) { _ in
+                jumpToAttention()
+            }
+    }
+
+    var body: some View {
+        overlaidCoreView
             .onReceive(NotificationCenter.default.publisher(for: .openPopupTerminal)) { notification in
                 guard let shortcutID = notification.object as? String,
                     let shortcut = configStore.config.popupShortcuts.first(where: { $0.id == shortcutID }),
@@ -335,5 +358,42 @@ extension AppShellView {
         }
         selectedWorktreeID = next
         DispatchQueue.main.async { self.pool.host(for: self.focusedRole).focusActiveTerminal() }
+    }
+
+    /// Selects the next worktree whose agent is blocked on approval (first) or done awaiting a
+    /// reply — the "what needs me now" jump.
+    fileprivate func jumpToAttention() {
+        let ordered = store.repos.flatMap(\.worktrees)
+            .filter { !store.hiddenWorktreeIDs.contains($0.id) }
+            .map(\.id)
+        let next = WorktreeNavigator.nextAttention(from: selectedWorktreeID, in: ordered) { id in
+            let state = agentBus.worktreeState(for: id).state
+            return state == .waitingForApproval || state == .done ? state.displayPriority : nil
+        }
+        guard let next else { return }
+        selectedWorktreeID = next
+        DispatchQueue.main.async { self.pool.host(for: self.focusedRole).focusActiveTerminal() }
+    }
+
+    // MARK: - Command palette
+
+    fileprivate func paletteItems() -> [PaletteItem] {
+        PaletteItem.items(
+            repos: store.repos, hidden: store.hiddenWorktreeIDs, config: configStore.config,
+            agentState: { agentBus.worktreeState(for: $0) })
+    }
+
+    fileprivate func closePalette() {
+        isPaletteOpen = false
+        DispatchQueue.main.async { self.pool.host(for: self.focusedRole).focusActiveTerminal() }
+    }
+
+    fileprivate func selectPaletteItem(_ item: PaletteItem) {
+        closePalette()
+        if case .worktree(let id) = item.kind {
+            selectedWorktreeID = id
+        } else {
+            DispatchQueue.main.async { item.postNotification() }
+        }
     }
 }

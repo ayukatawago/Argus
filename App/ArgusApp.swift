@@ -154,32 +154,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 modifiers == Self.modifierFlags(from: chord.modifiers), char == chord.character
             {
                 if self.awaitingLeader {
-                    self.awaitingLeader = false
-                    self.leaderTimer?.invalidate()
+                    self.endLeaderMode()
                     return event
                 }
                 self.awaitingLeader = true
+                LeaderModeState.shared.begin()
                 self.leaderTimer?.invalidate()
                 self.leaderTimer = Timer.scheduledTimer(
                     withTimeInterval: config.leaderTimeoutSeconds,
                     repeats: false
                 ) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.awaitingLeader = false }
+                    MainActor.assumeIsolated { self?.endLeaderMode() }
                 }
                 return nil
             }
 
             // Leader sequences (no modifier required on the second key)
             if self.awaitingLeader && modifiers.isEmpty {
-                self.awaitingLeader = false
-                self.leaderTimer?.invalidate()
-                if let char, let name = Self.notificationMap(from: config.keyBindings)[char] {
-                    NotificationCenter.default.post(name: name, object: nil)
+                self.endLeaderMode()
+                switch char.flatMap({ LeaderActionCatalog.target(forKey: $0, config: config) }) {
+                case .action(let action):
+                    NotificationCenter.default.post(name: action.notificationName, object: nil)
                     return nil
-                }
-                if let char, let shortcut = config.popupShortcuts.first(where: { $0.key == char }) {
-                    NotificationCenter.default.post(name: .openPopupTerminal, object: shortcut.id)
+
+                case .popup(let id):
+                    NotificationCenter.default.post(name: .openPopupTerminal, object: id)
                     return nil
+
+                case nil:
+                    break
                 }
             }
 
@@ -231,38 +234,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return flags
     }
 
-    /// A dictionary *literal* here would `fatalError` on any two bindings sharing a character —
-    /// rebuilt on every leader keypress, so a config with a collision (a user's custom binding
-    /// landing on another default, say) would crash the app the very next time leader mode is
-    /// used. `uniquingKeysWith` keeps the first entry instead, silently shadowing the loser —
-    /// surprising for that one binding, but not fatal.
-    private static func notificationMap(from bindings: ArgusConfig.KeyBindings) -> [String: Notification.Name] {
-        Dictionary(
-            [
-                (bindings.focusPaneLeft, Notification.Name.focusPaneLeft),
-                (bindings.focusPaneRight, .focusPaneRight),
-                (bindings.tmuxPaneLeft, .tmuxPaneLeft),
-                (bindings.tmuxPaneDown, .tmuxPaneDown),
-                (bindings.tmuxPaneUp, .tmuxPaneUp),
-                (bindings.tmuxPaneRight, .tmuxPaneRight),
-                (bindings.selectNextWorktree, .selectNextWorktree),
-                (bindings.selectPreviousWorktree, .selectPreviousWorktree),
-                (bindings.openNvim, .openNvim),
-                (bindings.refreshWorkspace, .refreshWorkspace),
-                (bindings.openMarkdownPreview, .openMarkdownPreview),
-                (bindings.openSettings, .openSettings),
-                (bindings.reloadAgentPane, .reloadAgentPane),
-                (bindings.openDiskStatus, .openDiskStatus),
-                (bindings.openDiffReview, .openDiffReview),
-                (bindings.openCodexUsage, .openCodexUsage),
-                (bindings.newTerminalTab, .newTerminalTab),
-                (bindings.nextTerminalTab, .nextTerminalTab),
-                (bindings.previousTerminalTab, .previousTerminalTab),
-                (bindings.closeTerminalTab, .closeTerminalTab),
-                (bindings.toggleAgentSplit, .toggleAgentSplit),
-            ],
-            uniquingKeysWith: { first, _ in first }
-        )
+    private func endLeaderMode() {
+        awaitingLeader = false
+        leaderTimer?.invalidate()
+        LeaderModeState.shared.end()
     }
 }
 
@@ -284,6 +259,12 @@ struct ArgusApp: App {
                     NotificationCenter.default.post(name: .openNvim, object: nil)
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
+            }
+            CommandGroup(after: .textEditing) {
+                Button("Command Palette") {
+                    NotificationCenter.default.post(name: .openCommandPalette, object: nil)
+                }
+                .keyboardShortcut("k", modifiers: [.command])
             }
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") {

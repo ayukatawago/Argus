@@ -155,6 +155,10 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
         public var previousTerminalTab: String = ""
         public var closeTerminalTab: String = "x"
         public var toggleAgentSplit: String = "s"
+        public var openCommandPalette: String = "/"
+        // Not "g": the default lazygit popup shortcut already claims it.
+        public var jumpToAttention: String = "e"
+        public var focusSidebarFilter: String = "f"
 
         // Memberwise init needed because we declare a custom init(from:).
         public init() {}
@@ -195,6 +199,9 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
             previousTerminalTab = read("previousTerminalTab", default: "")
             closeTerminalTab = read("closeTerminalTab", default: "x")
             toggleAgentSplit = read("toggleAgentSplit", default: "s")
+            openCommandPalette = read("openCommandPalette", default: "/")
+            jumpToAttention = read("jumpToAttention", default: "e")
+            focusSidebarFilter = read("focusSidebarFilter", default: "f")
         }
     }
 
