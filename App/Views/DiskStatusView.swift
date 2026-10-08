@@ -6,6 +6,7 @@ struct DiskStatusView: View {
     @ObservedObject var store: DiskMonitorStore
     @ObservedObject var scanner: DiskCleanupScanner
     @State private var showingConfirmation = false
+    @State private var showingRepoConfirmation = false
     @State private var hideSmall = true
     @State private var sortOrder = SortOrder.size
     @State private var copiedCandidateID: URL?
@@ -33,14 +34,51 @@ struct DiskStatusView: View {
         .frame(minWidth: 500, minHeight: 460)
         .alert("Remove Items?", isPresented: $showingConfirmation) {
             Button("Remove", role: .destructive) {
-                Task {
-                    await scanner.removeSelected()
-                    store.refresh()
+                // Git checkouts get a second, repo-naming confirmation: deleting one can lose
+                // commits and branches that exist nowhere else.
+                if pendingRemovals.contains(where: \.isGitRepository) {
+                    showingRepoConfirmation = true
+                } else {
+                    removePending()
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Selected items will be permanently deleted. This cannot be undone.")
+            Text(
+                "These items will be permanently deleted. This cannot be undone.\n\n"
+                    + pendingRemovals.map(\.displayName).joined(separator: "\n"))
+        }
+        .alert("Delete Git Repositories?", isPresented: $showingRepoConfirmation) {
+            Button("Delete Repositories", role: .destructive) { removePending() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "Unpushed commits, stashes and uncommitted changes in these repositories will be lost:\n\n"
+                    + pendingRemovals.filter(\.isGitRepository).map(\.displayName).joined(separator: "\n"))
+        }
+        .alert(
+            "Some Items Couldn't Be Removed",
+            isPresented: Binding(
+                get: { scanner.removalFailureMessage != nil },
+                set: { if !$0 { scanner.removalFailureMessage = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(scanner.removalFailureMessage ?? "")
+        }
+    }
+
+    /// Exactly what the Remove button would delete now: selected, visible under the current
+    /// filter, and passing the safety check.
+    private var pendingRemovals: [CleanupCandidate] {
+        scanner.pendingRemovals(visibleIDs: Set(visibleCandidates.map(\.id)))
+    }
+
+    private func removePending() {
+        let visibleIDs = Set(visibleCandidates.map(\.id))
+        Task {
+            await scanner.removeSelected(visibleIDs: visibleIDs)
+            store.refresh()
         }
     }
 
@@ -153,7 +191,7 @@ struct DiskStatusView: View {
                 Button("Remove Selected") {
                     showingConfirmation = true
                 }
-                .disabled(!visibleCandidates.contains(where: \.isSelected) || scanner.isRemoving || scanner.isScanning)
+                .disabled(pendingRemovals.isEmpty || scanner.isRemoving || scanner.isScanning)
             }
         }
     }
