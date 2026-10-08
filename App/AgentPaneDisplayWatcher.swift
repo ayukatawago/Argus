@@ -31,28 +31,13 @@ final class AgentPaneDisplayWatcher: ObservableObject {
     /// has no way to change what the pane itself displays) within one poll interval.
     private var keyStates: [AgentKey: AgentPaneSignalReducer.KeyState] = [:]
 
-    /// Keys covered on the previous poll, so a session that disappears between polls (tmux
-    /// session killed outside Argus's own reset paths, which already call
+    /// Tracks which keys were covered on the previous poll, so a session that disappears between
+    /// polls (tmux session killed outside Argus's own reset paths, which already call
     /// `AgentStateBus.reset(for:agent:)` directly on tab close/reload) can be told apart from one
-    /// simply not covered yet, and proactively emitted as idle rather than left to go stale with
-    /// no further signal at all. Includes keys still inside `vanishDebouncePolls`'s grace period
-    /// (see `missingStreaks`) so a transiently-missing key keeps being diffed against on the next
-    /// poll instead of looking freshly "not covered yet".
-    private var previouslyFoundKeys: Set<AgentKey> = []
-
-    /// Consecutive polls (since last seen) a previously-covered key has been missing from
-    /// `tmux list-panes -a`'s output. A key must miss `vanishDebouncePolls` polls in a row before
-    /// `emitIdleForVanishedSessions` treats it as truly gone — one miss alone is indistinguishable
-    /// from a transient listing hiccup (the same "no data this poll" hazard already guarded for a
-    /// fully failed `list-panes` call below, just scoped to a single session's row instead of the
-    /// whole command). Concluding "gone" on a single miss would wipe this key's
-    /// `AgentPaneSignalReducer` memory (`keyStates`) and publish `.idle`; if the session reappears
-    /// on the very next poll with its on-screen "finished" marker unchanged, that wiped memory
-    /// reads it as a brand-new signal and republishes `.done` — a spontaneous done reappearing
-    /// with nothing having actually happened.
-    private var missingStreaks: [AgentKey: Int] = [:]
-
-    private static let vanishDebouncePolls = 2
+    /// simply not covered yet, and proactively emitted as idle rather than left to go stale. A key
+    /// must miss two polls in a row before it is treated as gone — see `VanishDebouncer` for why a
+    /// single miss must not be.
+    private var vanishDebouncer = VanishDebouncer<AgentKey>(threshold: 2)
 
     private nonisolated static let pollIntervalNanoseconds: UInt64 = 1_000_000_000
 
@@ -87,10 +72,8 @@ final class AgentPaneDisplayWatcher: ObservableObject {
 
     private func poll() async {
         guard !knownPaths.isEmpty else {
-            emitIdleForVanishedSessions(previouslyFoundKeys)
+            emitIdleForVanishedSessions(vanishDebouncer.reset())
             agentBus?.setDisplayCovered([])
-            previouslyFoundKeys = []
-            missingStreaks.removeAll()
             return
         }
 
@@ -120,7 +103,9 @@ final class AgentPaneDisplayWatcher: ObservableObject {
         let foundSessionNames = Array(Set(heightBySession.keys).intersection(sessionToKey.keys))
         let foundKeys = Set(foundSessionNames.compactMap { sessionToKey[$0] })
 
-        let stillMissing = debounceVanished(foundKeys: foundKeys)
+        let outcome = vanishDebouncer.update(found: foundKeys)
+        emitIdleForVanishedSessions(outcome.vanished)
+        let stillMissing = outcome.stillMissing
 
         var textBySession: [String: String] = [:]
         if !foundSessionNames.isEmpty {
@@ -145,7 +130,6 @@ final class AgentPaneDisplayWatcher: ObservableObject {
 
         let coveredKeys = foundKeys.union(stillMissing)
         agentBus?.setDisplayCovered(coveredKeys)
-        previouslyFoundKeys = coveredKeys
     }
 
     private func applySignal(paneText: String, key: AgentKey) {
@@ -158,28 +142,6 @@ final class AgentPaneDisplayWatcher: ObservableObject {
             HookPayload(worktreePath: key.worktreePath, state: publish, agent: Self.hookAgentString(for: key.agent)),
             source: .display
         )
-    }
-
-    /// Splits `previouslyFoundKeys.subtracting(foundKeys)` into keys that have now missed
-    /// `vanishDebouncePolls` polls in a row (calls `emitIdleForVanishedSessions` on those directly)
-    /// and keys still inside their grace period (returned, so the caller keeps covering them —
-    /// see `missingStreaks`'s doc comment for why a single miss must not be treated as gone).
-    private func debounceVanished(foundKeys: Set<AgentKey>) -> Set<AgentKey> {
-        for key in foundKeys { missingStreaks.removeValue(forKey: key) }
-        var stillMissing: Set<AgentKey> = []
-        var newlyVanished: Set<AgentKey> = []
-        for key in previouslyFoundKeys.subtracting(foundKeys) {
-            let streak = (missingStreaks[key] ?? 0) + 1
-            if streak >= Self.vanishDebouncePolls {
-                missingStreaks.removeValue(forKey: key)
-                newlyVanished.insert(key)
-            } else {
-                missingStreaks[key] = streak
-                stillMissing.insert(key)
-            }
-        }
-        emitIdleForVanishedSessions(newlyVanished)
-        return stillMissing
     }
 
     /// A key covered on the previous poll but gone now — explicit `.display` idle rather than
@@ -212,19 +174,9 @@ final class AgentPaneDisplayWatcher: ObservableObject {
             defaults = .codexDefaults
             overrides = ArgusConfigStore.shared.config.agentDisplayPatterns.codex
         }
-        guard let overrides else { return defaults }
-        return AgentPaneDisplayParser.Patterns(
-            running: nonEmpty(overrides.running) ?? defaults.running,
-            finished: nonEmpty(overrides.finished) ?? defaults.finished,
-            ready: nonEmpty(overrides.ready) ?? defaults.ready,
-            awaitingApproval: nonEmpty(overrides.awaitingApproval) ?? defaults.awaitingApproval,
-            agentUI: nonEmpty(overrides.agentUI) ?? defaults.agentUI
-        )
-    }
-
-    private func nonEmpty(_ patterns: [String]?) -> [String]? {
-        guard let patterns, !patterns.isEmpty else { return nil }
-        return patterns
+        return defaults.overriding(
+            running: overrides?.running, finished: overrides?.finished, ready: overrides?.ready,
+            awaitingApproval: overrides?.awaitingApproval, agentUI: overrides?.agentUI)
     }
 
     private static func hookAgentString(for agent: AgentType) -> String {

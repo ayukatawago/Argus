@@ -44,8 +44,9 @@ arbitrary shell like Terminal.app/iTerm2, so macOS expects that grant rather tha
 ```
 Packages/
   ArgusCore/        local SPM package (macOS 14+, Swift 6) — testable logic, no AppKit/SwiftUI
-    ArgusSupport/     Foundation only — ProcessRunner, LoginShell, JSONLTailer, PollingTask,
-                       TmuxSessionName
+    ArgusSupport/     Foundation only — ProcessRunner, LoginShell, JSONLCursor/JSONLTailer,
+                       PollingTask, TmuxSessionName, ShellQuote, TmuxCommand, ArgusURLRequest,
+                       CorruptFileBackup
     ArgusConfigKit/   Foundation only — ArgusConfig struct, ArgusConfigStore, AgentSelection/
                        WindowLayout/PaneRole/AgentPaneMode enums, AgentTabs, LeaderKey,
                        PaneLayoutResolver
@@ -53,8 +54,8 @@ Packages/
                        aggregate, IPC bus, hook manager, ClaudeSettingsPatcher, CodexSessionParser
     Workspaces/       Foundation only — git repo/worktree scanning and store,
                        WorktreeListParser, RepoScanner, RepoOrdering
-    Monitors/         Foundation only — PR categorization/highlighting, disk cleanup
-                       filter/sort, tmux pane parsing
+    Monitors/         Foundation only — GitHubClient + PR categorization/highlighting, disk cleanup
+                       catalog/filter/sort, Codex usage summary, tmux pane parsing
   DiffReviewKit/     SPM package (macOS 14+, Swift 6) — side-by-side diff review UI + headless agent runner
 Sources/
   GhosttyBridge/     libghostty-spm (GhosttyTerminal) + Foundation — PTY, terminal surface, URL-open
@@ -80,7 +81,7 @@ The sidebar's per-agent indicator is fed by three sources of differing trust, ar
    the false-idle failure mode described below: a single tool call or a `Task` subagent run lasting
    longer than 15 minutes (both observed live) no longer demotes a genuinely busy agent to idle.
    `AgentPaneDisplayWatcher` lives in App/, not AgentStateKit, because it needs
-   `WorktreePane.tmuxExecutable`/`sessionName(for:path:)` from GhosttyBridge, which AgentStateKit
+   `Tmux.executable`/`WorktreePane.sessionName(for:path:)` from GhosttyBridge, which AgentStateKit
    cannot import.
 2. **`.inference`** (fallback) — the transcript/rollout polling described below, for a worktree with
    no live Argus-hosted agent pane (an agent started in an external terminal, or a tab not yet
@@ -260,8 +261,8 @@ Package layout: `Agent/` (`AgentRunner` spawns/streams the CLI, `DiffReviewAgent
 
 ## Sidebar monitors
 
-- **GitHub PR monitor** (`App/Views/PRMonitorStore.swift`, `PRMonitorView.swift`): fetches via the GitHub REST API directly (`URLSession` + bearer token), not the `gh` CLI. Configured on the Settings → GitHub page (`apiBaseURL`, `token`, `refreshIntervalSeconds`). Groups PRs into My Open / My Drafts / Assigned / a collapsed "Do Not Merge" section; highlights PRs whose approvals changed since the last poll; grays out approved/draft PRs. Each row has a hover "hide" button (`PRHiddenList.hide`, `Monitors` target); a hidden PR's section header shows the hidden count and a reveal-all button (`PRHiddenList.reveal`) rather than dropping the header, so an all-hidden section stays recoverable. Hidden ids persist to `~/Library/Application Support/argus/hidden-prs.json` (`PRHiddenFile`) and are pruned against each successful fetch so merged/closed/unassigned PRs don't linger in the file.
-- **Disk space monitor** (`App/Views/DiskMonitorStore.swift`, `DiskCleanupScanner.swift`, `DiskStatusView.swift`, `DiskStatusWindow.swift`): opened via leader `d` or a low-disk banner. Shows a free-space gauge and cleanup candidates (Xcode DerivedData, package manager caches, workspace git repos, `~/Library` subdirectories, …) sized via `du -sk` at concurrency 4, sortable by name/size with a size filter. Config block `diskMonitor` (`checkIntervalSeconds`, `alertThresholdPercent`, `sizeCheckIntervalSeconds`).
+- **GitHub PR monitor** (`App/Views/PRMonitorStore.swift`, `PRMonitorView.swift`): fetches via the GitHub REST API directly (`GitHubClient` in `Monitors`: `URLSession` + bearer token, injectable for tests; 100 results per search), not the `gh` CLI. A refresh is re-entrancy-guarded and re-resolves the username when the token or API base changes. Configured on the Settings → GitHub page (`apiBaseURL`, `token`, `refreshIntervalSeconds`). Groups PRs into My Open / My Drafts / Assigned / a collapsed "Do Not Merge" section; highlights PRs whose approvals changed since the last poll; grays out approved/draft PRs. Each row has a hover "hide" button (`PRHiddenList.hide`, `Monitors` target); a hidden PR's section header shows the hidden count and a reveal-all button (`PRHiddenList.reveal`) rather than dropping the header, so an all-hidden section stays recoverable. Hidden ids persist to `~/Library/Application Support/argus/hidden-prs.json` (`PRHiddenFile`) and are pruned against each successful fetch so merged/closed/unassigned PRs don't linger in the file.
+- **Disk space monitor** (`App/Views/DiskMonitorStore.swift`, `DiskCleanupScanner.swift`, `DiskStatusView.swift`, `DiskStatusWindow.swift`): opened via leader `d` or a low-disk banner. Shows a free-space gauge and cleanup candidates (Xcode DerivedData, package manager caches, `~/Library/Caches|Logs|Developer/*`, workspace git repos) sized via `du -sk` at concurrency 4, sortable by name/size with a size filter. Discovery and the deletion rules live in `DiskCleanupCatalog` (`Monitors`): Remove Selected deletes only items that are selected *and* currently visible under the size filter *and* pass `isSafeToDelete` (strictly inside `$HOME`, not a protected folder, never a symlink); selection survives the background reload; git repos need a second, repo-naming confirmation. `~/.claude`/`~/.codex` are deliberately not offered. Config block `diskMonitor` (`checkIntervalSeconds`, `alertThresholdPercent`, `sizeCheckIntervalSeconds`).
 
 ## Codex usage monitor
 
@@ -335,7 +336,12 @@ a misleading `$0.00`, both in the chip and in the popover's per-row breakdown.
 | `App/Views/UsageSettingsView.swift` | Settings UI — Usage page (per-model USD prices, scan refresh interval/lookback window) |
 | `Packages/ArgusCore/Sources/Monitors/CodexUsageParser.swift` | Pure: joins `token_usage_record` lines to their model via `turn_context`, buckets by local day |
 | `Packages/ArgusCore/Sources/Monitors/CodexUsageCost.swift` | Pure: USD cost from token usage + per-model input/cached-input/output rates |
-| `Packages/ArgusCore/Sources/Monitors/CodexRolloutLocator.swift` | Pure: `~/.codex/sessions/<year>/<month>/<day>/` path math for a multi-day lookback window |
+| `Packages/ArgusCore/Sources/ArgusSupport/CodexRolloutLocator.swift` | Pure: `~/.codex/sessions/<year>/<month>/<day>/` path math for a multi-day lookback window |
+| `Packages/ArgusCore/Sources/ArgusSupport/JSONLCursor.swift` | Pure: offset + carry + truncation/rotation detection; yields only complete lines (used by `JSONLTailer` and `JSONLFileReader`) |
+| `Packages/ArgusCore/Sources/ArgusSupport/ShellQuote.swift` / `TmuxCommand.swift` | Pure: POSIX single-quote escaping; tmux binary discovery (`ARGUS_TMUX`), `new-session -A` command line and argv builders, `listing(from:)` ("no server running" = empty listing). `Sources/GhosttyBridge/Tmux.swift` is the one runner |
+| `Packages/ArgusCore/Sources/ArgusSupport/ArgusURLRequest.swift` | Pure: parses/validates `argus://diff` and `argus://capture` (capture output needs a `.png`/`.mov`/`.mp4` extension and may only replace a regular file) |
+| `Packages/ArgusCore/Sources/ArgusSupport/JSONQuotedValue.swift` | Pure: escape-decoding `"key":"value"` scan for hot paths / truncated windows (cwd, entrypoint, timestamp) |
+| `Packages/ArgusCore/Sources/Monitors/DiskCleanupCatalog.swift` / `GitHubClient.swift` / `CodexUsageSummary.swift` | Pure-ish: cleanup discovery + deletion safety rules; injectable GitHub REST client + PR models; today's per-model Codex cost summary shared by the chip and its popover |
 | `Packages/ArgusCore/Sources/ArgusSupport/JSONLFileReader.swift` | Bounded-memory whole-file JSONL line reader (vs. `JSONLTailer`'s append-streaming) |
 | `App/Views/SettingsWindow.swift` | Settings UI — Agent page (agent picker + commands) and GitHub/Environment pages |
 | `App/Views/KeyboardSettingsView.swift` | Settings UI — Keyboard page (key bindings + popup terminal shortcuts editor) |
@@ -349,7 +355,7 @@ a misleading `$0.00`, both in the chip and in the popover's per-row breakdown.
 | `Packages/ArgusCore/Sources/AgentStateKit/ClaudeTranscriptWatcher.swift` / `ClaudeTranscriptParser.swift` | Polls `~/.claude/projects/*/*.jsonl` (plus each session's `Task`-subagent sidechains, for liveness only) to infer running/done/interrupted-idle/stale-idle without hooks |
 | `Packages/ArgusCore/Sources/AgentStateKit/SessionActivityArbiter.swift` | Pure per-cwd arbitration: resolves several transcripts/rollouts bound to one worktree to the single state (newest activity wins) that watcher polls publish |
 | `Packages/ArgusCore/Sources/AgentStateKit/WorktreeHookManager.swift` | Writes the one remaining hook script (PermissionRequest); delegates the settings.local.json merge to `ClaudeSettingsPatcher` |
-| `Packages/ArgusCore/Sources/ArgusConfigKit/ArgusConfig.swift` | `ArgusConfig` struct, `ArgusConfigStore`, `AgentSelection`/`WindowLayout` enums, `github`/`diskMonitor`/`environmentVariables`/`popupShortcuts`/`projectAgents` config blocks; persistence itself is `ArgusConfigFile.swift` (`~/.config/argus/argus.json`) |
+| `Packages/ArgusCore/Sources/ArgusConfigKit/ArgusConfig.swift` | `ArgusConfig` struct, `AgentSelection`/`WindowLayout` enums; nested blocks are split into `ArgusConfig+KeyBindings.swift`, `+Monitors.swift` (`diskMonitor`/`github`/`popupShortcuts`, lenient per-key decoding, `sanitizedInterval`/`intervalNanoseconds`), `+AgentDisplayPatterns.swift`, `+CodexUsage.swift`; `ArgusConfigStore.swift`; persistence is `ArgusConfigFile.swift` (`~/.config/argus/argus.json`, an unreadable file is backed up via `CorruptFileBackup` before defaults overwrite it) |
 | `Packages/ArgusCore/Sources/Workspaces/WorkspaceStore.swift` | Repo/worktree scanning orchestrator; parsing (`WorktreeListParser`) and discovery (`RepoScanner`) are separate testable files in the same target |
 | `Packages/ArgusCore/Package.swift` | ArgusCore's five targets + their internal dependency graph — edit this to add a file to a new target |
 | `Sources/GhosttyBridge/WorktreePane.swift` | ghostty surface lifecycle per pane |

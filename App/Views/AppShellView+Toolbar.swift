@@ -8,26 +8,17 @@ extension AppShellView {
     /// Today's Codex token/cost chip. Always shown (even at "0") so the toolbar doesn't reflow
     /// across a day with no Codex activity; the popover it opens is `CodexUsageView`.
     var codexUsageChip: some View {
-        let usage = codexUsageStore.today.values.reduce(.zero, +)
-        let costs = codexUsageStore.today.compactMap { model, modelUsage -> Double? in
-            guard let price = configStore.config.codexUsage.modelPrices[model] else { return nil }
-            let rate = CodexModelRate(
-                inputPerMillion: price.inputPerMillion,
-                cachedInputPerMillion: price.cachedInputPerMillion,
-                cacheWritePerMillion: price.cacheWritePerMillion,
-                outputPerMillion: price.outputPerMillion)
-            // Cost is omitted from the chip (not shown as a misleading "$0.00") when nothing
-            // priced this model at all — matches CodexUsageView's per-row "—" treatment.
-            return rate.isUnset ? nil : CodexUsageCost.cost(modelUsage, rate: rate)
-        }
-        let cost = costs.isEmpty ? nil : costs.reduce(0, +)
+        let summary = CodexUsageSummary(
+            today: codexUsageStore.today, prices: configStore.config.codexUsage.modelPrices)
+        // The cost is omitted (not shown as a misleading "$0.00") when no model has a price.
+        let cost = summary.totalCost
         let bindings = configStore.config.keyBindings
         return Button {
             isCodexUsagePopoverPresented.toggle()
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "bolt.fill")
-                Text(TokenCountFormatter.short(usage.totalTokens))
+                Text(TokenCountFormatter.short(summary.totalTokens))
                 if let cost {
                     Text("· \(CostFormatter.usd(cost))")
                 }

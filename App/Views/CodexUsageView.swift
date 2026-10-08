@@ -7,35 +7,14 @@ struct CodexUsageView: View {
     @ObservedObject var store: CodexUsageStore
     @EnvironmentObject private var configStore: ArgusConfigStore
 
-    private var rows: [UsageRow] {
-        let prices = configStore.config.codexUsage.modelPrices
-        return store.today.map { model, usage in
-            let rate =
-                prices[model].map {
-                    CodexModelRate(
-                        inputPerMillion: $0.inputPerMillion,
-                        cachedInputPerMillion: $0.cachedInputPerMillion,
-                        cacheWritePerMillion: $0.cacheWritePerMillion,
-                        outputPerMillion: $0.outputPerMillion)
-                } ?? .unset
-            let cost = rate.isUnset ? nil : CodexUsageCost.cost(usage, rate: rate)
-            return UsageRow(model: model, usage: usage, cost: cost)
-        }
-        .sorted { lhs, rhs in
-            if let leftCost = lhs.cost, let rightCost = rhs.cost, leftCost != rightCost {
-                return leftCost > rightCost
-            }
-            if (lhs.cost == nil) != (rhs.cost == nil) { return lhs.cost != nil }
-            return lhs.usage.totalTokens > rhs.usage.totalTokens
-        }
+    private var summary: CodexUsageSummary {
+        CodexUsageSummary(today: store.today, prices: configStore.config.codexUsage.modelPrices)
     }
 
-    private var totalTokens: Int { rows.reduce(0) { $0 + $1.usage.totalTokens } }
-    private var totalCost: Double? {
-        let priced = rows.compactMap(\.cost)
-        return priced.isEmpty ? nil : priced.reduce(0, +)
-    }
-    private var unpricedModelCount: Int { rows.filter { $0.cost == nil }.count }
+    private var rows: [CodexUsageRow] { summary.rows }
+    private var totalTokens: Int { summary.totalTokens }
+    private var totalCost: Double? { summary.totalCost }
+    private var unpricedModelCount: Int { summary.unpricedModelCount }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -90,7 +69,7 @@ struct CodexUsageView: View {
         .foregroundStyle(.secondary)
     }
 
-    private func rowView(_ row: UsageRow) -> some View {
+    private func rowView(_ row: CodexUsageRow) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack {
                 Text(row.model).lineLimit(1)
@@ -145,11 +124,5 @@ struct CodexUsageView: View {
             }
             .font(.caption)
         }
-    }
-
-    private struct UsageRow {
-        let model: String
-        let usage: CodexTokenUsage
-        let cost: Double?
     }
 }

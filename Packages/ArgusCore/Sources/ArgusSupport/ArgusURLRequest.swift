@@ -5,17 +5,18 @@ import Foundation
 /// Parsing and validation live here, apart from `AppDelegate`, so the URL scheme — which any local
 /// process or web page can invoke — is unit-testable. `argus://capture` in particular makes the app
 /// *write a file at a caller-chosen path*, so its `output` is validated here rather than trusted.
+/// What an `argus://capture` request records.
+public enum CaptureMode: String, Sendable {
+    case screenshot
+    case video
+}
+
 public enum ArgusURLRequest: Equatable, Sendable {
     case diff(workspace: String, base: String, head: String)
     case capture(Capture)
 
     public struct Capture: Equatable, Sendable {
-        public enum Mode: String, Sendable {
-            case screenshot
-            case video
-        }
-
-        public let mode: Mode
+        public let mode: CaptureMode
         public let outputPath: String
         public let duration: Double
     }
@@ -38,7 +39,7 @@ public enum ArgusURLRequest: Equatable, Sendable {
     }
 
     /// Output extensions a capture may write, by mode.
-    static let allowedExtensions: [Capture.Mode: Set<String>] = [.screenshot: ["png"], .video: ["mov", "mp4"]]
+    static let allowedExtensions: [CaptureMode: Set<String>] = [.screenshot: ["png"], .video: ["mov", "mp4"]]
     public static let defaultCaptureDuration = 10.0
     public static let maxCaptureDuration = 300.0
 
@@ -69,7 +70,7 @@ public enum ArgusURLRequest: Equatable, Sendable {
     ) -> Result<Capture, Rejection> {
         guard let rawOutput = value("output"), !rawOutput.isEmpty else { return .failure(.missingOutput) }
         guard rawOutput.hasPrefix("/"), !rawOutput.contains("\0") else { return .failure(.outputNotAbsolute) }
-        guard let mode = value("mode").flatMap(Capture.Mode.init(rawValue:)) else { return .failure(.unknownMode) }
+        guard let mode = value("mode").flatMap(CaptureMode.init(rawValue:)) else { return .failure(.unknownMode) }
 
         let output = (rawOutput as NSString).standardizingPath
         let ext = (output as NSString).pathExtension.lowercased()

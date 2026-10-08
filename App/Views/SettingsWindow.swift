@@ -163,8 +163,6 @@ struct AgentSettingsView: View {
 
 struct GitHubSettingsView: View {
     @Binding var config: ArgusConfig
-    @State private var isDetecting = false
-    @State private var detectError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -190,11 +188,6 @@ struct GitHubSettingsView: View {
                 SecureField("ghp_…", text: $config.github.token)
                     .textFieldStyle(.roundedBorder)
                     .frame(minWidth: 240)
-            }
-            if let error = detectError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
             }
         }
     }
