@@ -113,6 +113,13 @@ public final class WorkspaceStore: ObservableObject {
         saveConfig()
     }
 
+    /// Undoes `hideWorktree` — used when a worktree was hidden optimistically ahead of a removal
+    /// that then failed.
+    public func unhideWorktree(id: String) {
+        guard hiddenWorktreeIDs.remove(id) != nil else { return }
+        saveConfig()
+    }
+
     public func unhideWorktrees(repoID: String) {
         guard let repo = repos.first(where: { $0.id == repoID }) else { return }
         repo.worktrees.forEach { hiddenWorktreeIDs.remove($0.id) }

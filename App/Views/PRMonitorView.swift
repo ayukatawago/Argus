@@ -1,4 +1,5 @@
 import AppKit
+import Monitors
 import SwiftUI
 
 struct PRMonitorView: View {
