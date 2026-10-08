@@ -98,10 +98,7 @@ struct SidebarView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if store.repos.isEmpty {
-                        Text("No folders found")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                            .padding()
+                        SidebarEmptyState(onAddFolder: { showPickFolder = true })
                     } else if shownRepos.isEmpty {
                         Text(attentionOnly && filterQuery.isEmpty ? "No worktrees need attention" : "No matches")
                             .foregroundStyle(.secondary)
