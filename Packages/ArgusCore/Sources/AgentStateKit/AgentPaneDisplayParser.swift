@@ -94,13 +94,17 @@ public enum AgentPaneDisplayParser {
         /// to bind to an unrelated internal string ("Reviewing approval request"), not a run
         /// state at all. The binary also confirms (`strings`: "Compact session run-state text
         /// (Ready, Working, Thinking)") that the verified `· Ready ·` status-line segment is one
-        /// of exactly three values for that slot — so `running` now matches `Working`/`Thinking`
+        /// of the values for that slot — so `running` now matches `Working`/`Thinking`
         /// anchored to the same dot-delimited slot as `ready`, rather than as a bare word anywhere
-        /// in the pane. The other two values themselves are not yet independently live-verified
-        /// the way `Ready` is. `awaitingApproval` is likewise NOT independently verified against a
-        /// live capture — recovered from `strings` on the Codex binary, the same epistemic status
-        /// CLAUDE.md already records for Codex's `EventMsg` names — so a miss here degrades to the
-        /// hook/transcript fallback rather than breaking anything.
+        /// in the pane. The slot has more values than that description lists: Codex 0.165 also
+        /// has `Starting`, `Needs input` and `Blocked`. `Starting` is deliberately unmatched
+        /// (indeterminate): it was seen live on an idle, already-finished pane, so it is no
+        /// running signal. `Needs input`/`Blocked` mean Codex is waiting on the user and map to
+        /// `awaitingApproval`. Only `Ready`/`Starting` are live-verified. `awaitingApproval` is
+        /// likewise NOT independently verified against a live capture — recovered from `strings`
+        /// on the Codex binary, the same epistemic status CLAUDE.md already records for Codex's
+        /// `EventMsg` names — so a miss here degrades to the hook/transcript fallback rather than
+        /// breaking anything.
         public static let codexDefaults = Patterns(
             running: [#"·\s*Working\s*·"#, #"·\s*Thinking\s*·"#],
             finished: [],
@@ -109,6 +113,8 @@ public enum AgentPaneDisplayParser {
                 #"Allow this request and continue"#,
                 #"Allow for this session"#,
                 #"Approve app tool call\?"#,
+                #"·\s*Needs input\s*·"#,
+                #"·\s*Blocked\s*·"#,
             ],
             agentUI: [
                 #"Ask Codex to do anything"#,
