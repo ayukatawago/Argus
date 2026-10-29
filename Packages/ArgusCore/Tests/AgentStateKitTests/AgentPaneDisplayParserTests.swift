@@ -131,6 +131,25 @@ struct AgentPaneDisplayParserTests {
           gpt-5.6-sol xhigh · ~/workspace/app/Argus · xhigh · Working · Context 68% left · 0.153.4 · 258K window
         """
 
+    /// Real capture shape from Codex 0.165: a finished turn at an empty prompt, yet the run-state
+    /// slot reads `Starting`. So `Starting` must stay indeterminate rather than read as running.
+    private static let codexStartingStatusLine = """
+        Worked for 4m 32s • 17:11
+
+
+        › Ask Codex to do anything
+
+          GPT-6.1-Sol high · ~/workspace/android/line-android-poc · Starting · Context 83% left · 0.165.0 · 828K window
+        """
+
+    private static func codexStatusLine(_ runState: String) -> String {
+        """
+        › Ask Codex to do anything
+
+          GPT-6-Luna high · ~/workspace/app/Argus · \(runState) · Context 68% left · 0.165.0 · 828K window
+        """
+    }
+
     // MARK: - Claude
 
     @Test("a live running-turn capture maps to .running")
@@ -224,6 +243,28 @@ struct AgentPaneDisplayParserTests {
         #expect(
             AgentPaneDisplayParser.signal(fromPane: Self.codexRunningStatusLine, patterns: .codexDefaults)
                 == .running)
+    }
+
+    @Test("a Codex status line reading \"· Thinking ·\" maps to .running")
+    func codexThinkingStatusLineMapsToRunning() {
+        #expect(
+            AgentPaneDisplayParser.signal(fromPane: Self.codexStatusLine("Thinking"), patterns: .codexDefaults)
+                == .running)
+    }
+
+    @Test("a Codex status line reading \"· Starting ·\" is indeterminate (nil), not running")
+    func codexStartingStatusLineIsIndeterminate() {
+        #expect(
+            AgentPaneDisplayParser.signal(fromPane: Self.codexStartingStatusLine, patterns: .codexDefaults) == nil)
+    }
+
+    @Test("Codex \"· Needs input ·\" and \"· Blocked ·\" status lines map to .awaitingApproval")
+    func codexNeedsInputAndBlockedMapToAwaitingApproval() {
+        for runState in ["Needs input", "Blocked"] {
+            #expect(
+                AgentPaneDisplayParser.signal(fromPane: Self.codexStatusLine(runState), patterns: .codexDefaults)
+                    == .awaitingApproval)
+        }
     }
 
     // MARK: - Robustness
