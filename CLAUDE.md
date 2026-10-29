@@ -104,7 +104,9 @@ anchored to a line that *starts* with one of its four spinner glyphs (`(?m)^\s*[
 ordinary quoted scrollback text like "Worked for 3m 37s" once matched a bare `finished` pattern
 anywhere in the pane; Codex's are anchored to the same dot-delimited `· Working ·`/`· Thinking ·`
 status-line slot after bare-word matches on "Working"/"Reviewing" once fired on unrelated scrollback
-("Working tree is clean.", a directory-trust prompt, "Reviewing approval request").
+("Working tree is clean.", a directory-trust prompt, "Reviewing approval request"). The same slot's
+`· Needs input ·`/`· Blocked ·` map to `awaitingApproval`; `· Starting ·` is deliberately left
+indeterminate, since Codex 0.165 was observed showing it on an idle, already-finished pane.
 
 Each poll's raw signal is reduced through `AgentPaneSignalReducer` (pure, unit-testable, one
 `KeyState` per `AgentKey`) before ever reaching `AgentStateBus.apply` — without it, the watcher would
