@@ -11,6 +11,10 @@ struct SideBySideDiffView: View {
     @State private var activeCommentAnchor: CommentAnchor?
     @State private var draftCommentText = ""
     @State private var pendingSelection: LineSelection?
+    @State var isSearching = false
+    @State var searchQuery = ""
+    @State var currentMatch = 0
+    @FocusState var searchFieldFocused: Bool
 
     struct CommentAnchor: Equatable {
         let side: ReviewComment.Side
@@ -38,18 +42,35 @@ struct SideBySideDiffView: View {
     }
 
     var body: some View {
-        ScrollView {
-            if file.isBinaryOrHunkless {
-                Text("No line-level changes to display (binary file, rename, or mode-only change).")
-                    .foregroundStyle(.secondary)
-                    .padding()
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(DiffBlockBuilder.blocks(for: file)) { block in
-                        blockView(block)
+        ScrollViewReader { proxy in
+            VStack(spacing: 0) {
+                if isSearching {
+                    searchBar(proxy: proxy)
+                    Divider()
+                }
+                ScrollView {
+                    if file.isBinaryOrHunkless {
+                        Text("No line-level changes to display (binary file, rename, or mode-only change).")
+                            .foregroundStyle(.secondary)
+                            .padding()
+                    } else {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(DiffBlockBuilder.blocks(for: file)) { block in
+                                blockView(block)
+                            }
+                        }
                     }
                 }
             }
+        }
+        .background {
+            Button("") {
+                isSearching = true
+                searchFieldFocused = true
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .opacity(0)
+            .allowsHitTesting(false)
         }
     }
 
@@ -86,6 +107,12 @@ struct SideBySideDiffView: View {
             cell(row: row, line: row.left, side: .old, changedRanges: modification?.old)
             Divider()
             cell(row: row, line: row.right, side: .new, changedRanges: modification?.new)
+        }
+        .id(row.id)
+        .overlay {
+            if isSearching, isCurrentMatch(row) {
+                Rectangle().stroke(Color.yellow, lineWidth: 1.5).allowsHitTesting(false)
+            }
         }
 
         if let anchor = activeCommentAnchor, matches(anchor, row: row) {
@@ -229,6 +256,7 @@ struct SideBySideDiffView: View {
     private func highlightedText(_ line: DiffLine, changedRanges: [Range<String.Index>]?) -> AttributedString {
         guard !line.text.isEmpty else { return AttributedString(" ") }
         var attributed = SyntaxHighlighter.highlight(line.text, language: language)
+        highlightSearchMatches(in: &attributed)
         guard let changedRanges, !changedRanges.isEmpty else { return attributed }
         let emphasis = emphasisBackground(for: line.kind)
         for range in changedRanges {
