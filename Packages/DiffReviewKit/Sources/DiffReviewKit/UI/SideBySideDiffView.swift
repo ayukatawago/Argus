@@ -8,9 +8,11 @@ struct SideBySideDiffView: View {
     let model: DiffReviewModel
     let file: DiffFile
 
-    @State private var activeCommentAnchor: CommentAnchor?
+    @State var activeCommentAnchor: CommentAnchor?
     @State private var draftCommentText = ""
-    @State private var pendingSelection: LineSelection?
+    @State var pendingSelection: LineSelection?
+    @State var cellFrames: [CodeCellKey: CGRect] = [:]
+    @State var textSelection: TextSelectionRange?
     @State var isSearching = false
     @State var searchQuery = ""
     @State var currentMatch = 0
@@ -59,11 +61,22 @@ struct SideBySideDiffView: View {
                                 blockView(block)
                             }
                         }
+                        .coordinateSpace(name: Self.rowSpace)
+                        .onPreferenceChange(CodeCellFramesKey.self) { cellFrames = $0 }
+                        .simultaneousGesture(dragSelectGesture)
+                        .simultaneousGesture(TapGesture().onEnded { textSelection = nil })
                     }
                 }
             }
         }
         .background {
+            Button("") {
+                copySelection()
+            }
+            .keyboardShortcut("c", modifiers: .command)
+            .disabled(pendingSelection == nil && textSelection == nil)
+            .opacity(0)
+            .allowsHitTesting(false)
             Button("") {
                 isSearching = true
                 searchFieldFocused = true
@@ -163,6 +176,7 @@ struct SideBySideDiffView: View {
 
     private func handleLineNumberTap(side: ReviewComment.Side, line: Int) {
         activeCommentAnchor = nil
+        textSelection = nil
         if NSEvent.modifierFlags.contains(.shift), let existing = pendingSelection, existing.side == side {
             pendingSelection = LineSelection(side: side, anchorLine: existing.anchorLine, focusLine: line)
         } else {
@@ -186,6 +200,13 @@ struct SideBySideDiffView: View {
             .buttonStyle(.borderless)
 
             Button {
+                copy(selection)
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            .buttonStyle(.borderless)
+
+            Button {
                 pendingSelection = nil
             } label: {
                 Image(systemName: "xmark")
@@ -198,12 +219,6 @@ struct SideBySideDiffView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(DiffReviewTheme.selectionBackground)
-    }
-
-    private func commentButtonTitle(for range: ClosedRange<Int>) -> String {
-        range.lowerBound == range.upperBound
-            ? "Comment on line \(range.lowerBound)"
-            : "Comment on lines \(range.lowerBound)\u{2013}\(range.upperBound)"
     }
 
     // MARK: - Cell rendering
@@ -222,6 +237,7 @@ struct SideBySideDiffView: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(DiffReviewTheme.lineNumberForeground)
                     .frame(width: 36, alignment: .trailing)
+                    .textSelection(.disabled)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         if let number { handleLineNumberTap(side: side, line: number) }
@@ -231,6 +247,7 @@ struct SideBySideDiffView: View {
                     if let number {
                         activeCommentAnchor = CommentAnchor(side: side, startLine: number, endLine: number)
                         pendingSelection = nil
+                        textSelection = nil
                     }
                 } label: {
                     Image(systemName: "plus.bubble")
@@ -239,11 +256,11 @@ struct SideBySideDiffView: View {
                 .opacity(0.35)
                 .frame(width: 14)
 
-                Text(highlightedText(line, changedRanges: changedRanges))
+                Text(highlightedText(line, side: side, number: number, changedRanges: changedRanges))
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(DiffReviewTheme.contextForeground)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
+                    .background(codeFrameReader(side: side, number: number))
             } else {
                 Color.clear
             }
@@ -253,16 +270,23 @@ struct SideBySideDiffView: View {
         .background(rowBackground(line: line, side: side, changedRanges: changedRanges))
     }
 
-    private func highlightedText(_ line: DiffLine, changedRanges: [Range<String.Index>]?) -> AttributedString {
+    private func highlightedText(
+        _ line: DiffLine,
+        side: ReviewComment.Side,
+        number: Int?,
+        changedRanges: [Range<String.Index>]?
+    ) -> AttributedString {
         guard !line.text.isEmpty else { return AttributedString(" ") }
         var attributed = SyntaxHighlighter.highlight(line.text, language: language)
         highlightSearchMatches(in: &attributed)
-        guard let changedRanges, !changedRanges.isEmpty else { return attributed }
-        let emphasis = emphasisBackground(for: line.kind)
-        for range in changedRanges {
-            guard let attributedRange = Range(range, in: attributed) else { continue }
-            attributed[attributedRange].backgroundColor = emphasis
+        if let changedRanges, !changedRanges.isEmpty {
+            let emphasis = emphasisBackground(for: line.kind)
+            for range in changedRanges {
+                guard let attributedRange = Range(range, in: attributed) else { continue }
+                attributed[attributedRange].backgroundColor = emphasis
+            }
         }
+        if let number { highlightTextSelection(in: &attributed, line: line, side: side, number: number) }
         return attributed
     }
 
@@ -284,30 +308,6 @@ struct SideBySideDiffView: View {
             return DiffReviewTheme.commentRangeBackground
         }
         return changedRanges == nil ? background(for: line?.kind) : .clear
-    }
-
-    private func isWithinExistingCommentRange(line number: Int, side: ReviewComment.Side) -> Bool {
-        model.comments(for: file.path).contains { comment in
-            guard comment.side == side else { return false }
-            let range = (comment.startLineNumber ?? comment.lineNumber)...comment.lineNumber
-            return range.contains(number)
-        }
-    }
-
-    private func background(for kind: DiffLine.Kind?) -> Color {
-        switch kind {
-        case .addition: DiffReviewTheme.additionBackground
-        case .deletion: DiffReviewTheme.deletionBackground
-        default: .clear
-        }
-    }
-
-    private func emphasisBackground(for kind: DiffLine.Kind) -> Color {
-        switch kind {
-        case .addition: DiffReviewTheme.additionEmphasisBackground
-        case .deletion: DiffReviewTheme.deletionEmphasisBackground
-        case .context: .clear
-        }
     }
 
     // MARK: - Comment composer
