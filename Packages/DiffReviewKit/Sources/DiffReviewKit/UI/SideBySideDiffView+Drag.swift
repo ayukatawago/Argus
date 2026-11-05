@@ -73,6 +73,46 @@ extension SideBySideDiffView {
         textSelection = TextSelectionRange(side: side, anchor: anchor, focus: focus)
     }
 
+    /// A single click clears the text selection; a double-click selects the word under the pointer.
+    var tapSelectGesture: some Gesture {
+        SpatialTapGesture(coordinateSpace: .named(Self.rowSpace)).onEnded { value in
+            if NSApp.currentEvent?.clickCount == 2 {
+                selectWord(at: value.location)
+            } else {
+                textSelection = nil
+            }
+        }
+    }
+
+    /// Double-click selects the word (run of letters, digits and underscores) under `point`, or the
+    /// run of punctuation if the click lands on a non-word character.
+    func selectWord(at point: CGPoint) {
+        let side = side(atX: point.x)
+        let texts = lineTexts(side: side)
+        guard let click = cellFrames.first(where: { $0.key.side == side && $0.value.contains(point) }),
+            let text = texts[click.key.line], !text.isEmpty
+        else { return }
+        let characters = Array(text)
+        let offset = Int(((point.x - click.value.minX) / Self.characterWidth).rounded(.down))
+        guard characters.indices.contains(offset) else { return }
+        func isWord(_ character: Character) -> Bool { character.isLetter || character.isNumber || character == "_" }
+        let target = characters[offset]
+        let matches: (Character) -> Bool =
+            target.isWhitespace
+            ? { $0.isWhitespace }
+            : (isWord(target) ? isWord : { !isWord($0) && !$0.isWhitespace })
+        var lower = offset
+        var upper = offset + 1
+        while lower > 0, matches(characters[lower - 1]) { lower -= 1 }
+        while upper < characters.count, matches(characters[upper]) { upper += 1 }
+        activeCommentAnchor = nil
+        pendingSelection = nil
+        textSelection = TextSelectionRange(
+            side: side,
+            anchor: TextPosition(line: click.key.line, column: lower),
+            focus: TextPosition(line: click.key.line, column: upper))
+    }
+
     private func side(atX xPos: CGFloat) -> ReviewComment.Side {
         let oldRight = cellFrames.filter { $0.key.side == .old }.map(\.value.maxX).max()
         let newLeft = cellFrames.filter { $0.key.side == .new }.map(\.value.minX).min()
