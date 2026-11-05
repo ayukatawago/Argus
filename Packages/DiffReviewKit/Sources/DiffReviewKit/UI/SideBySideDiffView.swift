@@ -64,7 +64,7 @@ struct SideBySideDiffView: View {
                         .coordinateSpace(name: Self.rowSpace)
                         .onPreferenceChange(CodeCellFramesKey.self) { cellFrames = $0 }
                         .simultaneousGesture(dragSelectGesture)
-                        .simultaneousGesture(TapGesture().onEnded { textSelection = nil })
+                        .simultaneousGesture(tapSelectGesture)
                     }
                 }
             }
