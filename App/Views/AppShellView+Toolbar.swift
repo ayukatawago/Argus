@@ -5,21 +5,25 @@ import SwiftUI
 /// The window-layout and agent-pane-mode toolbar controls, factored out of `AppShellView.swift` to
 /// keep its type body under SwiftLint's line-count limit.
 extension AppShellView {
-    /// Used/total disk space chip; the popover it opens is `DiskStatusView` (gauge + cleanup candidates).
+    /// Free disk space chip. Below 10% free it gets an orange/red capsule (same colors as the popover
+    /// gauge); while healthy it stays plain. The popover it opens is `DiskStatusView`.
     var diskUsageChip: some View {
-        let total = diskMonitor.totalBytes
-        let used = total - diskMonitor.availableBytes
+        let free = diskMonitor.availableBytes
+        let isWarning = diskMonitor.availablePercent < 10
         let bindings = configStore.config.keyBindings
         return Button {
             isDiskUsagePopoverPresented.toggle()
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "internaldrive")
-                Text("\(used.formatted(.byteCount(style: .file))) / \(total.formatted(.byteCount(style: .file)))")
+                Text("\(free.formatted(.byteCount(style: .file))) free")
             }
             .font(.caption)
             .monospacedDigit()
-            .foregroundStyle(diskMonitor.isLow ? diskMonitor.gaugeColor : .primary)
+            .foregroundStyle(isWarning ? Color.white : Color.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(isWarning ? diskMonitor.gaugeColor : Color.clear))
         }
         .help("Disk usage (\(configStore.config.leaderKey) then \(bindings.openDiskStatus))")
         .popover(isPresented: $isDiskUsagePopoverPresented, arrowEdge: .bottom) {
