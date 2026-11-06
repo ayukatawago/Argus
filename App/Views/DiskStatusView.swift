@@ -31,7 +31,7 @@ struct DiskStatusView: View {
             cleanupSection
         }
         .padding()
-        .frame(minWidth: 500, minHeight: 460)
+        .frame(width: 540, height: 520)
         .alert("Remove Items?", isPresented: $showingConfirmation) {
             Button("Remove", role: .destructive) {
                 // Git checkouts get a second, repo-naming confirmation: deleting one can lose
@@ -136,11 +136,7 @@ struct DiskStatusView: View {
         String(format: "%.1f%% free", store.availablePercent)
     }
 
-    private var gaugeColor: Color {
-        if store.availablePercent < 5 { return .red }
-        if store.availablePercent < 10 { return .orange }
-        return .green
-    }
+    private var gaugeColor: Color { store.gaugeColor }
 
     // MARK: - Cleanup Section
 

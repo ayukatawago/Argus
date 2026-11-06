@@ -16,10 +16,10 @@ struct AppShellView: View {
     @StateObject private var terminalTabs = TerminalTabsStore()
     // Not `private`: read by the `AppShellView+Toolbar` extension in another file.
     @StateObject var agentTabs = AgentTabsStore()
-    @StateObject private var diskMonitor = DiskMonitorStore()
-    @StateObject private var diskScanner = DiskCleanupScanner()
+    // Not `private`: read by the `AppShellView+Toolbar` extension in another file.
+    @StateObject var diskMonitor = DiskMonitorStore()
+    @StateObject var diskScanner = DiskCleanupScanner()
     @StateObject private var prMonitor = PRMonitorStore()
-    @StateObject private var diskStatusWindow = DiskStatusWindow()
     @StateObject private var diffReview = DiffReviewWindow()
     @EnvironmentObject var configStore: ArgusConfigStore
     // Not `private`: read by the `AppShellView+Toolbar` extension in another file, same reasoning
@@ -29,6 +29,7 @@ struct AppShellView: View {
     @State private var selectedWorktreeID: String?
     @State private var hasRestoredOpenWorktrees = false
     @State var isCodexUsagePopoverPresented = false
+    @State var isDiskUsagePopoverPresented = false
     @State var focusedRole: PaneRole = .shell
     @State private var isPaletteOpen = false
     @AppStorage("lastSelectedWorktreeID") private var persistedWorktreeID: String = ""
@@ -99,7 +100,7 @@ struct AppShellView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .openDiskStatus)) { _ in
-                diskStatusWindow.open(store: diskMonitor, scanner: diskScanner)
+                isDiskUsagePopoverPresented.toggle()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openCodexUsage)) { _ in
                 isCodexUsagePopoverPresented.toggle()
@@ -134,7 +135,7 @@ struct AppShellView: View {
             VStack(spacing: 0) {
                 if diskMonitor.isLow {
                     DiskLowBanner {
-                        diskStatusWindow.open(store: diskMonitor, scanner: diskScanner)
+                        isDiskUsagePopoverPresented = true
                     }
                 }
                 SidebarView(
@@ -164,6 +165,9 @@ struct AppShellView: View {
                 }
                 .help("Review diff")
                 .disabled(selectedWorktreeID == nil)
+            }
+            ToolbarItem(placement: .automatic) {
+                diskUsageChip
             }
             ToolbarItem(placement: .automatic) {
                 codexUsageChip

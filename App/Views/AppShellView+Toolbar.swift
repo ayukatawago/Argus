@@ -5,6 +5,28 @@ import SwiftUI
 /// The window-layout and agent-pane-mode toolbar controls, factored out of `AppShellView.swift` to
 /// keep its type body under SwiftLint's line-count limit.
 extension AppShellView {
+    /// Used/total disk space chip; the popover it opens is `DiskStatusView` (gauge + cleanup candidates).
+    var diskUsageChip: some View {
+        let total = diskMonitor.totalBytes
+        let used = total - diskMonitor.availableBytes
+        let bindings = configStore.config.keyBindings
+        return Button {
+            isDiskUsagePopoverPresented.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "internaldrive")
+                Text("\(used.formatted(.byteCount(style: .file))) / \(total.formatted(.byteCount(style: .file)))")
+            }
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(diskMonitor.isLow ? diskMonitor.gaugeColor : .primary)
+        }
+        .help("Disk usage (\(configStore.config.leaderKey) then \(bindings.openDiskStatus))")
+        .popover(isPresented: $isDiskUsagePopoverPresented, arrowEdge: .bottom) {
+            DiskStatusView(store: diskMonitor, scanner: diskScanner)
+        }
+    }
+
     /// Today's Codex token/cost chip. Always shown (even at "0") so the toolbar doesn't reflow
     /// across a day with no Codex activity; the popover it opens is `CodexUsageView`.
     var codexUsageChip: some View {

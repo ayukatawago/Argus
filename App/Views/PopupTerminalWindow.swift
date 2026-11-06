@@ -26,6 +26,7 @@ extension Notification.Name {
     static let closeTerminalTab = Notification.Name("argus.closeTerminalTab")
     static let toggleAgentSplit = Notification.Name("argus.toggleAgentSplit")
     static let openCodexUsage = Notification.Name("argus.openCodexUsage")
+    static let openDiskStatus = Notification.Name("argus.openDiskStatus")
     static let openCommandPalette = Notification.Name("argus.openCommandPalette")
     static let jumpToAttention = Notification.Name("argus.jumpToAttention")
     static let focusSidebarFilter = Notification.Name("argus.focusSidebarFilter")
