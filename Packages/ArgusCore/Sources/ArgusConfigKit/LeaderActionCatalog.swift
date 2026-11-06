@@ -41,7 +41,7 @@ public enum LeaderAction: CaseIterable, Hashable, Sendable {
         .openMarkdownPreview: Row("Open markdown preview", \.openMarkdownPreview),
         .openSettings: Row("Open settings", \.openSettings),
         .reloadAgentPane: Row("Reload agent pane", \.reloadAgentPane),
-        .openDiskStatus: Row("Open disk status", \.openDiskStatus),
+        .openDiskStatus: Row("Show disk usage", \.openDiskStatus),
         .openDiffReview: Row("Open diff review", \.openDiffReview),
         .openCodexUsage: Row("Open Codex usage", \.openCodexUsage),
         .newTerminalTab: Row("New tab", \.newTerminalTab),

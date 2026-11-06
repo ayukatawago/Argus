@@ -3,6 +3,7 @@ import ArgusSupport
 import Combine
 import Foundation
 import Monitors
+import SwiftUI
 
 @MainActor
 final class DiskMonitorStore: ObservableObject {
@@ -42,5 +43,12 @@ final class DiskMonitorStore: ObservableObject {
         availableBytes = usage.free
         availablePercent = usage.percentFree
         isLow = usage.isLow(threshold: threshold)
+    }
+
+    /// Shared by the toolbar chip and the popover's gauge so both warn at the same thresholds.
+    var gaugeColor: Color {
+        if availablePercent < 5 { return .red }
+        if availablePercent < 10 { return .orange }
+        return .green
     }
 }
