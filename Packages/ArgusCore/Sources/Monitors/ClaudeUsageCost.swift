@@ -68,6 +68,11 @@ extension ClaudeModelRate {
         ("claude-haiku-4-5", rate(1, 1.25, 2, 0.1, 5)),
     ]
 
+    /// The two price rows Haiku 5.5 is billed under — its base tier and the over-100K-prompt tier —
+    /// as the parser names them. Settings lists these even on a day Haiku wasn't used, so the tier
+    /// prices can be overridden before a long request ever shows up.
+    public static let haiku55Models = ["claude-haiku-5-5", "claude-haiku-5-5" + ClaudeUsageParser.longContextSuffix]
+
     /// Haiku 5.5 requests whose prompt exceeds 100K tokens (`ClaudeUsageParser.longContextSuffix`).
     private static let haiku55LongContext = rate(0.5, 0.625, 1, 0.05, 2.5)
 

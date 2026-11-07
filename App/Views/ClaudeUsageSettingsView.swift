@@ -11,10 +11,14 @@ struct ClaudeUsageSettingsView: View {
     @ObservedObject var usageStore: ClaudeUsageStore
     @State private var newModelName = ""
 
-    /// Every model with an override plus every model seen today, so an override for a model not
-    /// used yet today (or an unrecognized one) still has a row.
+    /// Every model with an override, every model seen today, and Haiku 5.5's two tiers — so an
+    /// override for a model not used yet today (or an unrecognized one) still has a row, and Haiku
+    /// 5.5's prices are always there to see and edit.
     private var modelNames: [String] {
-        Set(config.claudeUsage.modelPrices.keys).union(usageStore.detectedModels).sorted()
+        Set(config.claudeUsage.modelPrices.keys)
+            .union(usageStore.detectedModels)
+            .union(ClaudeModelRate.haiku55Models)
+            .sorted()
     }
 
     var body: some View {
@@ -51,13 +55,13 @@ struct ClaudeUsageSettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Model Prices")
                 .font(.headline)
-            if modelNames.isEmpty {
-                Text("No Claude models used today.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                priceList
-            }
+            priceList
+            Text(
+                "Haiku 5.5 is billed per request in two tiers: the \"(>100K)\" row applies to a request whose"
+                    + " whole prompt (input + cache reads + cache writes) exceeds 100K tokens."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
             addModelRow
         }
     }
@@ -65,7 +69,7 @@ struct ClaudeUsageSettingsView: View {
     private var priceList: some View {
         VStack(spacing: 4) {
             HStack {
-                Text("Model").frame(width: 120, alignment: .leading)
+                Text("Model").frame(width: 150, alignment: .leading)
                 Text("Input").frame(width: 58, alignment: .trailing)
                 Text("Write 5m").frame(width: 58, alignment: .trailing)
                 Text("Write 1h").frame(width: 58, alignment: .trailing)
@@ -88,7 +92,7 @@ struct ClaudeUsageSettingsView: View {
                 .font(.system(.body, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .frame(width: 120, alignment: .leading)
+                .frame(width: 150, alignment: .leading)
                 .help(model)
             priceField(model: model, keyPath: \.inputPerMillion)
             priceField(model: model, keyPath: \.cacheWrite5mPerMillion)
