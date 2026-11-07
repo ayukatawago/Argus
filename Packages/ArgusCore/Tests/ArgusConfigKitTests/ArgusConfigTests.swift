@@ -205,6 +205,36 @@ struct ArgusConfigTests {
         #expect(decoded.codexUsage.modelPrices["bad"] == nil)
     }
 
+    @Test("claudeUsage round-trips through JSON")
+    func claudeUsageRoundTrips() throws {
+        var config = ArgusConfig()
+        config.claudeUsage.refreshIntervalSeconds = 60
+        config.claudeUsage.modelPrices["claude-sonnet-5-5"] = .init(
+            inputPerMillion: 2, cacheWrite5mPerMillion: 2.5, cacheWrite1hPerMillion: 4,
+            cacheReadPerMillion: 0.1, outputPerMillion: 10)
+        let data = try JSONEncoder().encode(config)
+        let decoded = try JSONDecoder().decode(ArgusConfig.self, from: data)
+        #expect(decoded == config)
+    }
+
+    @Test("a missing claudeUsage key uses its defaults, with no price overrides")
+    func missingClaudeUsageUsesDefaults() throws {
+        let decoded = try decode("{}")
+        #expect(decoded.claudeUsage == ArgusConfig.ClaudeUsage())
+        #expect(decoded.claudeUsage.modelPrices.isEmpty)
+    }
+
+    @Test("a malformed claudeUsage.modelPrices entry drops only that model")
+    func malformedClaudeModelPriceDropsOnlyThatEntry() throws {
+        let decoded = try decode(
+            """
+            {"claudeUsage": {"modelPrices": {"good": {"cacheReadPerMillion": 0.5}, "bad": "not an object"}}}
+            """)
+        #expect(decoded.claudeUsage.modelPrices["good"]?.cacheReadPerMillion == 0.5)
+        #expect(decoded.claudeUsage.modelPrices["good"]?.inputPerMillion == 0)
+        #expect(decoded.claudeUsage.modelPrices["bad"] == nil)
+    }
+
     @Test("openCodexUsage defaults to \"u\" and can be overridden")
     func openCodexUsageBinding() throws {
         #expect(ArgusConfig().keyBindings.openCodexUsage == "u")
