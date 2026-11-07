@@ -65,7 +65,8 @@ public struct CodexTokenUsage: Equatable, Sendable {
 }
 
 extension Int {
-    fileprivate func saturatingAdd(_ other: Int) -> Int {
+    /// Module-internal so `ClaudeTokenUsage` shares it rather than carrying its own copy.
+    func saturatingAdd(_ other: Int) -> Int {
         let (sum, overflow) = addingReportingOverflow(other)
         return overflow ? (other < 0 ? .min : .max) : sum
     }

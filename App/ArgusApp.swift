@@ -240,6 +240,7 @@ struct ArgusApp: App {
             ContentView()
                 .environmentObject(ArgusConfigStore.shared)
                 .environmentObject(CodexUsageStore.shared)
+                .environmentObject(ClaudeUsageStore.shared)
         }
         .defaultSize(width: 1200, height: 800)
         .windowStyle(.titleBar)
@@ -268,6 +269,7 @@ struct ArgusApp: App {
             SettingsRootView()
                 .environmentObject(ArgusConfigStore.shared)
                 .environmentObject(CodexUsageStore.shared)
+                .environmentObject(ClaudeUsageStore.shared)
         }
         .defaultSize(width: 540, height: 460)
         .windowResizability(.contentMinSize)

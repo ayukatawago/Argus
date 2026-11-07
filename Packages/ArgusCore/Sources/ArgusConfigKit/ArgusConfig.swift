@@ -51,6 +51,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
     public var popupShortcuts: [PopupShortcut] = [.lazygitDefault]
     public var agentDisplayPatterns = AgentDisplayPatterns()
     public var codexUsage = CodexUsage()
+    public var claudeUsage = ClaudeUsage()
     /// Per-project agent override, keyed by repo `mainPath` (the same key `Workspaces`' own
     /// `repoOrder`/`excludedRepoPaths` use). Absent key = use `agent`. Lives here rather than in
     /// `Workspaces`/`workspaces.json` because `AgentSelection` is an `ArgusConfigKit` type and that
@@ -94,6 +95,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
             .compactMap(\.value) ?? defaults.popupShortcuts
         agentDisplayPatterns = read(.agentDisplayPatterns, defaults.agentDisplayPatterns)
         codexUsage = read(.codexUsage, defaults.codexUsage)
+        claudeUsage = read(.claudeUsage, defaults.claudeUsage)
         // Decoded as raw strings first rather than `[String: AgentSelection]` directly, so one
         // unrecognized value (a future third agent, a hand-edited typo) drops just that entry
         // instead of failing the whole dictionary decode and resetting every override to none.
@@ -106,7 +108,7 @@ public struct ArgusConfig: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case leaderKey, leaderTimeoutSeconds, keyBindings, agent, layout, agentPaneMode
         case claudeCommand, codexCommand, diskMonitor, github, environmentVariables, popupShortcuts
-        case agentDisplayPatterns, projectAgents, codexUsage, onboardingDismissed
+        case agentDisplayPatterns, projectAgents, codexUsage, claudeUsage, onboardingDismissed
         case agentsOverTerminalRatio
     }
 

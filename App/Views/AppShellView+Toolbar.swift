@@ -59,6 +59,42 @@ extension AppShellView {
         }
     }
 
+    /// Both agents' daily usage chips as one toolbar item (also keeps `AppShellView.swift` under
+    /// SwiftLint's file-length limit).
+    var agentUsageChips: some View {
+        HStack(spacing: 8) {
+            claudeUsageChip
+            codexUsageChip
+        }
+    }
+
+    /// Today's Claude token/cost chip, the sibling of `codexUsageChip`. Click-only — it has no leader
+    /// key; the popover it opens is `ClaudeUsageView`.
+    var claudeUsageChip: some View {
+        let summary = ClaudeUsageSummary(
+            today: claudeUsageStore.today, prices: configStore.config.claudeUsage.modelPrices)
+        // The cost is omitted (not shown as a misleading "$0.00") when no model could be priced.
+        let cost = summary.totalCost
+        return Button {
+            isClaudeUsagePopoverPresented.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "sparkles")
+                Text(TokenCountFormatter.short(summary.totalTokens))
+                if let cost {
+                    Text("· \(CostFormatter.usd(cost))")
+                }
+            }
+            .font(.caption)
+            .monospacedDigit()
+        }
+        .help("Claude usage today (API-equivalent estimate)")
+        .popover(isPresented: $isClaudeUsagePopoverPresented, arrowEdge: .bottom) {
+            ClaudeUsageView(store: claudeUsageStore)
+                .environmentObject(configStore)
+        }
+    }
+
     /// A toolbar toggle, not a row in `layoutPicker`: the display mode is orthogonal to layout —
     /// available in both — so folding it into a single-selection layout menu would read as a
     /// third layout, exactly the confusion dropping `terminalClaudeCodex` was meant to remove.

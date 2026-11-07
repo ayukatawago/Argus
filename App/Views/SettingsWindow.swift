@@ -26,6 +26,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 struct SettingsRootView: View {
     @EnvironmentObject private var configStore: ArgusConfigStore
     @EnvironmentObject private var codexUsageStore: CodexUsageStore
+    @EnvironmentObject private var claudeUsageStore: ClaudeUsageStore
     @State private var selected: SettingsCategory = .agent
 
     var body: some View {
@@ -70,8 +71,12 @@ struct SettingsRootView: View {
                         .onChange(of: configStore.config) { _, _ in configStore.save() }
 
                 case .usage:
-                    UsageSettingsView(config: $configStore.config, usageStore: codexUsageStore)
-                        .onChange(of: configStore.config) { _, _ in configStore.save() }
+                    VStack(alignment: .leading, spacing: 24) {
+                        ClaudeUsageSettingsView(config: $configStore.config, usageStore: claudeUsageStore)
+                        Divider()
+                        UsageSettingsView(config: $configStore.config, usageStore: codexUsageStore)
+                    }
+                    .onChange(of: configStore.config) { _, _ in configStore.save() }
                 }
             }
             .padding(20)
