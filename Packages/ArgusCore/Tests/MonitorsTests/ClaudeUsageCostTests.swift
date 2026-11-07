@@ -61,6 +61,14 @@ struct ClaudeUsageCostTests {
         #expect(long?.outputPerMillion == 2.5)
     }
 
+    @Test("both Haiku 5.5 settings rows resolve to a built-in rate, the long tier priced higher")
+    func haiku55SettingsRowsArePriced() throws {
+        #expect(ClaudeModelRate.haiku55Models.count == 2)
+        let rates = try ClaudeModelRate.haiku55Models.map { try #require(ClaudeModelRate.defaultRate(forModel: $0)) }
+        #expect(rates[0].outputPerMillion == 0.5)
+        #expect(rates[1].outputPerMillion == 2.5)
+    }
+
     @Test("an unrecognized model has no built-in rate")
     func unknownModel() {
         #expect(ClaudeModelRate.defaultRate(forModel: "gpt-6-luna") == nil)
