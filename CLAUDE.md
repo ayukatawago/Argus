@@ -55,7 +55,7 @@ Packages/
     Workspaces/       Foundation only — git repo/worktree scanning and store,
                        WorktreeListParser, RepoScanner, RepoOrdering
     Monitors/         Foundation only — GitHubClient + PR categorization/highlighting, disk cleanup
-                       catalog/filter/sort, Codex usage summary, tmux pane parsing
+                       catalog/filter/sort, Codex/Claude usage summary, tmux pane parsing
   DiffReviewKit/     SPM package (macOS 14+, Swift 6) — side-by-side diff review UI + headless agent runner
 Sources/
   GhosttyBridge/     libghostty-spm (GhosttyTerminal) + Foundation — PTY, terminal surface, URL-open
@@ -302,6 +302,46 @@ reuse is itself billed, typically at a premium over the plain input rate); `Code
 billed at exactly one of the three input rates, never two. A model with no price set shows `—`, not
 a misleading `$0.00`, both in the chip and in the popover's per-row breakdown.
 
+## Claude usage monitor
+
+The toolbar's Claude usage chip (`App/Views/AppShellView+Toolbar.swift`'s `claudeUsageChip`, click-only
+— no leader key) sits beside the Codex one and shows today's total Claude Code tokens and estimated
+USD cost; its popover (`App/Views/ClaudeUsageView.swift`) breaks both down per model. It is an
+**API-equivalent estimate at list prices** — a Pro/Max subscription is not billed per token — and does
+not apply fast mode (2x), US data residency (1.1x) or Batch (0.5x) multipliers, though the transcript
+does carry `speed`/`inference_geo` should that ever be worth doing.
+
+The signal is the `message.usage` block on every `assistant` line of the same transcripts
+`ClaudeTranscriptWatcher` reads (`~/.claude/projects/*/*.jsonl`). Two differences from Codex shape the
+parser (`ClaudeUsageParser`, `Packages/ArgusCore/Sources/Monitors/`):
+
+- **One message is many lines.** Claude Code writes one line per content block (thinking, text,
+  tool_use), each carrying the *same* final `usage` — observed live, three consecutive lines sharing
+  one `message.id`. Summing lines would count a message 2–4x, so records are de-duplicated by
+  `message.id` + `requestId`: within a file by `scanRecords` (last line wins) and across files by
+  `aggregate`, in case a resumed/forked session replays earlier messages into a new transcript (none
+  seen locally, but it is cheap insurance). A line with neither id is always counted.
+- **Input is not inclusive.** Claude's `input_tokens` already *excludes* cache reads and writes, so the
+  input-side counts are disjoint and `ClaudeUsageCost.cost` just multiplies each by its own rate — no
+  `freshInputTokens`-style subtraction as Codex needs. Cache writes are split by TTL
+  (`cache_creation.ephemeral_5m_input_tokens` at 1.25x input, `ephemeral_1h_…` at 2x — current Claude
+  Code uses 1h); a transcript with no split counts every written token as 5m.
+
+Unlike Codex, Anthropic publishes prices, so `ClaudeModelRate.defaultRate(forModel:)` ships a built-in
+table (from platform.claude.com/docs/ja/about-claude/pricing) matched by longest model-ID prefix, so
+dated IDs resolve and `claude-opus-5-5` is never read as `claude-opus-5`. `ArgusConfig.claudeUsage
+.modelPrices` holds only the user's per-model *overrides* (Settings → Usage, `ClaudeUsageSettingsView`;
+editing one field seeds the override from the effective rate so the other four don't become 0); an
+all-zero override is ignored. An unrecognized model with no override shows `—`. Haiku 5.5 is the one
+model with a prompt-size tier (100K), judged **per request** — the parser tags such a request's model
+`"<id> (>100K)"` so the tier survives aggregation into a per-model bucket.
+
+`ClaudeUsageStore` (App/) scans every transcript with an mtime since local midnight — top-level
+sessions, `Task`-subagent sidechains (`<session>/subagents/*.jsonl`, found via the `subagents`
+directory's mtime so old sessions aren't listed every poll) and headless `sdk-cli` diff-review runs.
+Unlike `ClaudeTranscriptWatcher`, which excludes those to keep the sidebar *state* dot honest, usage
+is additive and all of it is real spend. Parsed records are cached per file by `(mtime, size)`.
+
 ## Key files
 
 | File | Role |
@@ -335,7 +375,11 @@ a misleading `$0.00`, both in the chip and in the popover's per-row breakdown.
 | `App/Views/DiskMonitorStore.swift` / `DiskCleanupScanner.swift` | Disk space poll, cleanup candidate scan, toolbar chip popover content (`DiskStatusView`) |
 | `App/Views/CodexUsageStore.swift` | Polls Codex rollout JSONL files, publishes today's per-model token usage for the toolbar chip |
 | `App/Views/CodexUsageView.swift` | Toolbar chip's popover — per-model token/cost breakdown table |
-| `App/Views/UsageSettingsView.swift` | Settings UI — Usage page (per-model USD prices, scan refresh interval/lookback window) |
+| `App/Views/UsageSettingsView.swift` | Settings UI — Usage page, Codex section (per-model USD prices, scan refresh interval/lookback window) |
+| `App/Views/ClaudeUsageStore.swift` | Polls Claude Code transcripts (incl. subagent sidechains), publishes today's per-model token usage for the toolbar chip |
+| `App/Views/ClaudeUsageView.swift` / `ClaudeUsageSettingsView.swift` | Claude chip's popover; Settings → Usage Claude section (built-in rates shown, per-model overrides) |
+| `Packages/ArgusCore/Sources/Monitors/ClaudeUsageParser.swift` | Pure: per-message de-dupe of transcript `usage` lines (within and across files), day bucketing, Haiku 5.5 long-context tagging |
+| `Packages/ArgusCore/Sources/Monitors/ClaudeUsageCost.swift` / `ClaudeUsageSummary.swift` | Pure: cost math, built-in per-model rate table (`defaultRate(forModel:)`), override-over-default summary |
 | `Packages/ArgusCore/Sources/Monitors/CodexUsageParser.swift` | Pure: joins `token_usage_record` lines to their model via `turn_context`, buckets by local day |
 | `Packages/ArgusCore/Sources/Monitors/CodexUsageCost.swift` | Pure: USD cost from token usage + per-model input/cached-input/output rates |
 | `Packages/ArgusCore/Sources/ArgusSupport/CodexRolloutLocator.swift` | Pure: `~/.codex/sessions/<year>/<month>/<day>/` path math for a multi-day lookback window |

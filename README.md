@@ -31,6 +31,7 @@ Built with Swift + SwiftUI/AppKit, powered by [libghostty](https://github.com/gh
 
 - GitHub PR monitor: your open/draft PRs plus PRs assigned to you, with target branch, review status, draft/approved styling, new/updated highlighting, and a collapsed "Do Not Merge" section (configured on the Settings → GitHub page)
 - Disk space toolbar chip (free space; click, leader `d`, or the low-space banner opens a popover): free-space gauge and cleanup candidates (DerivedData, caches, workspace git repos, …) with size and last-modified date, sortable and size-filterable, with move-to-Trash
+- Claude usage chip (toolbar): today's total Claude Code tokens and estimated API-equivalent cost, with a per-model breakdown popover; built-in list prices, overridable per model on the Settings → Usage page
 - Codex usage chip (toolbar, or leader `u`): today's total Codex tokens and estimated cost, with a per-model breakdown popover; prices are user-set per model on the Settings → Usage page (USD per 1M input/cached-input/output tokens)
 
 ### Utilities
