@@ -2,6 +2,20 @@ import ArgusConfigKit
 import Monitors
 import SwiftUI
 
+/// An agent's logo from the asset catalog, sized to sit beside the usage chips' caption-size text.
+/// `ClaudeLogo` keeps its own orange; `CodexLogo` is a template image, so it follows the toolbar's
+/// foreground color in light and dark mode.
+struct UsageChipLogo: View {
+    let asset: String
+
+    var body: some View {
+        Image(asset)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 13, height: 13)
+    }
+}
+
 /// The window-layout and agent-pane-mode toolbar controls, factored out of `AppShellView.swift` to
 /// keep its type body under SwiftLint's line-count limit.
 extension AppShellView {
@@ -43,7 +57,7 @@ extension AppShellView {
             isCodexUsagePopoverPresented.toggle()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "bolt.fill")
+                UsageChipLogo(asset: "CodexLogo")
                 Text(TokenCountFormatter.short(summary.totalTokens))
                 if let cost {
                     Text("· \(CostFormatter.usd(cost))")
@@ -79,7 +93,7 @@ extension AppShellView {
             isClaudeUsagePopoverPresented.toggle()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                UsageChipLogo(asset: "ClaudeLogo")
                 Text(TokenCountFormatter.short(summary.totalTokens))
                 if let cost {
                     Text("· \(CostFormatter.usd(cost))")
