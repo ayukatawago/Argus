@@ -1,9 +1,11 @@
 import ArgusConfigKit
+import Monitors
 import SwiftUI
 
 /// Settings → Usage: per-model USD prices for the toolbar's Codex usage chip/popover, plus the
-/// scan's refresh interval and lookback window. Codex records no pricing data of its own (see
-/// CLAUDE.md's Codex usage monitor section), so every rate here starts at zero until set by hand.
+/// scan's refresh interval and lookback window. Codex records no pricing data of its own, so the
+/// built-in OpenAI list prices (`CodexModelRate.defaultRate`) are shown per Standard/Fast tab; editing
+/// a field stores an override for that model and tier only.
 struct UsageSettingsView: View {
     @Binding var config: ArgusConfig
     @ObservedObject var usageStore: CodexUsageStore
@@ -13,7 +15,27 @@ struct UsageSettingsView: View {
     /// model used only yesterday (outside a very short scan window) still gets a row, and a
     /// manually pre-priced model shows up before Codex ever reports using it.
     private var modelNames: [String] {
-        Set(config.codexUsage.modelPrices.keys).union(usageStore.detectedModels).sorted()
+        Set(config.codexUsage.prices(for: tier).keys)
+            .union(usageStore.detectedModels)
+            .union(CodexModelRate.knownModels)
+            .sorted()
+    }
+
+    private var tier: ArgusConfig.CodexPriceTier { config.codexUsage.priceTier }
+
+    /// The override table the current tab edits.
+    private var overridesPath: WritableKeyPath<ArgusConfig, [String: ArgusConfig.CodexModelPrice]> {
+        tier == .fast ? \.codexUsage.fastModelPrices : \.codexUsage.modelPrices
+    }
+
+    /// The override if one is set, else the built-in rate for this tier, else all zeros.
+    private func effectivePrice(_ model: String) -> ArgusConfig.CodexModelPrice {
+        if let override = config[keyPath: overridesPath][model] { return override }
+        let monitorsTier = CodexPriceTier(rawValue: tier.rawValue) ?? .standard
+        guard let rate = CodexModelRate.defaultRate(forModel: model, tier: monitorsTier) else { return .init() }
+        return .init(
+            inputPerMillion: rate.inputPerMillion, cachedInputPerMillion: rate.cachedInputPerMillion,
+            cacheWritePerMillion: rate.cacheWritePerMillion, outputPerMillion: rate.outputPerMillion)
     }
 
     var body: some View {
@@ -51,13 +73,19 @@ struct UsageSettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Model Prices")
                 .font(.headline)
-            if !modelNames.isEmpty {
-                priceList
-            } else {
-                Text("No Codex models detected yet.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Picker("Tier", selection: $config.codexUsage.priceTier) {
+                ForEach(ArgusConfig.CodexPriceTier.allCases, id: \.self) { Text($0.displayName).tag($0) }
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 200)
+            Text(
+                "The selected tier is the one the toolbar chip and popover price with. Built-in list prices"
+                    + " come from developers.openai.com/api/docs/pricing; edit a row to override it."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            priceList
             addModelRow
         }
     }
@@ -92,14 +120,14 @@ struct UsageSettingsView: View {
             priceField(model: model, keyPath: \.cacheWritePerMillion)
             priceField(model: model, keyPath: \.outputPerMillion)
             Button {
-                config.codexUsage.modelPrices.removeValue(forKey: model)
+                config[keyPath: overridesPath].removeValue(forKey: model)
             } label: {
                 Image(systemName: "arrow.counterclockwise.circle")
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .help("Reset to unpriced")
-            .disabled(config.codexUsage.modelPrices[model] == nil)
+            .help("Reset to the built-in price")
+            .disabled(config[keyPath: overridesPath][model] == nil)
         }
     }
 
@@ -109,8 +137,13 @@ struct UsageSettingsView: View {
         TextField(
             "",
             value: Binding(
-                get: { config.codexUsage.modelPrices[model]?[keyPath: keyPath] ?? 0 },
-                set: { config.codexUsage.modelPrices[model, default: .init()][keyPath: keyPath] = $0 }
+                get: { effectivePrice(model)[keyPath: keyPath] },
+                // Seeded from the effective rate so editing one field keeps the other three.
+                set: {
+                    var price = effectivePrice(model)
+                    price[keyPath: keyPath] = $0
+                    config[keyPath: overridesPath][model] = price
+                }
             ),
             format: .number.precision(.fractionLength(0...4))
         )
@@ -128,8 +161,8 @@ struct UsageSettingsView: View {
             Button("Add") {
                 let name = newModelName.trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty else { return }
-                if config.codexUsage.modelPrices[name] == nil {
-                    config.codexUsage.modelPrices[name] = .init()
+                if config[keyPath: overridesPath][name] == nil {
+                    config[keyPath: overridesPath][name] = effectivePrice(name)
                 }
                 newModelName = ""
             }

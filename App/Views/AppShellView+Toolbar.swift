@@ -48,8 +48,7 @@ extension AppShellView {
     /// Today's Codex token/cost chip. Always shown (even at "0") so the toolbar doesn't reflow
     /// across a day with no Codex activity; the popover it opens is `CodexUsageView`.
     var codexUsageChip: some View {
-        let summary = CodexUsageSummary(
-            today: codexUsageStore.today, prices: configStore.config.codexUsage.modelPrices)
+        let summary = CodexUsageSummary(today: codexUsageStore.today, usage: configStore.config.codexUsage)
         // The cost is omitted (not shown as a misleading "$0.00") when no model has a price.
         let cost = summary.totalCost
         let bindings = configStore.config.keyBindings

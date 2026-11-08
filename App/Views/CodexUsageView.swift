@@ -8,7 +8,7 @@ struct CodexUsageView: View {
     @EnvironmentObject private var configStore: ArgusConfigStore
 
     private var summary: CodexUsageSummary {
-        CodexUsageSummary(today: store.today, prices: configStore.config.codexUsage.modelPrices)
+        CodexUsageSummary(today: store.today, usage: configStore.config.codexUsage)
     }
 
     private var rows: [CodexUsageRow] { summary.rows }

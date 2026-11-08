@@ -5,7 +5,7 @@ import Foundation
 // would trip SwiftLint's one-level type-nesting limit, the same reason `KeyBindings` reads its
 // fields through the shared `RawStringKey` instead of a nested `CodingKeys`.
 private enum CodexUsageCodingKeys: String, CodingKey {
-    case refreshIntervalSeconds, scanDayWindow, modelPrices
+    case refreshIntervalSeconds, scanDayWindow, modelPrices, fastModelPrices, priceTier
 }
 
 private enum CodexModelPriceCodingKeys: String, CodingKey {
@@ -26,6 +26,16 @@ extension ArgusConfig {
         /// (e.g. "gpt-6-luna"). Codex records no cost/pricing data itself — see CLAUDE.md's Codex
         /// usage monitor section — so this must be filled in by hand.
         public var modelPrices: [String: CodexModelPrice] = [:]
+        /// Overrides for the Fast tier; `modelPrices` is the Standard tier's. An absent or all-zero
+        /// entry falls back to the built-in rate for that tier.
+        public var fastModelPrices: [String: CodexModelPrice] = [:]
+        /// Which tier's prices the chip and popover use — the Standard/Fast tab in Settings → Usage.
+        public var priceTier: CodexPriceTier = .standard
+
+        /// The override table for `tier`.
+        public func prices(for tier: CodexPriceTier) -> [String: CodexModelPrice] {
+            tier == .fast ? fastModelPrices : modelPrices
+        }
 
         public init() {}
 
@@ -40,18 +50,33 @@ extension ArgusConfig {
             // defensive intent as `ArgusConfig.projectAgents`, adapted for a struct-valued
             // dictionary (that one gets away with a raw-string intermediate decode; a price entry
             // has no such single-scalar fallback, so this decodes key-by-key instead).
-            if let pricesContainer = try? container.nestedContainer(keyedBy: RawStringKey.self, forKey: .modelPrices) {
-                var prices: [String: CodexModelPrice] = [:]
-                for key in pricesContainer.allKeys {
-                    if let price = try? pricesContainer.decode(CodexModelPrice.self, forKey: key) {
-                        prices[key.stringValue] = price
-                    }
-                }
-                modelPrices = prices
-            } else {
-                modelPrices = [:]
-            }
+            modelPrices = Self.decodePrices(container, forKey: .modelPrices)
+            fastModelPrices = Self.decodePrices(container, forKey: .fastModelPrices)
+            priceTier = (try? container.decodeIfPresent(CodexPriceTier.self, forKey: .priceTier)) ?? .standard
         }
+
+        private static func decodePrices(
+            _ container: KeyedDecodingContainer<CodexUsageCodingKeys>, forKey key: CodexUsageCodingKeys
+        ) -> [String: CodexModelPrice] {
+            guard let pricesContainer = try? container.nestedContainer(keyedBy: RawStringKey.self, forKey: key) else {
+                return [:]
+            }
+            var prices: [String: CodexModelPrice] = [:]
+            for priceKey in pricesContainer.allKeys {
+                if let price = try? pricesContainer.decode(CodexModelPrice.self, forKey: priceKey) {
+                    prices[priceKey.stringValue] = price
+                }
+            }
+            return prices
+        }
+    }
+
+    /// Which OpenAI processing tier's list prices apply. Mirrors `Monitors.CodexPriceTier`.
+    public enum CodexPriceTier: String, Codable, CaseIterable, Sendable {
+        case standard
+        case fast
+
+        public var displayName: String { self == .fast ? "Fast" : "Standard" }
     }
 
     /// One model's USD-per-1M-token prices. A sibling of `CodexUsage`, not nested inside it —
