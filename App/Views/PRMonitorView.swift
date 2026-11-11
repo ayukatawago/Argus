@@ -5,11 +5,14 @@ import SwiftUI
 struct PRMonitorView: View {
     @ObservedObject var store: PRMonitorStore
     @State private var isDNMExpanded = false
+    @AppStorage("prMonitorCollapsed") private var isCollapsed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerRow
-            if store.isLoading && !store.hasAnyPRs {
+            if isCollapsed {
+                EmptyView()
+            } else if store.isLoading && !store.hasAnyPRs {
                 Text("Loading…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -181,6 +184,15 @@ struct PRMonitorView: View {
             }
             .buttonStyle(.borderless)
             .help("Refresh pull requests")
+            Button {
+                isCollapsed.toggle()
+            } label: {
+                Image(systemName: isCollapsed ? "eye" : "eye.slash")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help(isCollapsed ? "Show pull requests" : "Hide pull requests")
             .padding(.trailing, 8)
         }
         .padding(.top, 8)
