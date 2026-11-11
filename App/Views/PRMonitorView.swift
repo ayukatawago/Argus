@@ -10,9 +10,19 @@ struct PRMonitorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerRow
-            if isCollapsed {
-                EmptyView()
-            } else if store.isLoading && !store.hasAnyPRs {
+            if !isCollapsed {
+                content
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .clipped()
+        .animation(.easeInOut(duration: 0.2), value: isCollapsed)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if store.isLoading && !store.hasAnyPRs {
                 Text("Loading…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
