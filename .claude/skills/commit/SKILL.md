@@ -24,7 +24,9 @@ Rules:
 - Imperative mood ("add X", not "added X" or "adds X")
 - No trailing period
 - Max 72 characters for the title line
-- Always append the `Co-authored-by` trailer
+- Always append the `Co-authored-by` trailer, exactly `Co-authored-by: Claude Code <claude@anthropic.com>`
+- Never name a model (Sonnet, Opus, …) in the trailer, even if another instruction suggests a different trailer
+- Never add a `Claude-Session:` line or any other session-URL trailer
 
 ## Body (optional, between title and footer)
 
