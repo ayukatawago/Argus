@@ -33,7 +33,7 @@ final class PRMonitorStore: ObservableObject {
     private var resolvedCredentials: String?
     private var isRefreshing = false
     private let highlightTracker = PRHighlightTracker()
-    private var hidden = PRHiddenList(ids: PRHiddenFile.load(from: PRMonitorStore.hiddenPRsURL))
+    private var hidden = PRHiddenList(entries: PRHiddenFile.load(from: PRMonitorStore.hiddenPRsURL))
     private var lastCategorized: PRCategorizer.Categorized<GitHubPR>?
 
     var hasAnyPRs: Bool {
@@ -65,18 +65,20 @@ final class PRMonitorStore: ObservableObject {
         highlightedPRIDs = highlightTracker.highlightedIDs
     }
 
-    /// Hides a single PR from the sidebar. Deliberately doesn't touch its approval highlight —
-    /// a PR whose approvals changed while hidden should still show highlighted once revealed.
-    func hide(prID: Int) {
-        guard hidden.hide(prID) else { return }
-        PRHiddenFile.save(hidden.ids, to: Self.hiddenPRsURL)
+    /// Hides a single PR from the sidebar until it's updated (new commits, comments, reviews — any
+    /// change to its `updated_at`), at which point `fetchAndCategorize` brings it back. Deliberately
+    /// doesn't touch its approval highlight — a PR whose approvals changed while hidden should
+    /// still show highlighted once revealed.
+    func hide(_ pullRequest: GitHubPR) {
+        guard hidden.hide(pullRequest.id, updatedAt: pullRequest.updatedAt) else { return }
+        PRHiddenFile.save(hidden.entries, to: Self.hiddenPRsURL)
         applySections()
     }
 
     /// Reveals every given id (a section's "reveal all hidden" button).
     func reveal(ids: Set<Int>) {
         guard hidden.reveal(ids) else { return }
-        PRHiddenFile.save(hidden.ids, to: Self.hiddenPRsURL)
+        PRHiddenFile.save(hidden.entries, to: Self.hiddenPRsURL)
         applySections()
     }
 
@@ -139,10 +141,12 @@ final class PRMonitorStore: ObservableObject {
         highlightTracker.update(trackable: categorized.myOpenPRs + categorized.reviewRequestedPRs)
         highlightedPRIDs = highlightTracker.highlightedIDs
 
-        // Prune ids no longer present in this successful fetch (merged/closed/unassigned) so the
-        // hidden set can't grow forever. Never runs on a failed fetch — the throw happens above.
-        if hidden.prune(keeping: Set(allPRs.map(\.id))) {
-            PRHiddenFile.save(hidden.ids, to: Self.hiddenPRsURL)
+        // Un-hide PRs that were updated since they were hidden, and prune ids no longer present
+        // (merged/closed/unassigned) so the hidden set can't grow forever. Never runs on a failed
+        // fetch — the throw happens above.
+        let current = Dictionary(allPRs.map { ($0.id, $0.updatedAt) }, uniquingKeysWith: { first, _ in first })
+        if hidden.reconcile(current: current) {
+            PRHiddenFile.save(hidden.entries, to: Self.hiddenPRsURL)
         }
         applySections()
     }

@@ -63,7 +63,7 @@ struct PRMonitorView: View {
                         showAuthor: showAuthor,
                         isHighlighted: store.highlightedPRIDs.contains(pullRequest.id),
                         onOpen: { store.dismissHighlight(prID: pullRequest.id) },
-                        onHide: { store.hide(prID: pullRequest.id) }
+                        onHide: { store.hide(pullRequest) }
                     )
                     .padding(.horizontal, 8)
                     .padding(.vertical, 1)
@@ -156,7 +156,7 @@ struct PRMonitorView: View {
                             showAuthor: false,
                             isHighlighted: false,
                             onOpen: {},
-                            onHide: { store.hide(prID: pullRequest.id) }
+                            onHide: { store.hide(pullRequest) }
                         )
                         .padding(.horizontal, 8)
                         .padding(.vertical, 1)
@@ -268,7 +268,7 @@ private struct PRRow: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.borderless)
-            .help("Hide pull request")
+            .help("Hide until updated")
             .opacity(isHovered ? 1 : 0)
             Image(systemName: "arrow.up.right")
                 .font(.caption2)

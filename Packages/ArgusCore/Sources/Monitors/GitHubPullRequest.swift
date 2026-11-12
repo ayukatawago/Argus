@@ -11,6 +11,8 @@ public struct GitHubPR: Decodable, Identifiable, Sendable {
     public let draft: Bool
     public let authorLogin: String
     public let labelNames: [String]
+    /// Raw ISO-8601 `updated_at`; only ever compared for equality (see `PRHiddenList.reconcile`).
+    public let updatedAt: String?
     public var baseBranch: String?
     public var approvedBy: [String] = []
     public var approvedByMe: Bool = false
@@ -25,6 +27,7 @@ public struct GitHubPR: Decodable, Identifiable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case id, number, title, draft, user, labels
+        case updatedAt = "updated_at"
         case htmlURL = "html_url"
         case repositoryURL = "repository_url"
     }
@@ -39,6 +42,7 @@ public struct GitHubPR: Decodable, Identifiable, Sendable {
         repositoryURL = try container.decode(URL.self, forKey: .repositoryURL)
         authorLogin = try container.decode(UserField.self, forKey: .user).login
         labelNames = try container.decode([LabelField].self, forKey: .labels).map(\.name)
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
         baseBranch = nil
         approvedBy = []
     }
