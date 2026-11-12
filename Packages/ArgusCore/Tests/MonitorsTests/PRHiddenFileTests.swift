@@ -16,9 +16,18 @@ struct PRHiddenFileTests {
         let url = Self.tempURL()
         defer { try? FileManager.default.removeItem(at: url) }
 
-        let ids: Set<Int> = [1, 2, 3]
-        PRHiddenFile.save(ids, to: url)
-        #expect(PRHiddenFile.load(from: url) == ids)
+        let entries: [Int: String?] = [1: "2026-01-01T00:00:00Z", 2: nil, 3: "x"]
+        PRHiddenFile.save(entries, to: url)
+        #expect(PRHiddenFile.load(from: url) == entries)
+    }
+
+    @Test("a legacy ids-only file loads with nil baselines")
+    func legacyFileLoads() {
+        let url = Self.tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try? Data(#"{"hiddenPRIDs":[4,5]}"#.utf8).write(to: url)
+        #expect(PRHiddenFile.load(from: url) == [4: nil, 5: nil])
     }
 
     @Test("saving creates intermediate directories")
@@ -28,7 +37,7 @@ struct PRHiddenFileTests {
         let url = base.appendingPathComponent("nested/deeper/hidden-prs.json")
         defer { try? FileManager.default.removeItem(at: base) }
 
-        PRHiddenFile.save([42], to: url)
+        PRHiddenFile.save([42: "t"], to: url)
         #expect(FileManager.default.fileExists(atPath: url.path))
     }
 

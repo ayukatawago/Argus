@@ -33,7 +33,7 @@ struct GitHubClientTests {
     private static let searchBody = """
         {"items":[{"id":1,"number":7,"title":"Add thing","html_url":"https://ghe.example/o/r/pull/7",\
         "repository_url":"https://ghe.example/api/v3/repos/o/r","draft":false,"user":{"login":"me"},\
-        "labels":[{"name":"x"}]}]}
+        "labels":[{"name":"x"}],"updated_at":"2026-01-02T03:04:05Z"}]}
         """
 
     private func client(
@@ -55,6 +55,7 @@ struct GitHubClientTests {
         #expect(prs[0].authorLogin == "me")
         #expect(prs[0].labelNames == ["x"])
         #expect(prs[0].repoName == "r")
+        #expect(prs[0].updatedAt == "2026-01-02T03:04:05Z")
 
         let request = try #require(StubURLProtocol.requests.first)
         let url = try #require(request.url)
