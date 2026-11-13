@@ -197,7 +197,7 @@ struct PRMonitorView: View {
             Button {
                 isCollapsed.toggle()
             } label: {
-                Image(systemName: isCollapsed ? "eye" : "eye.slash")
+                Image(systemName: isCollapsed ? "chevron.up" : "chevron.down")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
