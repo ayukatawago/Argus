@@ -34,6 +34,23 @@ struct ArgusURLRequestTests {
                 == .success(.diff(workspace: "/My Repo", base: "a/b", head: "HEAD")))
     }
 
+    // MARK: add
+
+    @Test("an add request carries a standardized absolute path")
+    func add() {
+        #expect(parse("argus://add?path=/r/repo") == .success(.addRepo(path: "/r/repo")))
+        #expect(parse("argus://add?path=/r/x/../repo/") == .success(.addRepo(path: "/r/repo")))
+        #expect(parse("argus://add?path=/My%20Repo") == .success(.addRepo(path: "/My Repo")))
+    }
+
+    @Test("an add request without a usable path is rejected")
+    func addRejections() {
+        #expect(parse("argus://add") == .failure(.missingPath))
+        #expect(parse("argus://add?path=") == .failure(.missingPath))
+        #expect(parse("argus://add?path=relative/repo") == .failure(.pathNotAbsolute))
+        #expect(parse("argus://add?path=/r%00/x") == .failure(.pathNotAbsolute))
+    }
+
     @Test("an unknown host is unsupported")
     func unknownHost() {
         #expect(parse("argus://nope") == .failure(.unsupportedHost))
