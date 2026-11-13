@@ -35,6 +35,8 @@ extension Notification.Name {
     /// consulting `WorkspaceStore` (the path is taken as-is, whether or not it's a tracked
     /// workspace).
     static let openDiffReviewForPath = Notification.Name("argus.openDiffReviewForPath")
+    /// CLI-originated (`argus add`) request to track a repo in the sidebar; `userInfo["path"]`.
+    static let addRepoForPath = Notification.Name("argus.addRepoForPath")
 }
 
 /// Manages a single floating NSWindow running a user-defined command in the active

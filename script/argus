@@ -6,7 +6,7 @@ set -euo pipefail
 # already running and activates it either way — see AppDelegate's
 # `application(_:open:)` in App/ArgusApp.swift for the receiving side.
 #
-# `diff` and `capture` are implemented today; add more as `cmd_<name>`
+# `diff`, `capture` and `add` are implemented today; add more as `cmd_<name>`
 # functions plus a case in `main` below, and a matching `host` case in
 # AppDelegate.
 
@@ -20,6 +20,10 @@ Commands:
       <workspace>, diffing <from>..<to> (default: HEAD). <workspace> can be
       any git repo or worktree path — it does not need to already be tracked
       in Argus's sidebar.
+
+  add <path>
+      Add the git repo containing <path> to Argus's sidebar (a linked
+      worktree adds its main repo). Does not select it or start an agent.
 
   capture screenshot [--output <path>]
       Capture a screenshot of Argus's own window (PNG). Prints the output
@@ -117,6 +121,36 @@ cmd_diff() {
     workspace="$resolved"
 
     open "argus://diff?workspace=$(urlencode "$workspace")&from=$(urlencode "$from")&to=$(urlencode "$to")"
+}
+
+cmd_add() {
+    if [[ $# -ne 1 || "$1" == -* ]]; then
+        echo "error: argus add requires exactly one <path>" >&2
+        usage >&2
+        exit 1
+    fi
+
+    local dir
+    if ! dir="$(cd "$1" 2>/dev/null && pwd -P)"; then
+        echo "error: '$1' is not a directory" >&2
+        exit 1
+    fi
+
+    # --git-common-dir is the main repo's .git even from a linked worktree. Anything not ending in
+    # /.git is a bare repo or a submodule (.git/modules/...), which Argus's scanner can't track.
+    local common
+    if ! common="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+        echo "error: '$dir' is not inside a git repository" >&2
+        exit 1
+    fi
+    if [[ "$common" != */.git ]]; then
+        echo "error: '$dir' is a bare repository or submodule; only regular repositories can be added" >&2
+        exit 1
+    fi
+    local repo="${common%/.git}"
+
+    open "argus://add?path=$(urlencode "$repo")"
+    echo "Added $repo"
 }
 
 # A default output path when --output is omitted. Under /private/tmp (not $TMPDIR) to match the
@@ -287,6 +321,10 @@ main() {
         diff)
             shift
             cmd_diff "$@"
+            ;;
+        add)
+            shift
+            cmd_add "$@"
             ;;
         capture)
             shift

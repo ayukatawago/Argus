@@ -118,12 +118,11 @@ struct AppShellView: View {
             )
             .onReceiveTmuxPaneBindings(focusedRole: $focusedRole, worktreePath: agentTabs.worktreePath)
             .onReceiveFocusSync(focusedRole: $focusedRole, pool: pool)
+            .onReceiveAddRepo(store: store)
             .onReceive(NotificationCenter.default.publisher(for: .openDiffReviewForPath)) { notification in
                 // CLI-originated (`argus diff`) request — the path is used as-is, independent of
                 // whether it's a workspace `store` already tracks in the sidebar.
-                guard let info = notification.userInfo, let workspace = info["workspace"] as? String else {
-                    return
-                }
+                guard let info = notification.userInfo, let workspace = info["workspace"] as? String else { return }
                 let base = info["base"] as? String ?? ""
                 let head = info["head"] as? String ?? "HEAD"
                 diffReview.open(

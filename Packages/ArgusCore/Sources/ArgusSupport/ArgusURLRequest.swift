@@ -14,6 +14,7 @@ public enum CaptureMode: String, Sendable {
 public enum ArgusURLRequest: Equatable, Sendable {
     case diff(workspace: String, base: String, head: String)
     case capture(Capture)
+    case addRepo(path: String)
 
     public struct Capture: Equatable, Sendable {
         public let mode: CaptureMode
@@ -24,6 +25,8 @@ public enum ArgusURLRequest: Equatable, Sendable {
     public enum Rejection: Error, Equatable, Sendable {
         case unsupportedHost
         case missingWorkspace
+        case missingPath
+        case pathNotAbsolute
         case missingOutput
         case outputNotAbsolute
         case unknownMode
@@ -59,6 +62,11 @@ public enum ArgusURLRequest: Equatable, Sendable {
 
         case "capture":
             return parseCapture(value: value, itemKind: itemKind).map(ArgusURLRequest.capture)
+
+        case "add":
+            guard let path = value("path"), !path.isEmpty else { return .failure(.missingPath) }
+            guard path.hasPrefix("/"), !path.contains("\0") else { return .failure(.pathNotAbsolute) }
+            return .success(.addRepo(path: (path as NSString).standardizingPath))
 
         default:
             return .failure(.unsupportedHost)

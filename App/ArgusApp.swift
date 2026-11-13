@@ -12,6 +12,12 @@ private struct DiffReviewRequest {
     let head: String
 }
 
+/// A CLI request that needs `AppShellView`'s subscriptions and so may have to wait for it.
+private enum PendingShellRequest {
+    case diff(DiffReviewRequest)
+    case addRepo(String)
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set in `init()` — SwiftUI constructs the `@NSApplicationDelegateAdaptor`-owned delegate
@@ -38,10 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// silently dropped — so a request that arrives too early is buffered here and flushed by
     /// `markAppShellReady`.
     private var isAppShellReady = false
-    private var pendingDiffReviewRequest: DiffReviewRequest?
+    private var pendingShellRequests: [PendingShellRequest] = []
 
     /// Handles `argus://<subcommand>` URLs from `script/argus` (or any other `open`-based
-    /// caller). `diff` and `capture` are implemented today; unrecognized hosts are ignored so
+    /// caller). `diff`, `capture` and `add` are implemented today; unrecognized hosts are ignored so
     /// future subcommands can be added without breaking older callers.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where url.scheme == "argus" {
@@ -54,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             case .capture(let capture):
                 handleCaptureRequest(capture)
+
+            case .addRepo(let path):
+                handleAddRepoRequest(path: path)
             }
         }
     }
@@ -64,21 +73,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let request = DiffReviewRequest(workspace: workspace, base: base, head: head)
+        deliver(.diff(DiffReviewRequest(workspace: workspace, base: base, head: head)))
+    }
+
+    /// The scheme can be invoked by any local process, so `script/argus`'s own check isn't enough:
+    /// `RepoScanner` only recognizes a repo whose `.git` is a directory (not a linked worktree's or
+    /// submodule's `.git` file).
+    private func handleAddRepoRequest(path: String) {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path + "/.git", isDirectory: &isDir), isDir.boolValue else {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Can't add repository"
+            alert.informativeText = "\"\(path)\" isn't the root of a git repository."
+            alert.runModal()
+            return
+        }
+        deliver(.addRepo(path))
+    }
+
+    private func deliver(_ request: PendingShellRequest) {
         if isAppShellReady {
-            postDiffReviewRequest(request)
+            post(request)
         } else {
-            pendingDiffReviewRequest = request
+            pendingShellRequests.append(request)
         }
     }
 
-    /// Called by `AppShellView.onAppear` — flushes any `argus://diff` request that arrived before
+    private func post(_ request: PendingShellRequest) {
+        switch request {
+        case .diff(let diff):
+            postDiffReviewRequest(diff)
+
+        case .addRepo(let path):
+            NotificationCenter.default.post(name: .addRepoForPath, object: nil, userInfo: ["path": path])
+        }
+    }
+
+    /// Called by `AppShellView.onAppear` — flushes any `argus://diff`/`argus://add` request that arrived before
     /// its `.openDiffReviewForPath` subscription existed to receive it.
     func markAppShellReady() {
         isAppShellReady = true
-        guard let pending = pendingDiffReviewRequest else { return }
-        pendingDiffReviewRequest = nil
-        postDiffReviewRequest(pending)
+        let pending = pendingShellRequests
+        pendingShellRequests = []
+        pending.forEach(post)
     }
 
     private func postDiffReviewRequest(_ request: DiffReviewRequest) {

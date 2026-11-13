@@ -82,6 +82,27 @@ public final class WorkspaceStore: ObservableObject {
         requestRefresh()
     }
 
+    /// Makes the repo at `path` appear in the sidebar exactly once — as its own root only when no
+    /// existing root already scans it (see `RepoAddPlanner`). Doesn't select it.
+    public func addRepo(_ path: String) {
+        let plan = RepoAddPlanner.plan(
+            path: path, roots: roots, excluded: excludedRepoPaths,
+            isGitRepo: { Self.isDirectory($0 + "/.git") },
+            resolve: { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path })
+        let rootsChanged = plan.roots != roots
+        roots = plan.roots
+        excludedRepoPaths = plan.excluded
+        hiddenWorktreeIDs.remove(path)
+        saveConfig()
+        if rootsChanged { startWatcher() }
+        requestRefresh()
+    }
+
+    private nonisolated static func isDirectory(_ path: String) -> Bool {
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+    }
+
     public func removeRoot(_ path: String) {
         roots.removeAll { $0 == path }
         saveConfig()
