@@ -57,6 +57,58 @@ extension DiffLineRowView {
             : "Comment on lines \(range.lowerBound)\u{2013}\(range.upperBound)"
     }
 
+    // MARK: - Range label
+
+    /// The multi-line range (a pending selection, or the open composer's anchor) that starts on this row.
+    private var rangeStart: (side: ReviewComment.Side, range: ClosedRange<Int>)? {
+        func starts(_ side: ReviewComment.Side, _ range: ClosedRange<Int>) -> Bool {
+            let number = side == .old ? row.left?.oldLineNumber : row.right?.newLineNumber
+            return range.count > 1 && number == range.lowerBound
+        }
+        if let pending = interaction.pendingSelection, pending.filePath == file.path,
+            starts(pending.side, pending.range)
+        {
+            return (pending.side, pending.range)
+        }
+        if let anchor = interaction.activeCommentAnchor, anchor.filePath == file.path {
+            let range = anchor.startLine...anchor.endLine
+            if starts(anchor.side, range) { return (anchor.side, range) }
+        }
+        return nil
+    }
+
+    /// A "Lines a–b" chip directly above the first selected line, aligned to the gutter of its side, so the
+    /// range stays readable when the toolbar or composer sits far below under the last line.
+    @ViewBuilder
+    var rangeLabel: some View {
+        if let start = rangeStart {
+            HStack(spacing: 0) {
+                rangeLabelHalf(.old, start: start)
+                Color.clear.frame(width: 1)
+                rangeLabelHalf(.new, start: start)
+            }
+        }
+    }
+
+    private func rangeLabelHalf(
+        _ side: ReviewComment.Side,
+        start: (side: ReviewComment.Side, range: ClosedRange<Int>)
+    ) -> some View {
+        HStack(spacing: 0) {
+            if start.side == side {
+                Text("Lines \(start.range.lowerBound)\u{2013}\(start.range.upperBound)")
+                    .font(.system(.caption2, design: .monospaced).weight(.semibold))
+                    .foregroundStyle(DiffReviewTheme.addCommentForeground)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(DiffReviewTheme.selectionBackground, in: RoundedRectangle(cornerRadius: 3))
+                    .padding(.leading, 4)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: 16, maxHeight: 16)
+    }
+
     // MARK: - Comments and composer
 
     /// The composer anchored to this row, if the open anchor ends here.

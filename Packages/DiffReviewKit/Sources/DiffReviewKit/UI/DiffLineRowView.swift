@@ -23,6 +23,8 @@ struct DiffLineRowView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            rangeLabel
+
             HStack(spacing: 0) {
                 cell(.old, line: row.left)
                 Divider()
