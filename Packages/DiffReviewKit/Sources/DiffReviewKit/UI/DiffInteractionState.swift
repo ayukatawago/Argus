@@ -89,11 +89,12 @@ struct DiffSearchState: Equatable {
     }
 }
 
-/// Holds the code cell frames used to hit-test drags and double-clicks. A reference box that is not
-/// observed: writing it from a preference change must not re-render the list.
+/// Holds the code cell and line-number gutter frames used to hit-test drags and double-clicks. A reference
+/// box that is not observed: writing it from a preference change must not re-render the list.
 @MainActor
 final class DiffCellFrames {
     var frames: [CodeCellKey: CGRect] = [:]
+    var gutterFrames: [CodeCellKey: CGRect] = [:]
 }
 
 /// Interaction state for the whole diff list: the open composer, the pending line selection, the drag
@@ -151,6 +152,14 @@ final class DiffInteractionState {
             extending: pendingSelection,
             shift: extendSelection
         )
+        activeCommentAnchor = nil
+        textSelection = nil
+    }
+
+    /// A drag from a line-number gutter selects a line range. Like a click, it clears the composer and any
+    /// text selection.
+    func beginLineSelection(_ selection: DiffLineSelection) {
+        pendingSelection = selection
         activeCommentAnchor = nil
         textSelection = nil
     }

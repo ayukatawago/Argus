@@ -34,6 +34,11 @@ struct DiffFileListView: View {
                             interaction.cellFrames.frames = frames
                         }
                     }
+                    .onPreferenceChange(GutterFramesKey.self) { frames in
+                        MainActor.assumeIsolated {
+                            interaction.cellFrames.gutterFrames = frames
+                        }
+                    }
                     .simultaneousGesture(dragSelectGesture)
                     .simultaneousGesture(tapSelectGesture)
                 }

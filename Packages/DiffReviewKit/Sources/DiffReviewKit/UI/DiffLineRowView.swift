@@ -128,6 +128,7 @@ struct DiffLineRowView: View {
             .foregroundStyle(DiffReviewTheme.lineNumberForeground)
             .frame(width: 36, alignment: .trailing)
             .textSelection(.disabled)
+            .background(DiffFileListView.gutterFrameReader(filePath: file.path, side: side, number: number))
             .contentShape(Rectangle())
             .onTapGesture {
                 if let number {

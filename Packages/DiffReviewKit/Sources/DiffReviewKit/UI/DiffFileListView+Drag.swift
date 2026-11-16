@@ -16,6 +16,15 @@ struct CodeCellFramesKey: PreferenceKey {
     }
 }
 
+/// Line-number gutter frames, keyed like code cells. A drag that starts in one selects whole lines.
+struct GutterFramesKey: PreferenceKey {
+    static let defaultValue: [CodeCellKey: CGRect] = [:]
+
+    static func reduce(value: inout [CodeCellKey: CGRect], nextValue: () -> [CodeCellKey: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
 /// A character-level position: a line number on one side plus a column (character offset) into it.
 struct TextPosition: Comparable {
     let line: Int
@@ -57,7 +66,20 @@ extension DiffFileListView {
         }
     }
 
-    /// Click-and-drag selects text like an editor. A drag only starts on a code cell, so one that begins
+    /// Reports the line-number gutter's frame, in the list's coordinate space, under its file, side and line.
+    static func gutterFrameReader(filePath: String, side: ReviewComment.Side, number: Int?) -> some View {
+        GeometryReader { geometry in
+            Color.clear.preference(
+                key: GutterFramesKey.self,
+                value: number.map {
+                    [CodeCellKey(filePath: filePath, side: side, line: $0): geometry.frame(in: .named(rowSpace))]
+                } ?? [:]
+            )
+        }
+    }
+
+    /// Click-and-drag selects text like an editor. A drag starting on a line-number gutter selects whole
+    /// lines instead. A drag only starts on a code cell otherwise, so one that begins
     /// on a comment card, a header, an expander or empty space leaves the open composer alone. The drag
     /// belongs to the file under its start point, and its side is fixed by which half of that file's rows
     /// it starts in. The end lands on the nearest character in the nearest line, so a drag can't leave
@@ -69,6 +91,12 @@ extension DiffFileListView {
 
     private func updateDragSelection(from start: CGPoint, to end: CGPoint) {
         let frames = interaction.cellFrames.frames
+        if let gutter = interaction.cellFrames.gutterFrames.first(where: { $0.value.contains(start) }) {
+            interaction.beginLineSelection(
+                Self.lineDragSelection(from: gutter.key, toY: end.y, frames: frames)
+            )
+            return
+        }
         guard let startCell = frames.first(where: { $0.value.contains(start) }) else { return }
         let filePath = startCell.key.filePath
         let side = Self.side(atX: start.x, filePath: filePath, frames: frames)
@@ -168,5 +196,34 @@ extension DiffFileListView {
 
     private static func distance(from yPos: CGFloat, to frame: CGRect) -> CGFloat {
         yPos < frame.minY ? frame.minY - yPos : (yPos > frame.maxY ? yPos - frame.maxY : 0)
+    }
+
+    /// The line-range selection a drag from a gutter makes. The anchor is the gutter's line, and the focus
+    /// is the nearest line on the same file and side as the gutter, so the pointer leaving that file or
+    /// side never changes it. With no other line on that side, the focus stays on the anchor.
+    static func lineDragSelection(
+        from origin: CodeCellKey, toY yPos: CGFloat, frames: [CodeCellKey: CGRect]
+    ) -> DiffLineSelection {
+        var candidates: [Int: CGRect] = [:]
+        for (key, frame) in frames where key.filePath == origin.filePath && key.side == origin.side {
+            candidates[key.line] = frame
+        }
+        let focus = nearestLine(toY: yPos, frames: candidates) ?? origin.line
+        return DiffLineSelection(
+            filePath: origin.filePath, side: origin.side, anchorLine: origin.line, focusLine: focus
+        )
+    }
+
+    /// The line whose frame is nearest the vertical position `yPos`. A line containing `yPos` wins, then the
+    /// nearest edge; positions above or below every line clamp to the first or last line. Between two
+    /// lines, the nearer one wins, and an exact tie goes to the upper one.
+    static func nearestLine(toY yPos: CGFloat, frames: [Int: CGRect]) -> Int? {
+        frames.min { lhs, rhs in
+            let lhsDistance = distance(from: yPos, to: lhs.value)
+            let rhsDistance = distance(from: yPos, to: rhs.value)
+            return lhsDistance == rhsDistance
+                ? (lhs.value.minY, lhs.key) < (rhs.value.minY, rhs.key)
+                : lhsDistance < rhsDistance
+        }?.key
     }
 }
