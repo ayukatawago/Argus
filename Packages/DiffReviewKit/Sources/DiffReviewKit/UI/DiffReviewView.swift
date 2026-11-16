@@ -8,6 +8,7 @@ import SwiftUI
 /// other SwiftUI container.
 public struct DiffReviewView: View {
     @State private var model: DiffReviewModel
+    @State private var interaction = DiffInteractionState()
 
     /// - Parameters:
     ///   - repositoryPath: absolute path to the git repository or worktree to review.
@@ -33,7 +34,7 @@ public struct DiffReviewView: View {
             Divider()
             HStack(spacing: 0) {
                 NavigationSplitView {
-                    FileTreeView(model: model)
+                    FileTreeView(model: model, interaction: interaction)
                         .navigationSplitViewColumnWidth(min: 240, ideal: 320)
                 } detail: {
                     detailContent
@@ -46,15 +47,17 @@ public struct DiffReviewView: View {
         .task {
             await model.start()
         }
+        .onChange(of: model.files) {
+            interaction.clearSelectionsForNewDiff()
+        }
     }
 
     @ViewBuilder
     private var detailContent: some View {
         if let error = model.loadError {
             errorView(error)
-        } else if let file = model.selectedFile {
-            SideBySideDiffView(model: model, file: file)
-                .id(file.path)
+        } else if !model.files.isEmpty {
+            DiffFileListView(model: model, interaction: interaction)
         } else if model.isLoadingDiff {
             ProgressView("Loading diff…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

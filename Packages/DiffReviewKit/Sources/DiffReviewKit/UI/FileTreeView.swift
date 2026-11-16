@@ -6,6 +6,7 @@ import SwiftUI
 /// expand/collapse.
 struct FileTreeView: View {
     let model: DiffReviewModel
+    let interaction: DiffInteractionState
 
     @State private var expandedIDs: Set<String> = []
 
@@ -16,7 +17,7 @@ struct FileTreeView: View {
     var body: some View {
         List {
             ForEach(tree) { node in
-                FileTreeRowRecursive(node: node, model: model, expandedIDs: $expandedIDs)
+                FileTreeRowRecursive(node: node, model: model, interaction: interaction, expandedIDs: $expandedIDs)
             }
         }
         .listStyle(.sidebar)
@@ -44,27 +45,33 @@ struct FileTreeView: View {
 private struct FileTreeRowRecursive: View {
     let node: FileTreeNode
     let model: DiffReviewModel
+    let interaction: DiffInteractionState
     @Binding var expandedIDs: Set<String>
 
     var body: some View {
         if let children = node.children {
             DisclosureGroup(isExpanded: isExpandedBinding) {
                 ForEach(children) { child in
-                    FileTreeRowRecursive(node: child, model: model, expandedIDs: $expandedIDs)
+                    FileTreeRowRecursive(node: child, model: model, interaction: interaction, expandedIDs: $expandedIDs)
                 }
             } label: {
-                FileTreeRowLabel(node: node, commentCount: 0)
+                FileTreeRowLabel(node: node, commentCount: 0, isViewed: false)
             }
         } else {
-            FileTreeRowLabel(node: node, commentCount: commentCount)
+            FileTreeRowLabel(node: node, commentCount: commentCount, isViewed: isViewed)
                 .contentShape(Rectangle())
-                .listRowBackground(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
+                .listRowBackground(isSelected ? DiffReviewTheme.listSelectionBackground : Color.clear)
                 .onTapGesture {
                     if let file = node.file {
                         model.selectedFilePath = file.path
+                        interaction.requestScroll(to: file.path)
                     }
                 }
         }
+    }
+
+    private var isViewed: Bool {
+        node.file.map { model.viewedFiles[$0.path] != nil } ?? false
     }
 
     private var commentCount: Int {
@@ -92,6 +99,7 @@ private struct FileTreeRowRecursive: View {
 private struct FileTreeRowLabel: View {
     let node: FileTreeNode
     let commentCount: Int
+    let isViewed: Bool
 
     var body: some View {
         HStack {
@@ -101,7 +109,13 @@ private struct FileTreeRowLabel: View {
             Text(node.name)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .foregroundStyle(isViewed ? Color.secondary : Color.primary)
             Spacer()
+            if isViewed {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(.secondary)
+                    .imageScale(.small)
+            }
             if commentCount > 0 {
                 Image(systemName: "bubble.left.fill")
                     .foregroundStyle(DiffReviewTheme.commentAccent)

@@ -125,3 +125,28 @@ public struct DiffLine: Identifiable, Hashable, Sendable {
         self.hasNoNewlineAtEnd = hasNoNewlineAtEnd
     }
 }
+
+extension DiffFile {
+    /// A stable fingerprint of what the reviewer reads in this file: the hunk headers plus each line's
+    /// kind and text. Line ids and line numbers are excluded, so a re-parse of unchanged content keeps
+    /// the same signature. FNV-1a, so it is deterministic across launches too.
+    public var contentSignature: Int {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        func mix(_ text: String) {
+            for byte in text.utf8 {
+                hash = (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01b3
+            }
+            // Field terminator, so "ab"+"c" and "a"+"bc" hash differently.
+            hash = (hash ^ 0xff) &* 0x0000_0100_0000_01b3
+        }
+        mix(String(describing: kind))
+        for hunk in hunks {
+            mix(hunk.header)
+            for line in hunk.lines {
+                mix(String(describing: line.kind))
+                mix(line.text)
+            }
+        }
+        return Int(bitPattern: UInt(hash))
+    }
+}

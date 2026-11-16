@@ -27,6 +27,9 @@ public final class DiffReviewModel {
     public var selectedFilePath: String?
     public var comments: [ReviewComment] = []
 
+    /// Viewed and collapsed state for the file list. In memory only, like comments.
+    private var fileViewState = FileViewState()
+
     public var isLoadingDiff = false
     public var loadError: String?
 
@@ -38,6 +41,15 @@ public final class DiffReviewModel {
     private var activeRunTokens: [UUID: UUID] = [:]
     /// Bumped on every diff refresh; an in-flight gap expansion from an older diff is discarded.
     private var diffGeneration = 0
+    /// Per-file cache of the file's full content (as `DiffService.fileContent` / disk returns it).
+    /// Cleared on every refresh: a bottom gap's length and the revealed lines both come from it, and
+    /// the working tree may have changed since it was read.
+    private var fileSourceLines: [String: [String]] = [:]
+
+    /// Bumped whenever some file's rows change (diff refresh, gap expansion). Views read it through
+    /// `layout(for:)`, so they re-run; the cache itself is invalidated per file.
+    private(set) var layoutRevision = 0
+    @ObservationIgnored private var layoutCache: [String: DiffFileLayout] = [:]
 
     public init(repositoryPath: String, agent: DiffReviewAgent) {
         self.repositoryPath = repositoryPath
@@ -82,17 +94,6 @@ public final class DiffReviewModel {
         selectedCommitRange ?? fullCommitRange
     }
 
-    /// Total/production/test breakdown of the current diff, in that order.
-    public var sizeStats: [DiffSizeStat] {
-        let testFiles = files.filter { DiffFileClassifier.isTestFile($0.path) }
-        let productionFiles = files.filter { !DiffFileClassifier.isTestFile($0.path) }
-        return [
-            DiffSizeStat(label: "Total", files: files),
-            DiffSizeStat(label: "Production", files: productionFiles),
-            DiffSizeStat(label: "Test", files: testFiles),
-        ]
-    }
-
     // MARK: - Loading
 
     /// Resolves branch list + default base (if not already set) and loads the initial commit
@@ -124,8 +125,6 @@ public final class DiffReviewModel {
         isLoadingDiff = true
         loadError = nil
         diffGeneration += 1
-        // Line numbers (and gap ids) refer to the previous diff; revealed context is stale.
-        expandedGapLines = [:]
         defer { isLoadingDiff = false }
         do {
             let newFiles = try await diffService.diff(
@@ -134,11 +133,42 @@ public final class DiffReviewModel {
                 includeUncommitted: includesUncommitted
             )
             files = newFiles
+            // Line numbers (and gap ids) refer to the previous diff; revealed context is stale. Cleared
+            // only once the new diff is in, so a failed refresh keeps what the reviewer had open.
+            gapExpansions = [:]
+            fileSourceLines = [:]
+            layoutCache = [:]
+            layoutRevision += 1
+            fileViewState.reconcile(with: newFiles)
             if selectedFilePath == nil || !newFiles.contains(where: { $0.path == selectedFilePath }) {
                 selectedFilePath = newFiles.first?.path
             }
         } catch {
             loadError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Viewed and collapsed files
+
+    public var viewedFiles: [String: Int] { fileViewState.viewedFiles }
+    public var collapsedFilePaths: Set<String> { fileViewState.collapsedFilePaths }
+
+    /// Marks `path` Viewed (which also collapses it), or un-marks it (which expands it).
+    public func toggleViewed(_ path: String) {
+        guard let file = files.first(where: { $0.path == path }) else { return }
+        fileViewState.toggleViewed(file)
+    }
+
+    /// Expands `path` if it is collapsed (search uses this to reveal a match). Leaves it alone otherwise.
+    func expandFile(_ path: String) {
+        fileViewState.collapsedFilePaths.remove(path)
+    }
+
+    public func toggleCollapsed(_ path: String) {
+        if fileViewState.collapsedFilePaths.contains(path) {
+            fileViewState.collapsedFilePaths.remove(path)
+        } else {
+            fileViewState.collapsedFilePaths.insert(path)
         }
     }
 
@@ -174,30 +204,95 @@ public final class DiffReviewModel {
         let gapID: String
     }
 
-    private var expandedGapLines: [GapKey: [DiffLine]] = [:]
+    private var gapExpansions: [GapKey: GapExpansion] = [:]
     private var loadingGapKeys: Set<GapKey> = []
 
-    /// The revealed lines for a previously collapsed gap, if `expandGap` has completed for it.
-    public func expandedLines(forGapID gapID: String, filePath: String) -> [DiffLine]? {
-        expandedGapLines[GapKey(filePath: filePath, gapID: gapID)]
+    /// How much of a gap has been revealed so far (nothing, if it hasn't been touched yet).
+    public func gapExpansion(forGapID gapID: String, filePath: String) -> GapExpansion {
+        gapExpansions[GapKey(filePath: filePath, gapID: gapID)] ?? GapExpansion()
     }
 
     public func isLoadingGap(_ gapID: String, filePath: String) -> Bool {
         loadingGapKeys.contains(GapKey(filePath: filePath, gapID: gapID))
     }
 
-    /// Fetches the file content needed to reveal a collapsed gap's lines (from disk for the
-    /// working tree, otherwise via `git show`) and populates `expandedGapLines`. A no-op if the
-    /// gap is already expanded or a fetch for it is already in flight.
-    public func expandGap(_ gap: DiffGap, in file: DiffFile) async {
+    /// The gap's length: from the diff for top and middle gaps, and from the cached file for a bottom
+    /// gap. `nil` for a bottom gap whose file hasn't been fetched yet.
+    public func resolvedLineCount(for gap: DiffGap, in file: DiffFile) -> Int? {
+        if let lineCount = gap.lineCount { return lineCount }
+        guard let sourceLines = fileSourceLines[file.path] else { return nil }
+        return max(0, sourceLines.count - GapRevealedLines.sourceStart(of: gap, in: file))
+    }
+
+    /// The flat rows, intraline spans and line texts of `file`, memoized until the next layout revision.
+    func layout(for file: DiffFile) -> DiffFileLayout {
+        // Reading the revision is what subscribes the caller to changes: a cache hit reads no other
+        // observed state, so without this a gap expansion would not re-render the rows.
+        _ = layoutRevision
+        if let cached = layoutCache[file.path] { return cached }
+        let built = DiffFileLayout.make(file: file, gaps: revealedGaps(for: file))
+        layoutCache[file.path] = built
+        return built
+    }
+
+    /// The context lines revealed so far at each end of `gap`, in file order.
+    public func revealedLines(_ gap: DiffGap, in file: DiffFile) -> (top: [DiffLine], bottom: [DiffLine]) {
+        guard let sourceLines = fileSourceLines[file.path] else { return ([], []) }
+        return GapRevealedLines.make(
+            gap: gap,
+            file: file,
+            expansion: gapExpansion(forGapID: gap.id, filePath: file.path),
+            lineCount: resolvedLineCount(for: gap, in: file),
+            sourceLines: sourceLines
+        )
+    }
+
+    /// Every gap in `file` with what it currently shows, keyed by gap id, for `DiffRowItemBuilder`.
+    func revealedGaps(for file: DiffFile) -> [String: RevealedGap] {
+        var result: [String: RevealedGap] = [:]
+        for case .gap(let gap) in DiffBlockBuilder.blocks(for: file) {
+            let revealed = revealedLines(gap, in: file)
+            result[gap.id] = RevealedGap(
+                expansion: gapExpansion(forGapID: gap.id, filePath: file.path),
+                lineCount: resolvedLineCount(for: gap, in: file),
+                top: revealed.top,
+                bottom: revealed.bottom
+            )
+        }
+        return result
+    }
+
+    /// Reveals more of a collapsed gap in `direction` (`.all` reveals the whole gap). Fetches and
+    /// caches the file's content first if needed, so every gap in one file shares a single fetch.
+    /// A no-op if the gap is already fully shown or a fetch for it is already in flight.
+    public func expandGap(_ gap: DiffGap, in file: DiffFile, direction: GapExpansion.Direction) async {
         let key = GapKey(filePath: file.path, gapID: gap.id)
-        guard expandedGapLines[key] == nil, !loadingGapKeys.contains(key) else { return }
+        guard !loadingGapKeys.contains(key) else { return }
+        guard
+            !gapExpansion(forGapID: gap.id, filePath: file.path)
+                .isFullyExpanded(lineCount: resolvedLineCount(for: gap, in: file))
+        else { return }
         loadingGapKeys.insert(key)
         defer { loadingGapKeys.remove(key) }
 
         let generation = diffGeneration
-        guard let sourceLines = await gapSourceLines(for: file), generation == diffGeneration else { return }
-        expandedGapLines[key] = Self.gapLines(gap, in: file, sourceLines: sourceLines)
+        if fileSourceLines[file.path] == nil {
+            guard let sourceLines = await gapSourceLines(for: file), generation == diffGeneration else { return }
+            fileSourceLines[file.path] = sourceLines
+            invalidateLayout(for: file.path)
+        }
+        guard let lineCount = resolvedLineCount(for: gap, in: file) else { return }
+        let current = gapExpansion(forGapID: gap.id, filePath: file.path)
+        let updated = current.expanding(direction, lineCount: lineCount)
+        guard updated != current else { return }
+        gapExpansions[key] = updated
+        invalidateLayout(for: file.path)
+    }
+
+    /// Drops the cached layout of one file, and tells observers that some layout changed.
+    private func invalidateLayout(for path: String) {
+        layoutCache[path] = nil
+        layoutRevision += 1
     }
 
     /// The unchanged lines a gap spans are identical on both sides of the diff, so either
@@ -212,32 +307,9 @@ public final class DiffReviewModel {
             guard let data = FileManager.default.contents(atPath: fullPath),
                 let text = String(data: data, encoding: .utf8)
             else { return nil }
-            return Self.splitLines(text)
+            return GapRevealedLines.splitLines(text)
         }
         return try? await diffService.fileContent(ref: effectiveHead, path: file.path)
-    }
-
-    private static func splitLines(_ text: String) -> [String] {
-        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        if text.hasSuffix("\n") { lines.removeLast() }
-        return lines
-    }
-
-    private static func gapLines(_ gap: DiffGap, in file: DiffFile, sourceLines: [String]) -> [DiffLine] {
-        let start = (file.kind == .deleted ? gap.oldStart : gap.newStart) - 1
-        guard start >= 0, start < sourceLines.count else { return [] }
-        let end = gap.lineCount.map { min(start + $0, sourceLines.count) } ?? sourceLines.count
-        guard end > start else { return [] }
-
-        return (start..<end).map { sourceIndex in
-            let offset = sourceIndex - start
-            return DiffLine(
-                kind: .context,
-                text: sourceLines[sourceIndex],
-                oldLineNumber: file.kind == .added ? nil : gap.oldStart + offset,
-                newLineNumber: file.kind == .deleted ? nil : gap.newStart + offset
-            )
-        }
     }
 
     // MARK: - Agent actions
