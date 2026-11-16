@@ -110,10 +110,107 @@ struct DiffReviewModelTests {
         #expect(model.effectiveBase == "c^")
     }
 
-    @Test("gap lines are keyed per file, so the same gap id in two files stays independent")
-    func gapKeyedPerFile() async {
-        let model = model(commits: [])
-        #expect(model.expandedLines(forGapID: "top", filePath: "a") == nil)
-        #expect(!model.isLoadingGap("top", filePath: "b"))
+    /// Two files, each with one changed line in the middle of 100 lines, committed as `HEAD~1` → `HEAD`.
+    /// Their hunks start at line 47, so each has a 46-line top gap and a 47-line bottom gap.
+    private func repoWithTwoChangedFiles() async throws -> (path: String, model: DiffReviewModel) {
+        let (path, git) = try await makeRepo()
+        let body = (1...100).map { "line \($0)\n" }.joined()
+        let changed = body.replacingOccurrences(of: "line 50\n", with: "LINE 50\n")
+        for name in ["a.txt", "b.txt"] {
+            try Data(body.utf8).write(to: URL(fileURLWithPath: path + "/" + name))
+        }
+        try await commit(git, "init")
+        for name in ["a.txt", "b.txt"] {
+            try Data(changed.utf8).write(to: URL(fileURLWithPath: path + "/" + name))
+        }
+        try await commit(git, "change")
+
+        let model = DiffReviewModel(repositoryPath: path, agent: DiffReviewAgent(kind: .claude))
+        model.baseRef = "HEAD~1"
+        model.headRef = "HEAD"
+        await model.refreshDiff()
+        return (path, model)
+    }
+
+    private func gap(_ position: DiffGap.Position, in file: DiffFile) -> DiffGap? {
+        DiffBlockBuilder.blocks(for: file).compactMap { block -> DiffGap? in
+            guard case .gap(let gap) = block, gap.position == position else { return nil }
+            return gap
+        }.first
+    }
+
+    @Test("gap expansion is keyed per file, so the same gap id in two files stays independent")
+    func gapKeyedPerFile() async throws {
+        let (path, model) = try await repoWithTwoChangedFiles()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let fileA = try #require(model.files.first { $0.path == "a.txt" })
+
+        let topA = try #require(gap(.top, in: fileA))
+        await model.expandGap(topA, in: fileA, direction: .down)
+
+        #expect(model.gapExpansion(forGapID: "top", filePath: "a.txt").revealedFromTop == 20)
+        #expect(model.gapExpansion(forGapID: "top", filePath: "b.txt") == GapExpansion())
+        #expect(!model.isLoadingGap("top", filePath: "b.txt"))
+    }
+
+    @Test("a top gap's ↑ reveals lines just above the hunk, counted from the bottom of the gap")
+    func topGapUpRevealsNearHunk() async throws {
+        let (path, model) = try await repoWithTwoChangedFiles()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let file = try #require(model.files.first { $0.path == "a.txt" })
+        let top = try #require(gap(.top, in: file))
+
+        await model.expandGap(top, in: file, direction: .up)
+
+        let revealed = model.revealedLines(top, in: file)
+        #expect(revealed.top.isEmpty)
+        #expect(revealed.bottom.count == 20)
+        #expect(revealed.bottom.first?.text == "line 27")
+        #expect(revealed.bottom.last?.text == "line 46")
+    }
+
+    @Test("a bottom gap's length is unknown until its file is fetched, then resolves and fully expands with .all")
+    func bottomGapResolvesThenExpands() async throws {
+        let (path, model) = try await repoWithTwoChangedFiles()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let file = try #require(model.files.first { $0.path == "a.txt" })
+        let bottom = try #require(gap(.bottom, in: file))
+
+        #expect(model.resolvedLineCount(for: bottom, in: file) == nil)
+        await model.expandGap(bottom, in: file, direction: .down)
+        #expect(model.resolvedLineCount(for: bottom, in: file) == 47)
+        #expect(model.revealedLines(bottom, in: file).top.count == 20)
+
+        await model.expandGap(bottom, in: file, direction: .all)
+        #expect(model.gapExpansion(forGapID: bottom.id, filePath: "a.txt").isFullyExpanded(lineCount: 47))
+        #expect(model.revealedLines(bottom, in: file).top.count == 47)
+    }
+
+    @Test("a refresh discards revealed context along with the cached file content")
+    func refreshClearsExpansions() async throws {
+        let (path, model) = try await repoWithTwoChangedFiles()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let file = try #require(model.files.first { $0.path == "a.txt" })
+        let top = try #require(gap(.top, in: file))
+        await model.expandGap(top, in: file, direction: .down)
+
+        await model.refreshDiff()
+
+        #expect(model.gapExpansion(forGapID: "top", filePath: "a.txt") == GapExpansion())
+        #expect(model.revealedLines(top, in: file).top.isEmpty)
+    }
+
+    @Test("toggling Viewed collapses the file, and a refresh with unchanged content keeps it that way")
+    func viewedSurvivesUnchangedRefresh() async throws {
+        let (path, model) = try await repoWithTwoChangedFiles()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+
+        model.toggleViewed("a.txt")
+        #expect(model.viewedFiles["a.txt"] != nil)
+        #expect(model.collapsedFilePaths.contains("a.txt"))
+
+        await model.refreshDiff()
+        #expect(model.viewedFiles["a.txt"] != nil)
+        #expect(model.collapsedFilePaths.contains("a.txt"))
     }
 }
