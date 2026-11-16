@@ -1,38 +1,34 @@
 import SwiftUI
 
-/// Renders a single review comment plus any agent replies, with Reply/Apply actions.
+/// Renders a single review comment plus any agent replies, with Reply/Apply actions. Each reply sits in
+/// its own section below a divider.
 struct CommentThreadView: View {
     let model: DiffReviewModel
     let comment: ReviewComment
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 6) {
-                Image(systemName: "bubble.left.fill")
-                    .foregroundStyle(DiffReviewTheme.commentAccent)
-                VStack(alignment: .leading, spacing: 4) {
-                    if let startLineNumber = comment.startLineNumber {
-                        Text("Lines \(startLineNumber)\u{2013}\(comment.lineNumber)")
-                            .font(.caption2)
+        CommentCard(
+            lineRange: comment.startLineNumber.map { "Lines \($0)\u{2013}\(comment.lineNumber)" },
+            status: comment.status
+        ) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(comment.body)
+                    .font(.callout)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ForEach(comment.replies) { reply in
+                    Divider()
+                    replyView(reply)
+                }
+                if isBusy {
+                    HStack(spacing: 4) {
+                        ProgressView().controlSize(.small)
+                        Text(comment.status == .applying ? "Applying…" : "Replying…")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    Text(comment.body)
-                        .font(.callout)
-                    ForEach(comment.replies) { reply in
-                        replyView(reply)
-                    }
-                    if isBusy {
-                        HStack(spacing: 4) {
-                            ProgressView().controlSize(.small)
-                            Text(comment.status == .applying ? "Applying…" : "Replying…")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
                 }
-                Spacer()
             }
-
+        } footer: {
             HStack {
                 Spacer()
                 Button("Reply") { model.send(commentID: comment.id, mode: .reply) }
@@ -41,11 +37,6 @@ struct CommentThreadView: View {
                     .disabled(isBusy)
             }
         }
-        .padding(8)
-        .background(Color.secondary.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
     }
 
     private var isBusy: Bool {
@@ -76,6 +67,85 @@ struct CommentThreadView: View {
         case .reply: .secondary
         case .apply: DiffReviewTheme.additionForeground
         case .error: DiffReviewTheme.deletionForeground
+        }
+    }
+}
+
+/// The bordered, rounded card shared by a review thread and the composer: a header bar ("You", the line
+/// range, and an optional status badge), a body, and a footer for actions.
+struct CommentCard<Content: View, Footer: View>: View {
+    let lineRange: String?
+    let status: ReviewComment.Status?
+    @ViewBuilder let content: () -> Content
+    @ViewBuilder let footer: () -> Footer
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Text("You")
+                    .font(.caption.weight(.semibold))
+                if let lineRange {
+                    Text(lineRange)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if let status {
+                    CommentStatusBadge(status: status)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(DiffReviewTheme.cardHeaderBackground)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(DiffReviewTheme.cardBorder).frame(height: 1)
+            }
+
+            content()
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Rectangle().fill(DiffReviewTheme.cardBorder).frame(height: 1)
+            footer()
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+        }
+        .background(DiffReviewTheme.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(DiffReviewTheme.cardBorder))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
+}
+
+/// The Open / Replying / Applying / Resolved pill in a comment card's header.
+private struct CommentStatusBadge: View {
+    let status: ReviewComment.Status
+
+    var body: some View {
+        Text(label)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(color.opacity(0.15), in: Capsule())
+    }
+
+    private var label: String {
+        switch status {
+        case .open: "Open"
+        case .replying: "Replying"
+        case .applying: "Applying"
+        case .resolved: "Resolved"
+        }
+    }
+
+    private var color: Color {
+        switch status {
+        case .open: DiffReviewTheme.statusOpen
+        case .replying, .applying: DiffReviewTheme.statusInProgress
+        case .resolved: DiffReviewTheme.statusResolved
         }
     }
 }

@@ -100,7 +100,7 @@ private struct UncommittedRow: View {
                 .font(.callout.italic())
         }
         .padding(.vertical, 2)
-        .listRowBackground(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
+        .listRowBackground(isSelected ? DiffReviewTheme.listSelectionBackground : Color.clear)
     }
 }
 
@@ -124,6 +124,6 @@ private struct CommitRow: View {
             }
         }
         .padding(.vertical, 2)
-        .listRowBackground(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
+        .listRowBackground(isSelected ? DiffReviewTheme.listSelectionBackground : Color.clear)
     }
 }
