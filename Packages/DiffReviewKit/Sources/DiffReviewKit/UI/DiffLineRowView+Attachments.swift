@@ -12,6 +12,24 @@ extension DiffLineRowView {
         return number == selection.range.upperBound ? selection : nil
     }
 
+    /// The toolbar under the selection's last line, in the half of the row that holds the selected side.
+    func pendingSelectionRow(_ selection: DiffLineSelection) -> some View {
+        HStack(spacing: 0) {
+            pendingSelectionHalf(.old, selection: selection)
+            Color.clear.frame(width: 1)
+            pendingSelectionHalf(.new, selection: selection)
+        }
+    }
+
+    @ViewBuilder
+    private func pendingSelectionHalf(_ side: ReviewComment.Side, selection: DiffLineSelection) -> some View {
+        if selection.side == side {
+            pendingSelectionToolbar(selection).frame(maxWidth: .infinity)
+        } else {
+            Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
+        }
+    }
+
     func pendingSelectionToolbar(_ selection: DiffLineSelection) -> some View {
         HStack(spacing: 8) {
             Button {

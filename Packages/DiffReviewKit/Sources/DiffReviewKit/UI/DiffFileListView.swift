@@ -39,8 +39,6 @@ struct DiffFileListView: View {
                             interaction.cellFrames.gutterFrames = frames
                         }
                     }
-                    .simultaneousGesture(dragSelectGesture)
-                    .simultaneousGesture(tapSelectGesture)
                 }
             }
         }
@@ -74,7 +72,11 @@ struct DiffFileListView: View {
         } else {
             let layout = model.layout(for: file)
             ForEach(layout.items) { item in
+                // Per row, not on the scroll content: a gesture on the whole content stopped the scroll view
+                // from receiving trackpad scrolling.
                 DiffRowView(item: item, file: file, layout: layout, model: model, interaction: interaction)
+                    .simultaneousGesture(dragSelectGesture)
+                    .simultaneousGesture(tapSelectGesture)
             }
         }
     }

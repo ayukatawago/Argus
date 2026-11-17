@@ -87,14 +87,23 @@ extension DiffFileListView {
     var dragSelectGesture: some Gesture {
         DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.rowSpace))
             .onChanged { value in updateDragSelection(from: value.startLocation, to: value.location) }
+            .onEnded { _ in
+                interaction.cellFrames.lineDragOrigin = nil
+                interaction.cellFrames.lineDragStart = nil
+            }
     }
 
     private func updateDragSelection(from start: CGPoint, to end: CGPoint) {
         let frames = interaction.cellFrames.frames
-        if let gutter = interaction.cellFrames.gutterFrames.first(where: { $0.value.contains(start) }) {
-            interaction.beginLineSelection(
-                Self.lineDragSelection(from: gutter.key, toY: end.y, frames: frames)
-            )
+        // A drag whose end event was lost (its row was re-rendered mid-drag) must not leave a stale origin
+        // that turns the next drag, even one inside the composer, into a line selection.
+        if interaction.cellFrames.lineDragStart != start {
+            interaction.cellFrames.lineDragStart = start
+            let gutter = interaction.cellFrames.gutterFrames.first { $0.value.contains(start) }
+            interaction.cellFrames.lineDragOrigin = gutter?.key
+        }
+        if let origin = interaction.cellFrames.lineDragOrigin {
+            interaction.beginLineSelection(Self.lineDragSelection(from: origin, toY: end.y, frames: frames))
             return
         }
         guard let startCell = frames.first(where: { $0.value.contains(start) }) else { return }

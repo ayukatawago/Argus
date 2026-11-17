@@ -37,7 +37,7 @@ struct DiffLineRowView: View {
             }
 
             if let selection = pendingSelectionEnding {
-                pendingSelectionToolbar(selection)
+                pendingSelectionRow(selection)
             }
 
             attachments

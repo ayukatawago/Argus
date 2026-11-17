@@ -95,6 +95,11 @@ struct DiffSearchState: Equatable {
 final class DiffCellFrames {
     var frames: [CodeCellKey: CGRect] = [:]
     var gutterFrames: [CodeCellKey: CGRect] = [:]
+    /// The gutter a line-selection drag began on, fixed for the whole drag. The selection toolbar opens
+    /// under the drag's end line and can shift rows, so the start point can't be re-resolved per event.
+    var lineDragOrigin: CodeCellKey?
+    /// Where that drag's press began, to tell a new drag from the same one if its end event never arrived.
+    var lineDragStart: CGPoint?
 }
 
 /// Interaction state for the whole diff list: the open composer, the pending line selection, the drag
