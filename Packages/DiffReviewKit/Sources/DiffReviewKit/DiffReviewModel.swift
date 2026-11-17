@@ -127,10 +127,12 @@ public final class DiffReviewModel {
         diffGeneration += 1
         defer { isLoadingDiff = false }
         do {
-            let newFiles = try await diffService.diff(
-                base: effectiveBase,
-                head: effectiveHead,
-                includeUncommitted: includesUncommitted
+            let newFiles = FileTreeBuilder.orderedFiles(
+                from: try await diffService.diff(
+                    base: effectiveBase,
+                    head: effectiveHead,
+                    includeUncommitted: includesUncommitted
+                )
             )
             files = newFiles
             // Line numbers (and gap ids) refer to the previous diff; revealed context is stale. Cleared
@@ -369,20 +371,15 @@ public final class DiffReviewModel {
             }
 
             guard self.activeRunTokens[commentID] == token, !Task.isCancelled else { return }
-            await self.completeRun(
-                commentID: commentID, kind: replyKind, text: replyText, sessionID: sessionID, refreshes: mode == .apply
-            )
+            let refresh = mode == .apply
+            await self.finishRun(commentID, kind: replyKind, text: replyText, sessionID: sessionID, refresh: refresh)
         }
     }
 
-    private func completeRun(
-        commentID: UUID, kind: ReviewReply.Kind, text: String, sessionID: String?, refreshes: Bool
-    )
-        async
-    {
-        appendReply(commentID: commentID, kind: kind, text: Self.replyBody(from: text), sessionID: sessionID)
-        setStatus(commentID: commentID, status: .resolved)
-        if refreshes {
+    private func finishRun(_ id: UUID, kind: ReviewReply.Kind, text: String, sessionID: String?, refresh: Bool) async {
+        appendReply(commentID: id, kind: kind, text: Self.replyBody(from: text), sessionID: sessionID)
+        setStatus(commentID: id, status: .resolved)
+        if refresh {
             await refreshDiff()
         }
     }

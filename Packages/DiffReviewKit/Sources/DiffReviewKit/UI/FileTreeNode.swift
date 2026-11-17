@@ -21,6 +21,15 @@ enum FileTreeBuilder {
         return buildLevel(entries, pathPrefix: "").map(compressed)
     }
 
+    /// `files` in the order the tree lists them top to bottom (directories before files, each by name), so
+    /// the stacked diff reads in the same order as the sidebar.
+    static func orderedFiles(from files: [DiffFile]) -> [DiffFile] {
+        func leaves(_ nodes: [FileTreeNode]) -> [DiffFile] {
+            nodes.flatMap { node in node.file.map { [$0] } ?? leaves(node.children ?? []) }
+        }
+        return leaves(build(from: files))
+    }
+
     /// Merges a run of single-child directories into one node, working bottom-up so a chain of
     /// any length collapses fully (e.g. `A > B > C` becomes one `"A/B/C"` node).
     private static func compressed(_ node: FileTreeNode) -> FileTreeNode {
