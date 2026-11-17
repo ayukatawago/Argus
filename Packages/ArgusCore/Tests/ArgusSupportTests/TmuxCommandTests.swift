@@ -37,6 +37,7 @@ struct TmuxCommandTests {
             command: ["/bin/zsh", "-l", "-c", "claude --continue || exec /bin/zsh -l"])
         #expect(
             line
+                // swiftlint:disable:next line_length
                 == "/opt/homebrew/bin/tmux new-session -A -s argus-c-ab12 /bin/zsh -l -c 'claude --continue || exec /bin/zsh -l'"
                 + " \\; set -s extended-keys on \\; set-option -t argus-c-ab12 status off")
     }

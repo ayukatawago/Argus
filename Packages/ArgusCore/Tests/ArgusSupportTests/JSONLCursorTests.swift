@@ -6,6 +6,7 @@ import Testing
 @Suite("JSONLCursor")
 struct JSONLCursorTests {
     private func strings(_ lines: [Data]) -> [String] {
+        // swiftlint:disable:next optional_data_string_conversion - test helper, input is valid UTF-8
         lines.map { String(decoding: $0, as: UTF8.self) }
     }
 
@@ -27,6 +28,7 @@ struct JSONLCursorTests {
     func finishFlushes() {
         var cursor = JSONLCursor()
         _ = cursor.ingest(Data("a\ntail".utf8))
+        // swiftlint:disable:next optional_data_string_conversion - test helper, input is valid UTF-8
         #expect(cursor.finish().map { String(decoding: $0, as: UTF8.self) } == "tail")
         #expect(cursor.finish() == nil)
     }
@@ -43,6 +45,7 @@ struct JSONLCursorTests {
     func oversizedLineDropped() {
         var cursor = JSONLCursor(maxCarryBytes: 8)
         #expect(cursor.ingest(Data("0123456789".utf8)).isEmpty)
+        // swiftlint:disable:next optional_data_string_conversion - test helper, input is valid UTF-8
         #expect(cursor.ingest(Data("abcdef\nok\n".utf8)).map { String(decoding: $0, as: UTF8.self) } == ["ok"])
     }
 

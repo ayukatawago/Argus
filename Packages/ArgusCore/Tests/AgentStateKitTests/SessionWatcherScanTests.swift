@@ -154,6 +154,7 @@ struct CodexWatcherScanTests {
     }
 
     private func meta(cwd: String, source: String = "user") -> String {
+        // swiftlint:disable:next line_length
         #"{"timestamp":"2026-10-08T01:00:00Z","type":"session_meta","payload":{"id":"x","cwd":"\#(cwd)","thread_source":"\#(source)"}}"#
             + "\n"
     }

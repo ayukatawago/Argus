@@ -30,6 +30,7 @@ struct ClaudeTranscriptTimestampTests {
     @Test("a nested timestamp key before the real one does not hijack the line's activity time")
     func nestedTimestampIgnored() {
         let nested =
+            // swiftlint:disable:next line_length
             #"{"type":"assistant","message":{"content":[{"type":"tool_use","input":{"timestamp":"1999-01-01T00:00:00Z"}}]},"timestamp":"2026-01-01T00:00:00Z"}"#
         #expect(
             ClaudeTranscriptParser.scan(tail: nested).lastActivity == ISO8601Timestamp.parse("2026-01-01T00:00:00Z"))

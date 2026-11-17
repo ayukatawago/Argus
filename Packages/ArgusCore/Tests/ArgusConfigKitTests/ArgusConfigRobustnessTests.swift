@@ -50,6 +50,7 @@ struct ArgusConfigRobustnessTests {
     @Test("a popup size outside 10...100 is clamped")
     func sizeClamped() throws {
         let json =
+            // swiftlint:disable:next line_length
             #"{"popupShortcuts":[{"key":"a","command":"x","sizePercent":500},{"key":"b","command":"y","sizePercent":-3}]}"#
         #expect(try decode(json).popupShortcuts.map(\.sizePercent) == [100, 10])
     }
@@ -57,6 +58,7 @@ struct ArgusConfigRobustnessTests {
     @Test("negative, zero and non-finite intervals are clamped to at least one second")
     func intervalClamped() throws {
         let config = try decode(
+            // swiftlint:disable:next line_length
             #"{"diskMonitor":{"checkIntervalSeconds":-5,"sizeCheckIntervalSeconds":0},"github":{"refreshIntervalSeconds":-1}}"#
         )
         #expect(config.diskMonitor.checkIntervalSeconds == 1)

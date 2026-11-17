@@ -8,8 +8,8 @@ private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var handler: (@Sendable (URLRequest) -> (Int, String))?
     nonisolated(unsafe) static var requests: [URLRequest] = []
 
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override static func canInit(with request: URLRequest) -> Bool { true }
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
         Self.requests.append(request)
@@ -110,8 +110,8 @@ struct GitHubClientTests {
             if path.hasSuffix("/search/issues") { return (200, Self.searchBody) }
             return (404, "")
         }
-        let pr = try #require(try await client.searchPullRequests(query: "x").first)
-        let result = await client.enrichment(for: pr)
+        let pullRequest = try #require(try await client.searchPullRequests(query: "x").first)
+        let result = await client.enrichment(for: pullRequest)
         #expect(result == PREnrichment(baseBranch: "main", approvedBy: ["alice"]))
         #expect(StubURLProtocol.requests.contains { $0.url?.path == "/repos/o/r/pulls/7/reviews" })
     }
@@ -121,8 +121,8 @@ struct GitHubClientTests {
         let client = client { request in
             request.url?.path.hasSuffix("/search/issues") == true ? (200, Self.searchBody) : (500, "boom")
         }
-        let pr = try #require(try await client.searchPullRequests(query: "x").first)
-        #expect(await client.enrichment(for: pr) == PREnrichment())
+        let pullRequest = try #require(try await client.searchPullRequests(query: "x").first)
+        #expect(await client.enrichment(for: pullRequest) == PREnrichment())
     }
 
     private func repoURL(_ string: String) -> URL { URL(string: string) ?? URL(fileURLWithPath: "/") }

@@ -6,20 +6,15 @@ import Testing
 @Suite("PromptComposer")
 struct PromptComposerTests {
     private func file() -> DiffFile {
-        DiffFile(
-            path: "Sources/A.swift",
-            kind: .modified,
-            hunks: [
-                DiffHunk(
-                    header: "@@ -5,2 +5,3 @@",
-                    lines: [
-                        DiffLine(kind: .context, text: "ctx", oldLineNumber: 5, newLineNumber: 5),
-                        DiffLine(kind: .deletion, text: "gone", oldLineNumber: 6, newLineNumber: nil),
-                        DiffLine(kind: .addition, text: "new", oldLineNumber: nil, newLineNumber: 6),
-                    ],
-                )
+        let hunk = DiffHunk(
+            header: "@@ -5,2 +5,3 @@",
+            lines: [
+                DiffLine(kind: .context, text: "ctx", oldLineNumber: 5, newLineNumber: 5),
+                DiffLine(kind: .deletion, text: "gone", oldLineNumber: 6, newLineNumber: nil),
+                DiffLine(kind: .addition, text: "new", oldLineNumber: nil, newLineNumber: 6),
             ],
         )
+        return DiffFile(path: "Sources/A.swift", kind: .modified, hunks: [hunk])
     }
 
     @Test("reply prompt forbids edits and embeds the hunk and comment")

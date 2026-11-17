@@ -18,6 +18,7 @@ struct CodexUsageParserEdgeCaseTests {
     }
 
     private func turnContext(_ turnID: String, model: String) -> String {
+        // swiftlint:disable:next line_length
         #"{"timestamp":"2026-09-30T02:00:00Z","type":"turn_context","payload":{"turn_id":"\#(turnID)","model":"\#(model)"}}"#
     }
 
@@ -80,6 +81,7 @@ struct CodexUsageParserEdgeCaseTests {
     @Test("booleans, negatives, fractions and out-of-range numbers are not token counts")
     func invalidCounts() {
         let usage =
+            // swiftlint:disable:next line_length
             #""input_tokens":true,"cached_input_tokens":-5,"output_tokens":1.5,"total_tokens":1e30,"reasoning_output_tokens":7"#
         let total = scan([turnContext("t1", model: "m"), record(usage: usage)]).values.first?["m"]
         #expect(total?.inputTokens == 0)

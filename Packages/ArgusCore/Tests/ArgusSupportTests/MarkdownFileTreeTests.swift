@@ -80,6 +80,7 @@ struct MarkdownFileTreeTests {
     @Test("the encoded JSON keeps the keys the preview page reads")
     func jsonShape() throws {
         let node = MarkdownTreeNode(type: "file", name: "a.md", path: "/a.md", children: nil)
+        // swiftlint:disable:next optional_data_string_conversion - test helper, input is valid UTF-8
         let json = try String(decoding: JSONEncoder().encode(node), as: UTF8.self)
         #expect(json.contains(#""type":"file""#))
         #expect(json.contains(#""name":"a.md""#))

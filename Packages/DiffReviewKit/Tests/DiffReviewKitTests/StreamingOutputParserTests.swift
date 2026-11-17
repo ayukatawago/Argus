@@ -18,7 +18,8 @@ struct StreamingOutputParserTests {
         var parser = StreamingOutputParser(kind: .claude)
         var events: [AgentEvent] = []
         events += parser.consumeLine(#"{"type":"system","session_id":"s1"}"#)
-        let assistant = #"{"type":"assistant","session_id":"s1","message":{"content":"#
+        let assistant =
+            #"{"type":"assistant","session_id":"s1","message":{"content":"#
             + #"[{"type":"text","text":"Hello"},{"type":"tool_use","id":"x"}]}}"#
         events += parser.consumeLine(assistant)
         events += parser.consumeLine(#"{"type":"result","session_id":"s1","result":"Hello"}"#)
@@ -82,6 +83,7 @@ struct AgentRunnerShellEscapeTests {
         try process.run()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
+        // swiftlint:disable:next optional_data_string_conversion - test helper, input is valid UTF-8
         #expect(String(decoding: data, as: UTF8.self) == nasty)
     }
 }

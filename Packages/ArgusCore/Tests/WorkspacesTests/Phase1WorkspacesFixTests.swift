@@ -34,6 +34,7 @@ struct Phase1WorkspacesFixTests {
     @Test("the first parsed worktree is main even when a malformed block precedes it")
     func mainSurvivesMalformedLeadingBlock() {
         let output =
+            // swiftlint:disable:next line_length
             "garbage without a path\n\nworktree /repo/main\nbranch refs/heads/main\n\nworktree /repo/f\nbranch refs/heads/f"
         let worktrees = WorktreeListParser.parse(output)
         #expect(worktrees.map(\.path) == ["/repo/main", "/repo/f"])
@@ -66,6 +67,7 @@ struct Phase1WorkspacesFixTests {
         let first = try Data(contentsOf: url)
         WorkspaceConfigFile.save(config, to: url)
         #expect(try Data(contentsOf: url) == first)
+        // swiftlint:disable:next optional_data_string_conversion - test helper, input is valid UTF-8
         let text = String(decoding: first, as: UTF8.self)
         let positions = ["/a", "/b", "/c", "/d", "/e"].compactMap { text.range(of: "\"\($0)\"")?.lowerBound }
         #expect(positions == positions.sorted())
