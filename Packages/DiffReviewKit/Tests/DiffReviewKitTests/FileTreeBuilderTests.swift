@@ -52,10 +52,10 @@ struct FileTreeBuilderTests {
         #expect(!leaf.isDirectory)
     }
 
-    @Test("ordered files list directories before files, like the tree rows")
+    @Test("ordered files list files before folders within a folder, like the tree rows")
     func orderedFilesMatchTreeOrder() {
         let paths = ["README.md", "App/b.swift", "Sources/a.swift", "App/Views/c.swift", "App/a.swift"]
         let ordered = FileTreeBuilder.orderedFiles(from: paths.map(file)).map(\.path)
-        #expect(ordered == ["App/Views/c.swift", "App/a.swift", "App/b.swift", "Sources/a.swift", "README.md"])
+        #expect(ordered == ["README.md", "App/a.swift", "App/b.swift", "App/Views/c.swift", "Sources/a.swift"])
     }
 }
