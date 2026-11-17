@@ -21,7 +21,7 @@ enum FileTreeBuilder {
         return buildLevel(entries, pathPrefix: "").map(compressed)
     }
 
-    /// `files` in the order the tree lists them top to bottom (directories before files, each by name), so
+    /// `files` in the order the tree lists them top to bottom (files before folders within a folder, each by name), so
     /// the stacked diff reads in the same order as the sidebar.
     static func orderedFiles(from files: [DiffFile]) -> [DiffFile] {
         func leaves(_ nodes: [FileTreeNode]) -> [DiffFile] {
@@ -81,8 +81,8 @@ enum FileTreeBuilder {
 
     private static func isOrderedBefore(_ lhs: FileTreeNode, _ rhs: FileTreeNode) -> Bool {
         switch (lhs.isDirectory, rhs.isDirectory) {
-        case (true, false): true
-        case (false, true): false
+        case (false, true): true
+        case (true, false): false
         default: lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
         }
     }
