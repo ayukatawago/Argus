@@ -14,27 +14,12 @@ public struct GitHubClient: Sendable {
         let login: String
     }
 
-    private struct PRDetail: Decodable {
-        struct Base: Decodable {
-            let ref: String
-        }
-
-        let base: Base
+    private struct PRBase: Decodable {
+        let ref: String
     }
 
-    private struct Review: Decodable {
-        struct Reviewer: Decodable {
-            let login: String
-        }
-
-        enum CodingKeys: String, CodingKey {
-            case user, state
-            case submittedAt = "submitted_at"
-        }
-
-        let user: Reviewer
-        let state: String
-        let submittedAt: String
+    private struct PRDetail: Decodable {
+        let base: PRBase
     }
 
     public let apiBaseURL: String
@@ -114,8 +99,24 @@ public struct GitHubClient: Sendable {
         let (data, response) = try await session.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(statusCode) else {
+            // swiftlint:disable:next optional_data_string_conversion - lossy decode is intended
             throw PRMonitorError.httpError(statusCode, body: String(decoding: data, as: UTF8.self))
         }
         return try JSONDecoder().decode(T.self, from: data)
     }
+}
+
+private struct Reviewer: Decodable {
+    let login: String
+}
+
+private struct Review: Decodable {
+    enum CodingKeys: String, CodingKey {
+        case user, state
+        case submittedAt = "submitted_at"
+    }
+
+    let user: Reviewer
+    let state: String
+    let submittedAt: String
 }

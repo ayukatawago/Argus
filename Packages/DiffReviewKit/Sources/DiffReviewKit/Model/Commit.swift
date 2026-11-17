@@ -12,7 +12,9 @@ public struct Commit: Sendable, Identifiable, Equatable {
 
     public var id: String { hash }
 
-    public init(hash: String, shortHash: String, subject: String, author: String, relativeDate: String, isRoot: Bool = false) {
+    public init(
+        hash: String, shortHash: String, subject: String, author: String, relativeDate: String, isRoot: Bool = false
+    ) {
         self.hash = hash
         self.shortHash = shortHash
         self.subject = subject

@@ -46,6 +46,7 @@ final class StderrCapture: @unchecked Sendable {
     var text: String {
         lock.lock()
         defer { lock.unlock() }
+        // swiftlint:disable:next optional_data_string_conversion - lossy decode is intended
         return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

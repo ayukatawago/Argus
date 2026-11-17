@@ -314,6 +314,11 @@ public final class DiffReviewModel {
 
     // MARK: - Agent actions
 
+    private static func replyBody(from text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "(no output)" : trimmed
+    }
+
     /// Runs the agent for a comment: `.reply` streams a read-only answer, `.apply` lets it edit
     /// files in the worktree and then refreshes the diff. Spawns an independent headless session
     /// (see `AgentRunner`) — this never touches a live, interactively-attached agent session.
@@ -364,17 +369,21 @@ public final class DiffReviewModel {
             }
 
             guard self.activeRunTokens[commentID] == token, !Task.isCancelled else { return }
-            let finalText = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
-            self.appendReply(
-                commentID: commentID,
-                kind: replyKind,
-                text: finalText.isEmpty ? "(no output)" : finalText,
-                sessionID: sessionID
+            await self.completeRun(
+                commentID: commentID, kind: replyKind, text: replyText, sessionID: sessionID, refreshes: mode == .apply
             )
-            self.setStatus(commentID: commentID, status: .resolved)
-            if mode == .apply {
-                await self.refreshDiff()
-            }
+        }
+    }
+
+    private func completeRun(
+        commentID: UUID, kind: ReviewReply.Kind, text: String, sessionID: String?, refreshes: Bool
+    )
+        async
+    {
+        appendReply(commentID: commentID, kind: kind, text: Self.replyBody(from: text), sessionID: sessionID)
+        setStatus(commentID: commentID, status: .resolved)
+        if refreshes {
+            await refreshDiff()
         }
     }
 

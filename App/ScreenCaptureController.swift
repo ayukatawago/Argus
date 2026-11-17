@@ -1,3 +1,4 @@
+// swift-format-ignore: OrderedImports
 import AppKit
 import AVFoundation
 import ScreenCaptureKit

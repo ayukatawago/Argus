@@ -196,18 +196,24 @@ public enum UnifiedDiffParser {
                 output.append(UInt8(truncatingIfNeeded: value))
                 continue
             }
-            switch escaped {
-            case UInt8(ascii: "n"): output.append(0x0A)
-            case UInt8(ascii: "t"): output.append(0x09)
-            case UInt8(ascii: "r"): output.append(0x0D)
-            case UInt8(ascii: "a"): output.append(0x07)
-            case UInt8(ascii: "b"): output.append(0x08)
-            case UInt8(ascii: "f"): output.append(0x0C)
-            case UInt8(ascii: "v"): output.append(0x0B)
-            default: output.append(escaped)
-            }
+            output.append(simpleEscape(escaped))
         }
+        // swiftlint:disable:next optional_data_string_conversion - lossy decode is intended
         return String(decoding: output, as: UTF8.self)
+    }
+
+    /// The byte a single-character escape (`\n`, `\t`, ...) stands for; any other byte stands for itself.
+    private static func simpleEscape(_ escaped: UInt8) -> UInt8 {
+        switch escaped {
+        case UInt8(ascii: "n"): 0x0A
+        case UInt8(ascii: "t"): 0x09
+        case UInt8(ascii: "r"): 0x0D
+        case UInt8(ascii: "a"): 0x07
+        case UInt8(ascii: "b"): 0x08
+        case UInt8(ascii: "f"): 0x0C
+        case UInt8(ascii: "v"): 0x0B
+        default: escaped
+        }
     }
 
     private static func stripGitPrefix(_ path: String) -> String? {

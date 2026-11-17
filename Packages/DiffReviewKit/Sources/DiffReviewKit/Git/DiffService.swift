@@ -95,8 +95,10 @@ public struct DiffService: Sendable {
         for path in paths where !path.isEmpty {
             // `--no-index` against /dev/null exits 1 (a diff was found), not 0 — check the output
             // itself rather than the exit code.
-            guard let result = try? await git.run(
-                Self.diffPrefix + ["diff", "--no-color", "--no-index", "/dev/null", path], timeout: Self.diffTimeout),
+            guard
+                let result = try? await git.run(
+                    Self.diffPrefix + ["diff", "--no-color", "--no-index", "/dev/null", path], timeout: Self.diffTimeout
+                ),
                 !result.standardOutput.isEmpty
             else { continue }
             files.append(contentsOf: UnifiedDiffParser.parse(result.standardOutput))

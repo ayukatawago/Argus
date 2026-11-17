@@ -185,7 +185,9 @@ private final class Completer: @unchecked Sendable {
         releasePipes(stdout, stderr)
 
         lock.lock()
+        // swiftlint:disable:next optional_data_string_conversion - lossy decode is intended
         let out = String(decoding: stdoutData, as: UTF8.self)
+        // swiftlint:disable:next optional_data_string_conversion - lossy decode is intended
         let err = String(decoding: stderrData, as: UTF8.self)
         lock.unlock()
 
