@@ -35,6 +35,15 @@ struct PRCategorizerTests {
         #expect(result.reviewRequestedPRs.map(\.id) == [2])
     }
 
+    @Test("an assigned draft PR not authored by the user lands in assignedDraftPRs, not reviewRequestedPRs")
+    func assignedDraftPR() {
+        let draft = FakePR(id: 2, draft: true)
+        let open = FakePR(id: 3)
+        let result = PRCategorizer.categorize(authored: [], assigned: [draft, open], username: "me")
+        #expect(result.assignedDraftPRs.map(\.id) == [2])
+        #expect(result.reviewRequestedPRs.map(\.id) == [3])
+    }
+
     @Test("a PR both authored and assigned appears only in the authored bucket, not reviewRequestedPRs")
     func authoredAndAssignedAppearsOnce() {
         let pullRequest = FakePR(id: 3)
@@ -77,6 +86,7 @@ struct PRCategorizerTests {
         #expect(result.myOpenPRs.isEmpty)
         #expect(result.myDraftPRs.isEmpty)
         #expect(result.reviewRequestedPRs.isEmpty)
+        #expect(result.assignedDraftPRs.isEmpty)
         #expect(result.doNotMergePRs.isEmpty)
     }
 }
