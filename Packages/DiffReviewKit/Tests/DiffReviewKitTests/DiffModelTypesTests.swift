@@ -128,11 +128,13 @@ struct RevisionResolverParsingTests {
     @Test("parses six-field log lines, flags root commits, and skips malformed lines")
     func commits() {
         let sep = "\u{1f}"
-        let child = ["h1", "h", "fix: a", "Ann", "2 days ago", "p1"].joined(separator: sep)
-        let root = ["h2", "h", "init", "Bob", "1 year ago", ""].joined(separator: sep)
-        let commits = RevisionResolver.parseCommits([child, "garbage", root].joined(separator: "\n"))
+        let child =
+            ["h1", "h", "fix: a", "Ann", "2 days ago", "p1", "fix: a\n\nbody"].joined(separator: sep) + "\u{1e}"
+        let root = ["h2", "h", "init", "Bob", "1 year ago", "", "init"].joined(separator: sep) + "\u{1e}"
+        let commits = RevisionResolver.parseCommits([child, "garbage\u{1e}", root].joined(separator: "\n"))
         #expect(commits.map(\.hash) == ["h1", "h2"])
         #expect(commits[0].subject == "fix: a")
+        #expect(commits[0].message == "fix: a\n\nbody")
         #expect(commits[0].isRoot == false)
         #expect(commits[1].isRoot)
     }
