@@ -32,6 +32,7 @@ struct PRMonitorView: View {
                 prSection(title: "My Open PRs", section: store.myOpen, showAuthor: false)
                 prSection(title: "My Drafts", section: store.myDrafts, showAuthor: false)
                 prSection(title: "Assigned", section: store.assigned, showAuthor: true)
+                prSection(title: "Assigned Drafts", section: store.assignedDrafts, showAuthor: true)
                 doNotMergeSection
                 if !store.hasAnyPRs && store.lastError == nil {
                     Text("No open pull requests")

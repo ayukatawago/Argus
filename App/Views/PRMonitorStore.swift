@@ -3,7 +3,7 @@ import ArgusSupport
 import Foundation
 import Monitors
 
-/// A sidebar bucket (My Open PRs, My Drafts, Assigned, Do Not Merge) split into what's currently
+/// A sidebar bucket (My Open PRs, My Drafts, Assigned, Assigned Drafts, Do Not Merge) split into what's currently
 /// shown and what the user hid, so `PRMonitorView` can render a hidden count and a reveal-all
 /// button per section without re-deriving the split itself.
 struct PRSection {
@@ -21,6 +21,7 @@ final class PRMonitorStore: ObservableObject {
     @Published private(set) var myOpen = PRSection()
     @Published private(set) var myDrafts = PRSection()
     @Published private(set) var assigned = PRSection()
+    @Published private(set) var assignedDrafts = PRSection()
     @Published private(set) var doNotMerge = PRSection()
     @Published private(set) var isLoading = false
     @Published private(set) var lastError: String?
@@ -37,7 +38,7 @@ final class PRMonitorStore: ObservableObject {
     private var lastCategorized: PRCategorizer.Categorized<GitHubPR>?
 
     var hasAnyPRs: Bool {
-        !myOpen.isEmpty || !myDrafts.isEmpty || !assigned.isEmpty || !doNotMerge.isEmpty
+        !myOpen.isEmpty || !myDrafts.isEmpty || !assigned.isEmpty || !assignedDrafts.isEmpty || !doNotMerge.isEmpty
     }
 
     func start() {
@@ -151,7 +152,7 @@ final class PRMonitorStore: ObservableObject {
         applySections()
     }
 
-    /// Re-derives the four published sections from the last successful fetch, applying the
+    /// Re-derives the five published sections from the last successful fetch, applying the
     /// current hidden set. Called after every fetch and every hide/reveal.
     private func applySections() {
         guard let categorized = lastCategorized else { return }
@@ -162,6 +163,7 @@ final class PRMonitorStore: ObservableObject {
         myOpen = section(categorized.myOpenPRs)
         myDrafts = section(categorized.myDraftPRs)
         assigned = section(categorized.reviewRequestedPRs)
+        assignedDrafts = section(categorized.assignedDraftPRs)
         doNotMerge = section(categorized.doNotMergePRs)
     }
 
