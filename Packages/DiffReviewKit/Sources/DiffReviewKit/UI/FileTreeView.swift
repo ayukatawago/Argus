@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Sidebar file tree: all directories start expanded (SwiftUI's built-in `List(_:children:)`
@@ -60,6 +61,12 @@ private struct FileTreeRowRecursive: View {
         } else {
             FileTreeRowLabel(node: node, commentCount: commentCount, isViewed: isViewed)
                 .contentShape(Rectangle())
+                .contextMenu {
+                    if let file = node.file {
+                        Button("Copy File Name") { copy(URL(fileURLWithPath: file.path).lastPathComponent) }
+                        Button("Copy Path") { copy(file.path) }
+                    }
+                }
                 .listRowBackground(isSelected ? DiffReviewTheme.listSelectionBackground : Color.clear)
                 .onTapGesture {
                     if let file = node.file {
@@ -68,6 +75,11 @@ private struct FileTreeRowRecursive: View {
                     }
                 }
         }
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private var isViewed: Bool {

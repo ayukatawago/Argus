@@ -77,21 +77,26 @@ public struct RevisionResolver: Sendable {
     }
 
     private static let fieldSeparator = "\u{1f}"
-    private static let logFormat = ["%H", "%h", "%s", "%an", "%ar", "%P"].joined(separator: fieldSeparator)
+    /// Terminates each record, since the full message (`%B`) spans several lines.
+    private static let recordSeparator = "\u{1e}"
+    private static let logFormat =
+        ["%H", "%h", "%s", "%an", "%ar", "%P", "%B"].joined(separator: fieldSeparator) + recordSeparator
 
-    /// Parses `git log --format=<logFormat>` output (one commit per line, six unit-separated fields).
+    /// Parses `git log --format=<logFormat>` output (one record-separated commit,
+    /// seven unit-separated fields, the last being the full message).
     static func parseCommits(_ output: String) -> [Commit] {
         output
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .compactMap { line in
-                let fields = String(line).components(separatedBy: fieldSeparator)
-                guard fields.count == 6 else { return nil }
+            .components(separatedBy: recordSeparator)
+            .compactMap { record in
+                let fields = record.trimmingCharacters(in: .newlines).components(separatedBy: fieldSeparator)
+                guard fields.count == 7 else { return nil }
                 return Commit(
                     hash: fields[0],
                     shortHash: fields[1],
                     subject: fields[2],
                     author: fields[3],
                     relativeDate: fields[4],
+                    message: fields[6].trimmingCharacters(in: .whitespacesAndNewlines),
                     isRoot: fields[5].trimmingCharacters(in: .whitespaces).isEmpty
                 )
             }

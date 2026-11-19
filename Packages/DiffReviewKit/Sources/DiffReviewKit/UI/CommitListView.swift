@@ -123,6 +123,7 @@ private struct CommitRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .help(commit.message)
         .padding(.vertical, 2)
         .listRowBackground(isSelected ? DiffReviewTheme.listSelectionBackground : Color.clear)
     }

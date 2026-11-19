@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The pinned header of one file's section: collapse chevron, path (old → new for a rename), `+N −M`,
@@ -22,6 +23,10 @@ struct DiffFileHeaderView: View {
                 .font(.system(.callout, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .contextMenu {
+                    Button("Copy File Name") { copy(URL(fileURLWithPath: file.path).lastPathComponent) }
+                    Button("Copy Path") { copy(file.path) }
+                }
 
             HStack(spacing: 4) {
                 Text("+\(file.additionCount)").foregroundStyle(DiffReviewTheme.additionForeground)
@@ -54,6 +59,11 @@ struct DiffFileHeaderView: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(DiffReviewTheme.fileHeaderBorder).frame(height: 1)
         }
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private var title: String {
